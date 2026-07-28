@@ -71,7 +71,8 @@
 | `stores/` | `app/(tabs)/stores/` | `StoreForm` `StoreImagePicker` `MachineListSheet` |
 | `revenue/` | `app/(tabs)/revenue.tsx` | `charts` `MonthlyRevenueCard` `MonthRangePicker` |
 | `manage/` | `app/(tabs)/manage/` | `StateEditSheet` `StockControls` `laundryState` |
-| `collect/` | `app/collect/` | `NumericKeypad` |
+
+画面が増えたら同じ規則でディレクトリを足す（`collect/` `settings/` など）。
 
 - **2 つ以上の画面から使うものでも、持ち主がはっきりしているならその画面のディレクトリに置く。**
   `manage/StateEditSheet` はホームと店舗詳細からも開くが、中身は在庫・設備なので `manage/`。
