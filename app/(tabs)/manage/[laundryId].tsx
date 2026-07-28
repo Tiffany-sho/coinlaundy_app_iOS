@@ -16,17 +16,17 @@ import * as Haptics from "expo-haptics";
 import { useBootstrap, useLaundryStates, useUpdateStock } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { useOutbox } from "@/offline/OutboxProvider";
-import { useDialog } from "@/components/dialog";
-import { useToast } from "@/components/toast";
-import { ThresholdControl, stockStyles } from "@/components/stock/StockControls";
+import { useDialog } from "@/components/common/dialog";
+import { useToast } from "@/components/common/toast";
+import { ThresholdControl, stockStyles } from "@/components/manage/StockControls";
 import {
   makeExtraStock,
   readExtraStocks,
   readThresholds,
   DEFAULT_STOCK_THRESHOLD,
   type StockThresholds,
-} from "@/components/laundryState";
-import { CenterMessage, Muted, OfflineBanner, Screen } from "@/components/ui";
+} from "@/components/manage/laundryState";
+import { CenterMessage, Muted, OfflineBanner, Screen } from "@/components/common/ui";
 import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { ExtraStock } from "@/api/types";
 

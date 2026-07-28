@@ -2,13 +2,13 @@ import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useDialog } from "@/components/dialog";
+import { useDialog } from "@/components/common/dialog";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/api/client";
 import { useBootstrap, useDeletionSummary } from "@/api/queries";
 import { supabase } from "@/api/supabase";
 import { useAuth } from "@/auth/AuthProvider";
-import { Button, Card, CenterMessage, Muted, Screen, Title } from "@/components/ui";
+import { Button, Card, CenterMessage, Muted, Screen, Title } from "@/components/common/ui";
 import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
 
 /**

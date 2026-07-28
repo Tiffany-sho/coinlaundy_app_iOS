@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { fromMonthIndex, toMonthIndex, type MonthIndex } from "./monthIndex";
+import { fromMonthIndex, toMonthIndex, type MonthIndex } from "@/components/revenue/monthIndex";
 import { color, font, radius, spacing } from "@/theme/tokens";
 
 /**
@@ -10,7 +10,7 @@ import { color, font, radius, spacing } from "@/theme/tokens";
  *
  * ⚠️ もとは 5 年ぶん（最大 60 個）の月チップを横スクロールで並べていたが、
  *    目的の月まで指を何度も滑らせることになるので年 + マス目にした。
- *    src/components/CalendarPicker.tsx は**日単位**なので流用できない。
+ *    src/components/common/CalendarPicker.tsx は**日単位**なので流用できない。
  */
 
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];

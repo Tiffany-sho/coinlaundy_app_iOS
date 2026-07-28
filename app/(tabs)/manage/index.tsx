@@ -6,10 +6,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useLaundryStates } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { useOutbox } from "@/offline/OutboxProvider";
-import { SegmentedTabs } from "@/components/SegmentedTabs";
-import { StateEditSheet, type StateEditMode } from "@/components/StateEditSheet";
-import { brokenMachines, isLowStock, stockDisplayItems } from "@/components/laundryState";
-import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/ui";
+import { SegmentedTabs } from "@/components/common/SegmentedTabs";
+import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
+import { brokenMachines, isLowStock, stockDisplayItems } from "@/components/manage/laundryState";
+import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
 import { color, font, radius, spacing } from "@/theme/tokens";
 import type { LaundryState } from "@/api/types";
 
@@ -28,7 +28,7 @@ const SEGMENTS = [
  *
  * ⚠️ 編集シートは店舗詳細と共通の StateEditSheet を使う。
  *    ここに 2 つ目のシートを作らないこと。在庫の保存は 4 項目まとめて送る必要があり
- *    （src/components/laundryState.ts のコメント参照）、実装が分かれると片方だけ
+ *    （src/components/manage/laundryState.ts のコメント参照）、実装が分かれると片方だけ
  *    追加在庫を消す事故が起きる。
  */
 export default function Manage() {

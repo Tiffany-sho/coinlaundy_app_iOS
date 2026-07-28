@@ -12,7 +12,7 @@ import { color, font, radius, shadow, spacing } from "@/theme/tokens";
  * 出すこと：店舗の追加・編集・削除、集金データの追加・編集・削除、在庫の更新、
  * 組織・個人情報の編集。
  *
- * ⚠️ 確認を取る用途には使わないこと。それは src/components/dialog.tsx の役割。
+ * ⚠️ 確認を取る用途には使わないこと。それは src/components/common/dialog.tsx の役割。
  */
 
 type ToastKind = "success" | "error" | "info";

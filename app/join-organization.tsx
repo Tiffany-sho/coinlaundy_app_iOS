@@ -7,8 +7,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/api/client";
 import { queryKeys, useBootstrap } from "@/api/queries";
 import { useAuth } from "@/auth/AuthProvider";
-import { Button, GradientHeaderCard, Screen } from "@/components/ui";
-import { Field, FormError, Input } from "@/components/form";
+import { Button, GradientHeaderCard, Screen } from "@/components/common/ui";
+import { Field, FormError, Input } from "@/components/common/form";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
 const ROLE_LABEL: Record<string, string> = {

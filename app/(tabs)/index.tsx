@@ -20,7 +20,7 @@ import {
   OfflineBanner,
   Screen,
   SectionHeading,
-} from "@/components/ui";
+} from "@/components/common/ui";
 import { formatJstDate } from "@/shared/date";
 import { color, font, radius, spacing } from "@/theme/tokens";
 

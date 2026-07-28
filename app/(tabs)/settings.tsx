@@ -5,7 +5,7 @@ import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap } from "@/api/queries";
 import { useAuth } from "@/auth/AuthProvider";
-import { Button, ListCard, ListRow, Muted, Screen, Title } from "@/components/ui";
+import { Button, ListCard, ListRow, Muted, Screen, Title } from "@/components/common/ui";
 import { color, font, spacing } from "@/theme/tokens";
 
 /** Web の AccountInfoCard と同じ表記に合わせる */

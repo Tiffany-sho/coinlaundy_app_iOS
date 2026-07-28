@@ -1,9 +1,9 @@
 import { useRef } from "react";
 import { useRouter } from "expo-router";
 import { deleteStoreImage, useBootstrap, useCreateStore } from "@/api/queries";
-import { StoreForm, apiErrorMessage, type StoreFormValues } from "@/components/StoreForm";
-import { useToast } from "@/components/toast";
-import { CenterMessage, Screen } from "@/components/ui";
+import { StoreForm, apiErrorMessage, type StoreFormValues } from "@/components/stores/StoreForm";
+import { useToast } from "@/components/common/toast";
+import { CenterMessage, Screen } from "@/components/common/ui";
 import type { StoreImage } from "@/api/types";
 
 /**

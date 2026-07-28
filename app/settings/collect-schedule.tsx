@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useBootstrap, useCollectSchedule, useUpdateCollectSchedule } from "@/api/queries";
-import { Button, Card, CenterMessage, Muted, Screen, Title } from "@/components/ui";
+import { Button, Card, CenterMessage, Muted, Screen, Title } from "@/components/common/ui";
 import { formatCountdown } from "@/shared/collectSchedule";
 import { color, font, radius, spacing } from "@/theme/tokens";
 

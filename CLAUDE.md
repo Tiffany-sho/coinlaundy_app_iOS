@@ -59,12 +59,28 @@
 
 ## コードの書き方
 
-### なるべくコンポーネントで分ける
+### コンポーネントは画面ごとにまとめる
 
-- **ルートファイル（`app/**`）には画面の組み立てだけを書く。** データ取得と遷移はルート側、見た目とローカルな状態を持つ塊は `src/components/` に切り出す
-- **1 ファイル 300 行を超えたら分割する。** 機能を足すときも、既存の巨大ファイルにさらに積まない。現時点で超えているもの:
-  `StateEditSheet.tsx` 731 / `settings/organization.tsx` 629 / `setup.tsx` 562 / `revenue.tsx` 555 / `MonthlyRevenueCard.tsx` 479 / `StoreForm.tsx` 435
-- **画面固有のコンポーネントは `src/components/<画面名>/` に置く**（`src/components/home/` に倣う）。2 画面以上で使うものだけ `src/components/` 直下
+`src/components/` の直下にファイルを置かない。**必ずどれかのディレクトリに入れる。**
+ディレクトリ名はルート名に合わせてあるので、どの画面のものか名前だけで分かる。
+
+| ディレクトリ | 対応する画面 | 中身の例 |
+|---|---|---|
+| `common/` | どこからでも使う汎用部品 | `ui` `form` `dialog` `toast` `SegmentedTabs` `CalendarPicker` |
+| `home/` | `app/(tabs)/index.tsx` | `MonthlySalesCarousel` `QuickActions` `useCardPaging` |
+| `stores/` | `app/(tabs)/stores/` | `StoreForm` `StoreImagePicker` `MachineListSheet` |
+| `revenue/` | `app/(tabs)/revenue.tsx` | `charts` `MonthlyRevenueCard` `MonthRangePicker` |
+| `manage/` | `app/(tabs)/manage/` | `StateEditSheet` `StockControls` `laundryState` |
+| `collect/` | `app/collect/` | `NumericKeypad` |
+
+- **2 つ以上の画面から使うものでも、持ち主がはっきりしているならその画面のディレクトリに置く。**
+  `manage/StateEditSheet` はホームと店舗詳細からも開くが、中身は在庫・設備なので `manage/`。
+  画面をまたいで意味が変わらないものだけ `common/`
+- **import は `@/components/<画面>/<名前>` の絶対パスで書く。** `./` の相対 import を使わない
+  （置き場所を動かすたびに書き換えが発生するため）
+- **ルートファイル（`app/**`）には画面の組み立てだけを書く。** データ取得と遷移はルート側、
+  見た目とローカルな状態を持つ塊はコンポーネントへ
+- **1 ファイル 300 行を超えたら分割する。** 機能を足すときも、既存の巨大ファイルにさらに積まない
 - **同じ見た目が 2 か所に出たらコピーせず共通化する。** シート・カード・フィルタは特に重複しやすい
 - **新規に作る前に既存を探す。** 過去に `MonthSalesPager` と `MonthlySalesCarousel` を二重に作って片方を捨てている
 
@@ -72,7 +88,7 @@
 
 - 確認ダイアログ → `useDialog()`（`Alert.alert` は Web で動かない）
 - 成否の通知 → `useToast()`。**ミューテーションには成功・失敗どちらのトーストも必ず付ける**
-- 入力欄 → `src/components/form.tsx` の `Input` / `Field` / `RadioCardGroup` / `Checkbox`
+- 入力欄 → `@/components/common/form` の `Input` / `Field` / `RadioCardGroup` / `Checkbox`
 - 色・余白 → `src/theme/tokens.ts`。生の色コードを直接書かない
 
 ### コメント

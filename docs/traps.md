@@ -6,7 +6,7 @@
 
 ブラウザで確認しながら作るので、Web で動かない API を使うと「実装したのに何も起きない」状態になる。
 
-- **`Alert.alert` は何もしない。** react-native-web の実装が `class Alert { static alert() {} }` の空クラス。確認ダイアログは必ず `src/components/dialog.tsx` の `useDialog()` を使う（削除ボタンが無反応だった原因はこれ）
+- **`Alert.alert` は何もしない。** react-native-web の実装が `class Alert { static alert() {} }` の空クラス。確認ダイアログは必ず `src/components/common/dialog.tsx` の `useDialog()` を使う（削除ボタンが無反応だった原因はこれ）
 - **ScrollView は `onScroll` しか呼ばない。** `ScrollViewBase` が DOM の `scroll` イベントだけを繋いでいる（`node_modules/react-native-web/dist/exports/ScrollView/ScrollViewBase.js` で確認済み）。したがって以下は**すべて一度も発火しない**:
   - `onScrollBeginDrag` / `onScrollEndDrag` / `onMomentumScrollEnd`
   - `onScroll` の event にも **`velocity` が無い**（`normalizeScrollEvent` が組まない）

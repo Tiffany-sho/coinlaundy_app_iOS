@@ -7,11 +7,11 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useLaundryStates, useStores } from "@/api/queries";
 import { ApiError } from "@/api/client";
-import { Input } from "@/components/form";
-import { useDialog } from "@/components/dialog";
-import { SegmentedTabs } from "@/components/SegmentedTabs";
-import { needsAttention } from "@/components/laundryState";
-import { CenterMessage, Card, Muted, OfflineBanner, Screen, Title } from "@/components/ui";
+import { Input } from "@/components/common/form";
+import { useDialog } from "@/components/common/dialog";
+import { SegmentedTabs } from "@/components/common/SegmentedTabs";
+import { needsAttention } from "@/components/manage/laundryState";
+import { CenterMessage, Card, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
 import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { LaundryState, Store } from "@/api/types";
 
@@ -24,7 +24,7 @@ const NO_IMAGE =
  *   すべて   … Web の一覧と同じ（Web には状態での絞り込みがない）
  *   要対応   … 在庫不足か故障機のある店舗だけ。巡回先を決めるための軸で、
  *              判定は Web の getStockStates / getMachinesStates と同じ条件を使う
- *              （src/components/laundryState.ts）
+ *              （src/components/manage/laundryState.ts）
  */
 type StoreFilter = "all" | "alert";
 

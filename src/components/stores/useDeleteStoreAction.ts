@@ -1,8 +1,8 @@
 import { useRouter } from "expo-router";
 import { useDeleteStore } from "@/api/queries";
-import { useDialog } from "@/components/dialog";
-import { useToast } from "@/components/toast";
-import { apiErrorMessage } from "@/components/StoreForm";
+import { useDialog } from "@/components/common/dialog";
+import { useToast } from "@/components/common/toast";
+import { apiErrorMessage } from "@/components/stores/StoreForm";
 
 /**
  * 店舗の削除。店舗詳細のメニューと編集ページの両方から呼ぶので 1 か所にまとめてある。

@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { STOCK_UNIT } from "@/components/laundryState";
+import { STOCK_UNIT } from "@/components/manage/laundryState";
 import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
 
 /**

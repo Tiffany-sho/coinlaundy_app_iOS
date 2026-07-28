@@ -5,18 +5,18 @@ import { Ionicons } from "@expo/vector-icons";
 import { deleteStoreImage, useBootstrap, useStore, useUpdateStore } from "@/api/queries";
 import type { StoreImage } from "@/api/types";
 import { ApiError } from "@/api/client";
-import { StoreForm, apiErrorMessage, type StoreFormValues } from "@/components/StoreForm";
-import { useDeleteStoreAction } from "@/components/store/useDeleteStoreAction";
-import { useToast } from "@/components/toast";
-import { CenterMessage, Screen } from "@/components/ui";
+import { StoreForm, apiErrorMessage, type StoreFormValues } from "@/components/stores/StoreForm";
+import { useDeleteStoreAction } from "@/components/stores/useDeleteStoreAction";
+import { useToast } from "@/components/common/toast";
+import { CenterMessage, Screen } from "@/components/common/ui";
 import { color, font, radius, spacing } from "@/theme/tokens";
 
 /**
  * 店舗の編集と削除。Web の /coinLaundry/[id]/edit（CoinLaundryForm を method="PUT" で描画）と
  * ActionMenu の DeleteStoreDialog をまとめて 1 画面にしたもの。
  *
- * ⚠️ images はアプリから編集できない。useStore(id) で取れた images をそのまま送り返して
- *    温存すること。省略すると空配列で上書きされ、Web で登録した画像が消える
+ * ⚠️ images はフォームが持っている配列をまるごと送り返すこと。省略すると空配列で
+ *    上書きされ、Web で登録した写真まで消える
  *    （api/queries.ts の StoreInput / BFF の stores/[id]/route.js のコメント参照）。
  */
 export default function EditStore() {

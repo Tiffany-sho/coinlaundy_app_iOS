@@ -5,8 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { uploadStoreImage } from "@/api/queries";
-import { apiErrorMessage } from "@/components/StoreForm";
-import { Muted } from "@/components/ui";
+import { apiErrorMessage } from "@/components/stores/StoreForm";
+import { Muted } from "@/components/common/ui";
 import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { StoreImage } from "@/api/types";
 

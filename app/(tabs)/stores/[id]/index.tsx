@@ -16,11 +16,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useFundList, useLaundryStates, useStore } from "@/api/queries";
 import { ApiError } from "@/api/client";
-import { MachineListSheet } from "@/components/MachineListSheet";
-import { StateEditSheet, type StateEditMode } from "@/components/StateEditSheet";
-import { useDialog } from "@/components/dialog";
-import { useDeleteStoreAction } from "@/components/store/useDeleteStoreAction";
-import { CenterMessage, Screen } from "@/components/ui";
+import { MachineListSheet } from "@/components/stores/MachineListSheet";
+import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
+import { useDialog } from "@/components/common/dialog";
+import { useDeleteStoreAction } from "@/components/stores/useDeleteStoreAction";
+import { CenterMessage, Screen } from "@/components/common/ui";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
 const NO_IMAGE =

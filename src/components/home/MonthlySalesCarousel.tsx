@@ -7,8 +7,8 @@ import {
   View,
   type LayoutChangeEvent,
 } from "react-native";
-import { HeroCard, MoneyText } from "@/components/ui";
-import { useCardPaging } from "./useCardPaging";
+import { HeroCard, MoneyText } from "@/components/common/ui";
+import { useCardPaging } from "@/components/home/useCardPaging";
 import { nowInJst } from "@/shared/date";
 import type { MonthlyPoint } from "@/api/types";
 import { color, font, spacing } from "@/theme/tokens";

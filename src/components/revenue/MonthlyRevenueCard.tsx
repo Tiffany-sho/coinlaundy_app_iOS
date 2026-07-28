@@ -11,8 +11,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useMonthlyChart } from "@/api/queries";
-import { MonthlyStackedBarChart, type StackedPoint, type StackSeries } from "./charts";
-import { MonthRangePicker } from "./revenue/MonthRangePicker";
+import { MonthlyStackedBarChart, type StackedPoint, type StackSeries } from "@/components/revenue/charts";
+import { MonthRangePicker } from "@/components/revenue/MonthRangePicker";
 import {
   currentMonthIndex,
   monthKey,
@@ -20,8 +20,8 @@ import {
   monthStartEpoch,
   type MonthIndex,
   type MonthRange as Range,
-} from "./revenue/monthIndex";
-import { Card, MoneyText, Muted } from "./ui";
+} from "@/components/revenue/monthIndex";
+import { Card, MoneyText, Muted } from "@/components/common/ui";
 import { color, font, radius, spacing, STORE_COLORS } from "@/theme/tokens";
 import type { StoreRevenue } from "@/api/types";
 

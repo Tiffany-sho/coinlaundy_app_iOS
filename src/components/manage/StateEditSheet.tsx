@@ -18,10 +18,10 @@ import * as Haptics from "expo-haptics";
 import { useUpdateMachines, useUpdateStock } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { useOutbox } from "@/offline/OutboxProvider";
-import { Counter, stockStyles } from "./stock/StockControls";
-import { useToast } from "./toast";
-import { Muted } from "./ui";
-import { readExtraStocks, readThresholds, type StockThresholds } from "./laundryState";
+import { Counter, stockStyles } from "@/components/manage/StockControls";
+import { useToast } from "@/components/common/toast";
+import { Muted } from "@/components/common/ui";
+import { readExtraStocks, readThresholds, type StockThresholds } from "@/components/manage/laundryState";
 import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { ExtraStock, LaundryState, MachineState } from "@/api/types";
 

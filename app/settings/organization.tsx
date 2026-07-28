@@ -23,9 +23,9 @@ import {
   useUpdateMemberRole,
   useUpdateOrgName,
 } from "@/api/queries";
-import { Button, CenterMessage, Muted, Screen } from "@/components/ui";
-import { Field, FormError, Input } from "@/components/form";
-import { useDialog } from "@/components/dialog";
+import { Button, CenterMessage, Muted, Screen } from "@/components/common/ui";
+import { Field, FormError, Input } from "@/components/common/form";
+import { useDialog } from "@/components/common/dialog";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 import type { OrgMember, Role } from "@/api/types";
 

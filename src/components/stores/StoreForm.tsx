@@ -13,9 +13,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { ApiError } from "@/api/client";
-import { Button } from "./ui";
-import { Field, FormError, Input } from "./form";
-import { StoreImagePicker } from "./store/StoreImagePicker";
+import { Button } from "@/components/common/ui";
+import { Field, FormError, Input } from "@/components/common/form";
+import { StoreImagePicker } from "@/components/stores/StoreImagePicker";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 import type { Machine, StoreImage } from "@/api/types";
 

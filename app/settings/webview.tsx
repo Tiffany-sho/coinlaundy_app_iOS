@@ -3,7 +3,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
-import { Screen } from "@/components/ui";
+import { Screen } from "@/components/common/ui";
 import { color, font, spacing, HIT_SIZE } from "@/theme/tokens";
 
 /**

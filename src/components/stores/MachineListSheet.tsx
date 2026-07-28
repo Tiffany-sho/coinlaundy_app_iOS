@@ -2,7 +2,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { Muted } from "./ui";
+import { Muted } from "@/components/common/ui";
 import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { Machine } from "@/api/types";
 

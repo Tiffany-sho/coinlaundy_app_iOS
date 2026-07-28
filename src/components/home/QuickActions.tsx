@@ -4,8 +4,8 @@ import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLaundryStates, useStores } from "@/api/queries";
-import { StateEditSheet, type StateEditMode } from "@/components/StateEditSheet";
-import { StorePickerSheet, type StorePickerMode } from "./StorePickerSheet";
+import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
+import { StorePickerSheet, type StorePickerMode } from "@/components/home/StorePickerSheet";
 import type { Role } from "@/api/types";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 

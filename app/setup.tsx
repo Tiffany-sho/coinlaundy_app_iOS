@@ -7,8 +7,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/api/queries";
 import { useAuth } from "@/auth/AuthProvider";
-import { Button, Screen } from "@/components/ui";
-import { Field, FormError, Input, RadioCardGroup } from "@/components/form";
+import { Button, Screen } from "@/components/common/ui";
+import { Field, FormError, Input, RadioCardGroup } from "@/components/common/form";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
 /**

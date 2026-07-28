@@ -22,10 +22,10 @@ import {
   useUpdateFundDate,
 } from "@/api/queries";
 import { ApiError } from "@/api/client";
-import { CalendarPicker, formatJstDateLong } from "@/components/CalendarPicker";
-import { Button, CenterMessage, Muted, Screen } from "@/components/ui";
-import { useDialog } from "@/components/dialog";
-import { useToast } from "@/components/toast";
+import { CalendarPicker, formatJstDateLong } from "@/components/common/CalendarPicker";
+import { Button, CenterMessage, Muted, Screen } from "@/components/common/ui";
+import { useDialog } from "@/components/common/dialog";
+import { useToast } from "@/components/common/toast";
 import { useOutbox } from "@/offline/OutboxProvider";
 import { calcTotalFunds, entryAmount, COIN_VALUE } from "@/shared/collectMoney";
 import { formatJstDate } from "@/shared/date";

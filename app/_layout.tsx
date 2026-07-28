@@ -13,8 +13,8 @@ import { SpaceMono_700Bold } from "@expo-google-fonts/space-mono";
 import { queryClient, mmkvPersister } from "@/api/queryClient";
 import { AuthProvider } from "@/auth/AuthProvider";
 import { OutboxProvider } from "@/offline/OutboxProvider";
-import { DialogProvider } from "@/components/dialog";
-import { ToastProvider } from "@/components/toast";
+import { DialogProvider } from "@/components/common/dialog";
+import { ToastProvider } from "@/components/common/toast";
 import { color } from "@/theme/tokens";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});

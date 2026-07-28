@@ -10,8 +10,8 @@ import {
 } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
-import { Button, GradientHeaderCard, Screen } from "@/components/ui";
-import { Checkbox, Field, Input } from "@/components/form";
+import { Button, GradientHeaderCard, Screen } from "@/components/common/ui";
+import { Checkbox, Field, Input } from "@/components/common/form";
 import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
 
 /**
