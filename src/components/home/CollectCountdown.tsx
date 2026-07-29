@@ -3,7 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { getNextCollectDate } from "@/shared/collectSchedule";
 import type { CollectSchedule } from "@/api/types";
-import { color, font, radius, shadow, spacing } from "@/theme/tokens";
+import { color, font, radius, shadow, spacing, numeric } from "@/theme/tokens";
 
 const DAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -103,6 +103,6 @@ const styles = StyleSheet.create({
   iconBox: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   label: { fontFamily: font.uiBold, fontSize: 15 },
   schedule: { fontFamily: font.ui, fontSize: 12, marginTop: 2 },
-  number: { fontFamily: font.mono, fontSize: 26, lineHeight: 30 },
+  number: { ...numeric, fontSize: 26, lineHeight: 30 },
   unit: { fontFamily: font.ui, fontSize: 11, color: color.textMuted },
 });

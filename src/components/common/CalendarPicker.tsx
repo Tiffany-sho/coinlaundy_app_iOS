@@ -15,7 +15,7 @@ import {
   nowInJst,
   toJstMidnightEpoch,
 } from "@/shared/date";
-import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
+import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens";
 
 /**
  * 集金日を選ぶ月送りカレンダー。
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   },
   dayToday: { borderWidth: 1.5, borderColor: color.cyan300 },
   daySelected: { backgroundColor: color.teal, borderWidth: 0 },
-  dayLabel: { fontFamily: font.mono, fontSize: 15 },
+  dayLabel: { ...numeric, fontSize: 15 },
   dayLabelSelected: { color: "#FFFFFF" },
 
   todayButton: {

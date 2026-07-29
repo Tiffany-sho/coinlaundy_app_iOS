@@ -106,8 +106,24 @@ export const shadow = {
 export const font = {
   ui: "NotoSansJP_400Regular",
   uiBold: "NotoSansJP_700Bold",
-  mono: "SpaceMono_700Bold", // 金額・数値表示
+  num: "Inter_700Bold", // 金額・数値表示
 } as const;
+
+/**
+ * 金額・数値の書体。`fontFamily` だけでなく**これを丸ごと展開して使う**こと。
+ *
+ * ⚠️ Inter は等幅ではないので `fontVariant` を落とすと桁ごとに字幅が変わり、
+ *    金額を縦に並べたとき右端が揃わなくなる（1 と 8 で幅が違う）。
+ *    tabular-nums を付けると全数字が同じ幅になり、等幅と同じ見え方になる。
+ * ⚠️ Web 側は今も 'Space Mono'。アプリだけ Inter にしてあるので、
+ *    Web と同じ数字に見せる必要が出たときは両方を同時に変えること。
+ */
+export const numeric = {
+  fontFamily: font.num,
+  // ⚠️ 配列ごと as const にしない。RN の型は FontVariant[]（可変）なので
+  //    readonly タプルだと StyleSheet.create の推論が TextStyle から外れて全滅する
+  fontVariant: ["tabular-nums" as const],
+};
 
 /** ヒーローカード: linear-gradient(140deg, #0E7490, #0891B2 55%, #06B6D4) */
 export const heroGradient = {

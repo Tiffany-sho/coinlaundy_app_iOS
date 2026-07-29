@@ -9,7 +9,7 @@ import { useBootstrap, useDeletionSummary } from "@/api/queries";
 import { supabase } from "@/api/supabase";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, Card, CenterMessage, Muted, Screen, Title } from "@/components/common/ui";
-import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
+import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens";
 
 /**
  * アカウント削除（App Store Guideline 5.1.1(v)）。
@@ -28,6 +28,12 @@ export default function DeleteAccount() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 「元に戻せないと理解した」のチェック。
+   * ⚠️ パスワードだけを条件にしないこと。オートフィルで一瞬で埋まるので、
+   *    読まずに押せてしまう。明示的な同意を 1 つ挟む。
+   */
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const email = session?.user.email ?? bootstrap.data?.user.email ?? "";
 
@@ -76,7 +82,14 @@ export default function DeleteAccount() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md }}>
+      {/* ⚠️ 下端の余白を大きく取る。削除ボタンが画面の一番下に来るようにするため */}
+      <ScrollView
+        contentContainerStyle={{
+          padding: spacing.lg,
+          paddingTop: insets.top + spacing.md,
+          paddingBottom: insets.bottom + spacing.xxl,
+        }}
+      >
         <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={color.teal} />
           <Text style={styles.backLabel}>戻る</Text>
@@ -130,14 +143,39 @@ export default function DeleteAccount() {
 
         {error && <Text style={styles.error}>{error}</Text>}
 
-        <Button
-          label="アカウントを削除する"
-          variant="danger"
-          onPress={onDelete}
-          disabled={password.length === 0}
-          loading={submitting}
-          style={{ marginTop: spacing.xl }}
-        />
+        {/* 押す前に必ず 1 つ意思表示させる。オートフィルで素通りするのを防ぐ */}
+        <Pressable
+          onPress={() => setAcknowledged((prev) => !prev)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: acknowledged }}
+          style={({ pressed }) => [styles.ackRow, pressed && { opacity: 0.8 }]}
+        >
+          <View style={[styles.checkbox, acknowledged && styles.checkboxOn]}>
+            {acknowledged && <Ionicons name="checkmark" size={15} color="#FFFFFF" />}
+          </View>
+          <Text style={styles.ackLabel}>
+            削除すると元に戻せないこと、上記のデータが消えることを理解しました
+          </Text>
+        </Pressable>
+
+        {/*
+          ⚠️ 削除ボタンは必ずここ（最下部）に置くこと。
+             以前は警告カードのすぐ下にあり、画面を開いた直後の指の位置に入っていた。
+             一度スクロールしないと届かない位置に置くのが誤操作への一番の対策。
+             Guideline 5.1.1(v) の「アプリ内から削除を開始できる」は満たしたまま。
+        */}
+        <View style={styles.dangerZone}>
+          <Button
+            label="アカウントを削除する"
+            variant="danger"
+            onPress={onDelete}
+            disabled={password.length === 0 || !acknowledged}
+            loading={submitting}
+          />
+          <Muted style={styles.dangerNote}>
+            この操作は取り消せません。押すともう一度確認します。
+          </Muted>
+        </View>
       </ScrollView>
     </Screen>
   );
@@ -158,7 +196,7 @@ const styles = StyleSheet.create({
   warnHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
   warnTitle: { fontFamily: font.uiBold, fontSize: 15, color: color.red500 },
   row: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6 },
-  value: { fontFamily: font.mono, fontSize: 15, color: color.textMain },
+  value: { ...numeric, fontSize: 15, color: color.textMain },
   label: { fontFamily: font.uiBold, fontSize: 13, color: color.textMain, marginBottom: spacing.xs },
   input: {
     minHeight: HIT_SIZE,
@@ -172,4 +210,25 @@ const styles = StyleSheet.create({
     borderColor: color.divider,
   },
   error: { fontFamily: font.ui, fontSize: 14, color: color.red500, marginTop: spacing.md },
+  ackRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    minHeight: HIT_SIZE,
+    marginTop: spacing.xl,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: color.divider,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxOn: { backgroundColor: color.red500, borderColor: color.red500 },
+  ackLabel: { flex: 1, fontFamily: font.ui, fontSize: 13, color: color.textMain, lineHeight: 19 },
+  /* 上に大きく間を空けて、他の操作と地続きに見えないようにする */
+  dangerZone: { marginTop: spacing.xxl, gap: spacing.sm },
+  dangerNote: { fontSize: 11, textAlign: "center" },
 });
