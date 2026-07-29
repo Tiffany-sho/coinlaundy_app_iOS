@@ -6,9 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,9 +17,14 @@ import { useUpdateMachines, useUpdateStock } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { useOutbox } from "@/offline/OutboxProvider";
 import { Counter, stockStyles } from "@/components/manage/StockControls";
+import { MachineStateList } from "@/components/manage/MachineStateList";
 import { useToast } from "@/components/common/toast";
 import { Muted } from "@/components/common/ui";
-import { readExtraStocks, readThresholds, type StockThresholds } from "@/components/manage/laundryState";
+import {
+  readExtraStocks,
+  readThresholds,
+  type StockThresholds,
+} from "@/components/manage/laundryState";
 import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { ExtraStock, LaundryState, MachineState } from "@/api/types";
 
@@ -62,12 +65,7 @@ export function StateEditSheet({
   onOpenSettings?: () => void;
 }) {
   return (
-    <Modal
-      visible={Boolean(state)}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
+    <Modal visible={Boolean(state)} animationType="slide" transparent onRequestClose={onClose}>
       {state && (
         // key を付けて店舗やモードが変わったら作り直す。
         // 中の下書き（洗剤の数など）は useState の初期値で持っているので、
@@ -106,7 +104,7 @@ function SheetBody({
 
   const [detergent, setDetergent] = useState(state.detergent ?? 0);
   const [softener, setSoftener] = useState(state.softener ?? 0);
-  const [thresholds, setThresholds] = useState<StockThresholds>(() => readThresholds(state));
+  const [thresholds] = useState<StockThresholds>(() => readThresholds(state));
   const [extras, setExtras] = useState<ExtraStock[]>(() => readExtraStocks(state));
   const [machines, setMachines] = useState<MachineState[]>(state.machines ?? []);
 
@@ -116,6 +114,7 @@ function SheetBody({
    *    オフラインのあいだは保存ボタン自体を無効化する。この方針は崩さないこと。
    */
   const disabled = !canEdit || !isOnline;
+  const isPending = updateStock.isPending || updateMachines.isPending;
 
   async function save() {
     if (disabled) return;
@@ -152,18 +151,8 @@ function SheetBody({
   }
 
   /**
-   * 追加在庫の個数変更。
-   * 種類の追加・改名・削除と警告ラインは在庫の設定ページ
-   * （app/(tabs)/manage/[laundryId].tsx）へ移した。ここでは個数だけ触る。
-   */
-  function changeExtra(updated: ExtraStock) {
-    setExtras((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-  }
-
-  /**
    * 故障フラグの切り替え。
    * ⚠️ 故障を解除したら故障内容も消す（Web の useMachinesState.js の changeMachineState と同じ）。
-   *    残したままにすると直ったはずの機械に古い故障内容がぶら下がる。
    */
   function toggleBreak(machineId: string, next: boolean) {
     Haptics.selectionAsync().catch(() => {});
@@ -173,12 +162,6 @@ function SheetBody({
       )
     );
   }
-
-  function changeComment(machineId: string, comment: string) {
-    setMachines((prev) => prev.map((m) => (m.id === machineId ? { ...m, comment } : m)));
-  }
-
-  const isPending = updateStock.isPending || updateMachines.isPending;
 
   return (
     // 追加在庫の名前入力がキーボードで隠れないようにシートごと持ち上げる
@@ -242,7 +225,11 @@ function SheetBody({
                       key={item.id}
                       label={item.name.trim() || "（名前なし）"}
                       value={item.count}
-                      onChange={(count) => changeExtra({ ...item, count })}
+                      onChange={(count) =>
+                        setExtras((prev) =>
+                          prev.map((x) => (x.id === item.id ? { ...x, count } : x))
+                        )
+                      }
                       disabled={disabled}
                     />
                   ))}
@@ -269,68 +256,18 @@ function SheetBody({
                 </Pressable>
               )}
             </>
-          ) : machines.length === 0 ? (
-            <Muted>設備が登録されていません。</Muted>
           ) : (
-            machines.map((machine) => (
-              <View
-                key={machine.id}
-                style={[
-                  styles.machineBox,
-                  {
-                    backgroundColor: machine.break ? "#FFF7ED" : "#ECFEFF",
-                    borderColor: machine.break ? color.orange200 : color.cyan200,
-                  },
-                ]}
-              >
-                <View style={styles.machineRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.machineName}>{machine.name}</Text>
-                    <View
-                      style={[
-                        styles.badge,
-                        { backgroundColor: machine.break ? color.orange300 : color.cyan200 },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.badgeText,
-                          { color: machine.break ? "#7C2D12" : color.tealDeeper },
-                        ]}
-                      >
-                        {machine.break ? "故障中" : "稼働中"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Switch
-                    value={machine.break}
-                    disabled={disabled}
-                    onValueChange={(next) => toggleBreak(machine.id, next)}
-                    trackColor={{ true: color.orange500, false: color.divider }}
-                  />
-                </View>
-
-                {/* 故障内容。Web の MachinesState.jsx も故障中のときだけ出す */}
-                {machine.break && (
-                  <View style={styles.commentBox}>
-                    <Text style={styles.commentLabel}>故障内容</Text>
-                    {canEdit ? (
-                      <TextInput
-                        value={machine.comment || ""}
-                        onChangeText={(text) => changeComment(machine.id, text)}
-                        editable={!disabled}
-                        placeholder="故障の詳細を入力してください..."
-                        placeholderTextColor={color.textFaint}
-                        multiline
-                        style={styles.commentInput}
-                      />
-                    ) : (
-                      <Muted>{machine.comment || "（詳細なし）"}</Muted>
-                    )}
-                  </View>
-                )}
-              </View>
-            ))
+            <MachineStateList
+              machines={machines}
+              canEdit={canEdit}
+              disabled={disabled}
+              onToggleBreak={toggleBreak}
+              onChangeComment={(machineId, comment) =>
+                setMachines((prev) =>
+                  prev.map((m) => (m.id === machineId ? { ...m, comment } : m))
+                )
+              }
+            />
           )}
         </ScrollView>
 
@@ -397,7 +334,13 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
-  sheetIcon: { width: 36, height: 36, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  sheetIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   sheetTitle: { flex: 1, fontFamily: font.uiBold, fontSize: 16, color: color.tealDeeper },
   sheetClose: {
     width: 32,
@@ -408,52 +351,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  counterBox: {
-    borderWidth: 1,
-    borderColor: color.cyan100,
-    borderRadius: radius.card - 4,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  counterLabel: { fontFamily: font.uiBold, fontSize: 14, color: color.tealDeeper, marginBottom: spacing.md },
-  counterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  counterButton: {
-    width: HIT_SIZE,
-    height: HIT_SIZE,
-    borderRadius: radius.pill,
-    backgroundColor: "#475569",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  counterValue: { fontFamily: font.mono, fontSize: 30, color: "#164E63" },
-
-  thresholdRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: color.divider,
-  },
-  thresholdLabel: { flex: 1, fontFamily: font.ui, fontSize: 12, color: color.textMuted },
-  thresholdStepper: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  thresholdButton: {
-    width: HIT_SIZE,
-    height: HIT_SIZE,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.orange200,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  thresholdValue: {
-    minWidth: 46,
-    textAlign: "center",
+  extraSection: { marginTop: spacing.sm },
+  extraHeading: {
     fontFamily: font.uiBold,
-    fontSize: 13,
-    color: color.orange500,
+    fontSize: 12,
+    color: color.textMuted,
+    marginBottom: spacing.md,
   },
 
   settingsLink: {
@@ -471,96 +374,6 @@ const styles = StyleSheet.create({
   },
   settingsLinkLabel: { fontFamily: font.uiBold, fontSize: 14, color: color.tealDeeper },
   settingsLinkHint: { fontFamily: font.ui, fontSize: 11, color: color.textMuted, marginTop: 1 },
-
-  extraSection: { marginTop: spacing.sm },
-  extraHeading: {
-    fontFamily: font.uiBold,
-    fontSize: 12,
-    color: color.textMuted,
-    marginBottom: spacing.md,
-  },
-  extraHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
-  extraNameInput: {
-    flex: 1,
-    minHeight: HIT_SIZE,
-    borderWidth: 1,
-    borderColor: color.divider,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    fontFamily: font.uiBold,
-    fontSize: 14,
-    color: color.tealDeeper,
-  },
-  removeButton: {
-    width: HIT_SIZE,
-    height: HIT_SIZE,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  confirmBox: { backgroundColor: color.red50, borderColor: color.red400, gap: spacing.md },
-  confirmText: { fontFamily: font.uiBold, fontSize: 14, color: color.textMain },
-  confirmActions: { flexDirection: "row", gap: spacing.sm },
-  confirmCancel: {
-    flex: 1,
-    minHeight: HIT_SIZE,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.divider,
-    backgroundColor: color.cardBg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  confirmCancelLabel: { fontFamily: font.uiBold, fontSize: 14, color: color.textMuted },
-  confirmDelete: {
-    flex: 1,
-    minHeight: HIT_SIZE,
-    borderRadius: radius.md,
-    borderWidth: 2,
-    borderColor: color.red400,
-    backgroundColor: color.cardBg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  confirmDeleteLabel: { fontFamily: font.uiBold, fontSize: 14, color: color.red500 },
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    minHeight: HIT_SIZE,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.cyan300,
-  },
-  addLabel: { fontFamily: font.uiBold, fontSize: 14, color: color.teal },
-
-  machineBox: {
-    borderWidth: 2,
-    borderRadius: 14,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  machineRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  machineName: { fontFamily: font.uiBold, fontSize: 14, color: color.textMain },
-  badge: { alignSelf: "flex-start", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginTop: 4 },
-  badgeText: { fontFamily: font.uiBold, fontSize: 11 },
-  commentBox: {
-    marginTop: spacing.md,
-    backgroundColor: color.cardBg,
-    borderWidth: 1,
-    borderColor: color.orange200,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  commentLabel: { fontFamily: font.uiBold, fontSize: 13, color: color.textMain, marginBottom: spacing.sm },
-  commentInput: {
-    fontFamily: font.ui,
-    fontSize: 15,
-    color: color.textMain,
-    minHeight: 72,
-    textAlignVertical: "top",
-  },
 
   sheetFooter: {
     flexDirection: "row",

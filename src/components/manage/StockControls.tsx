@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { STOCK_UNIT } from "@/components/manage/laundryState";
-import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
+import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens";
 
 /**
  * 在庫まわりの共通部品。
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  counterValue: { fontFamily: font.mono, fontSize: 30, color: "#164E63" },
+  counterValue: { ...numeric, fontSize: 30, color: "#164E63" },
 
   thresholdRow: {
     flexDirection: "row",

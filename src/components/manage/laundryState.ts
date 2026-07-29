@@ -1,4 +1,5 @@
 import type { ExtraStock, LaundryState, MachineState } from "@/api/types";
+import { makeUuid } from "@/shared/uuid";
 
 /**
  * laundry_state（在庫・設備）の読み方をまとめたもの。
@@ -98,11 +99,3 @@ export function makeExtraStock(): ExtraStock {
   return { id: makeUuid(), name: "", count: 0, threshold: DEFAULT_STOCK_THRESHOLD };
 }
 
-/** expo-crypto を足さずに済ませるための簡易 uuid v4（集金画面と同じ作り） */
-function makeUuid(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
