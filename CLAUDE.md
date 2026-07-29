@@ -122,6 +122,13 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 - Edge Function `collect-reminder` は**デプロイ済み**（`--use-api --no-verify-jwt`）。
   `CRON_SECRET` も設定済み。`?dryRun=1` で送信直前まで全経路が通ることを確認した
   （`targetOrgs:2 / recipients:3 / tokens:0`）
+- **Web は本番に反映済み**（`coin-laundry-app` の `main` に merge 済み）。
+  本番で確認した挙動:
+  - `/api/v1/devices` `/api/v1/notifications/prefs` `/api/v1/billing/apple/verify` … 未認証で 401
+  - `POST /api/apple/notifications` … 偽の JWS を 400 で拒否（Apple が叩く経路なので 401 にはしない）
+  - `/app/terms` `/app/privacy` … 200。**描画後の HTML に他ページへのリンクが 1 本も無い**
+    （ナビ・フッター・戻るリンクが全て消えている。Guideline 3.1.3(a)）
+  - `/terms` `/tokushoho`（公開側）は従来どおりナビと戻るリンクが出る
 
 ### 残っているタスク
 
@@ -148,8 +155,12 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 - [ ] **有料アプリ契約を Active にする**（審査中。数日〜1週間）
       ⚠️ Active でないと `fetchProducts` は空配列を返すだけでエラーも出ない
 - [ ] サブスク商品 2 つを作成（`com.collecie.app.pro.monthly` / `.max.monthly`、グループ `collecie_plan`）
-- [ ] App Store Server Notifications V2 の URL 登録（`/api/apple/notifications`）
-- [ ] Vercel に `APPLE_BUNDLE_ID` と `APPLE_APP_APPLE_ID` を設定
+- [ ] App Store Server Notifications V2 の URL 登録
+      （`https://www.collecie.com/api/apple/notifications`。**本番 URL を入れる。**
+      プレビュー URL を登録するとそのデプロイが消えた時点で通知が届かなくなる）
+- [ ] Vercel に `APPLE_APP_APPLE_ID` を設定（App Store Connect でアプリを作ると採番される数値 ID）
+      ⚠️ **Production の検証にだけ要る。** Sandbox は未設定のまま通るので、採番されてから足せばよい。
+      `APPLE_BUNDLE_ID` は既定値 `com.collecie.app` が `app.json` と一致しているので不要
 - [ ] Sandbox テスターで購入・復元・アップグレードを確認
 - [ ] **未検証の経路**: 購入フロー全体（商品取得すらできていない）
 
@@ -158,7 +169,6 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 - [ ] Supabase の Apple プロバイダが未有効（実機の Apple サインインが失敗する。
       Guideline 4.8 で必須なので審査前に必ず）
 - [ ] `/api/invite` が認証なしの Resend リレーになっている
-- [ ] Web の課金まわり（`/api/apple/*`、`/api/v1/billing/*`、Stripe の二重課金ガード）が**未デプロイ**
 
 **E. 審査提出前**
 
