@@ -10,9 +10,17 @@
 - **ScrollView は `onScroll` しか呼ばない。** `ScrollViewBase` が DOM の `scroll` イベントだけを繋いでいる（`node_modules/react-native-web/dist/exports/ScrollView/ScrollViewBase.js` で確認済み）。したがって以下は**すべて一度も発火しない**:
   - `onScrollBeginDrag` / `onScrollEndDrag` / `onMomentumScrollEnd`
   - `onScroll` の event にも **`velocity` が無い**（`normalizeScrollEvent` が組まない）
-  - 代わりに RNW が内部で 100ms の scrollend タイマーを持ち、停止後に最後の `onScroll` を 1 回出す。スクロール終了はこれを自前でデバウンスして検出する（`src/components/home/useCardPaging.ts`）
+  - 代わりに RNW が内部で 100ms の scrollend タイマーを持ち、停止後に最後の `onScroll` を 1 回出す
+- **カルーセルを ScrollView で作らない。** 上のとおり Web では「どこから払い始めたか」「どれくらいの速さか」が取れないため、指で払う操作を組み立てられない。ブラウザ標準のスクロール（＝スライド）に乗るだけになる。`PanResponder` + `Animated` で自前に取ること（`src/components/home/useCardSwipe.ts`）。どちらも RN コアで RNW にも実装があり、ブラウザと実機で同じ経路になる
 - **`snapToInterval` は無視される。** CSS scroll-snap が効くのは `pagingEnabled` のときだけ。1 枚ずつ送りたいなら自前で `scrollTo` する
 - **`BackHandler` は `console.error` を出す。** `Platform.OS === "android"` でガードする
+- **`FormData` は DOM のものなので `{ uri, name, type }` を受け付けない。** append すると `"[object Object]"` という文字列が送られ、サーバー側の `formData()` はファイルとして読めない。expo-image-picker が web で返す `asset.file`（`File`）を渡すこと（`src/api/queries.ts` の `uploadStoreImage`）
+
+## expo-image-picker
+
+- **選んだ画像の形式を `uri` の拡張子から判定しない。** web の `uri` は `blob:http://…/uuid`、Android は `content://…` で**どちらも拡張子が無い**。末尾を切り出すと URI 全体が「拡張子」になり、jpeg を選んでも弾かれる。`asset.mimeType`（web は `asset.file.type` も）を見ること
+- **iPhone で撮った写真は既定で HEIC。`quality` を下げても JPEG にならない**（`ImageUtils.swift` が `case UTType.heic: return (rawData, ".heic")` で素通しする）。`preferredAssetRepresentationMode: Compatible` を渡すと PHPicker 側が JPEG にして返す
+- **端末が返す `image/jpg` をそのまま BFF へ送らない。** `/api/v1/stores/images` は `["image/jpeg", "image/png"]` と厳密に比較するので、`image/jpeg` に正規化してから送る
 
 ## React Native 0.86
 
@@ -27,6 +35,60 @@
 - `(tabs)` グループは URL に現れない
 - `stores.tsx` と `stores/_layout.tsx` は**共存できない**。ディレクトリ化するなら単体ファイルは消す
 - **フッター（タブバー）を残したい画面はタブ配下に Stack をネストする。** `app/(tabs)/stores/_layout.tsx` がその例。`app/` 直下に置くとタブバーが消える
+
+## FlashList
+
+- **並び順を変えたらスクロール位置を明示的に戻す。** 行の構成ごと変わる（売上順は月見出しが無い／日付順はある）ため、位置を保つと同じ座標に別の行が来て画面が飛ぶ。`app/(tabs)/revenue.tsx` は売上履歴の見出しの y を `onLayout` で測っておき、並び替えのたびにそこへ `scrollToOffset` する。**「さらに表示」では動かさない**（押した位置に留まりたい操作）
+- **`scrollToOffset` の `skipFirstItemOffset` は既定 `true` で、これは「ヘッダ高さを足さない」＝生のコンテンツ座標という意味。** 名前から受ける印象と逆なので注意（`false` にすると `firstItemOffset` が加算される）
+- ヘッダ内の要素の `onLayout` の `y` は ListHeaderComponent 基準。コンテンツ座標にするには `contentContainerStyle` の `paddingTop` を足す
+
+## Windows
+
+- **同じディレクトリに `historyRows.ts` と `HistoryRows.tsx` を置けない。** 大文字小文字しか違わないファイルを tsc が同一視して TS1149 / TS1261 になる。役割で名前を分ける（`historyRows.ts`＝組み立て、`FundHistoryRows.tsx`＝見た目）
+
+## App Store 審査
+
+- **アプリ内 WebView に出してよいのは Web 側の `/app/*` だけ。** `/terms` は「Proプラン ¥780/月」、`/tokushoho` は特商法の性質上**必ず**販売価格と決済条件を書く、`/help` は「アップグレードができます」を含む。いずれも Guideline 3.1.3(a)（アプリ外の購入手段への誘導）に触れる
+- **本文を消しただけでは足りない。** Next の `src/app/layout.js` が全ページを Navbar + Footer で包んでいるので、規約ページからサイトのナビ経由でプラン画面へ辿れてしまう。`appLegalPaths.js` に載せてナビごと消し、アプリ側も `onShouldStartLoadWithRequest` で許可リスト外の遷移を止める。**片方だけ直しても意味がない**
+- **特商法はアプリからリンクしない。** アプリ内課金が無い以上、アプリに掲示義務は生じない
+
+## プッシュ通知（expo-notifications）
+
+- **Expo Go では届かない。** SDK 53 以降、iOS の Expo Go はリモートプッシュに対応しない。
+  確認には EAS の development build が要る
+- **`getExpoPushTokenAsync()` には projectId が要る。** `eas init` を実行するまで
+  `app.json` に入らないので、それまでトークンは取れない（`src/push/pushToken.ts` が
+  事前に確認して警告を出す）
+- **シミュレータではトークンを取れない。** `Device.isDevice` で弾くこと
+- ⚠️ **一度拒否されるとアプリからは二度とダイアログを出せない。**
+  `requestPermissionsAsync()` は何も表示せず即 denied を返す。設定アプリへ誘導するしかない。
+  だから起動直後に聞かず、初回の集金登録後にプライミングを挟んでいる
+- **通知の許可を集金モーダルの中で求めない。** iOS は Modal の上に Modal を重ねられない。
+  閉じてホームに戻ってから `usePushPriming` が出す
+- **expo-iap と違い、web でも落ちない。** `*.native.js` の隣に web 用の `*.js` があり、
+  リスナーは no-op、許可はブラウザの Notification API にフォールバックする。
+  ただし呼ぶたびに console.warn が出るので `isPushSupported()` で塞いでいる
+- **`react-native-mmkv` v4 のキー削除は `remove()`。** `delete()` は存在しない
+
+## アプリ内課金（expo-iap / StoreKit）
+
+まだ実機で通していない。以下は Apple のドキュメントと expo-iap の実装から分かっている分。
+
+- **Expo Go では動かない。** ネイティブモジュールなので EAS の development build が要る。
+  Expo Go で開くと `initConnection` の時点で失敗する
+- ⚠️ **有料アプリ契約（Paid Apps Agreement）が Active でないと `fetchProducts` は
+  空配列を返すだけで、エラーも警告も出ない。** 商品が出ないときの原因はほぼこれ。
+  商品を作っただけでは足りず、App Store Connect > ビジネス で銀行口座と税務情報が
+  受理されている必要がある
+- **`fetchProducts` に `type: "subs"` を渡さないと自動更新サブスクは 1 件も返らない**
+  （既定は in-app 扱い）
+- **`onPurchaseSuccess` は自分が `requestPurchase` したときだけ来るとは限らない。**
+  アプリを閉じている間に完了した購入や、承認待ち（Ask to Buy）が通った購入も
+  接続時にまとめて流れてくる。「購入ボタンを押した直後」を前提に組まないこと
+- **Sandbox の購読は実時間 3〜60 分で更新・失効を繰り返す**（1 か月 = 5 分など）。
+  「勝手に失効した」ように見えるのは仕様
+- `deepLinkToSubscriptions()` は iOS の購読管理を開くだけ。**自前の「解約する」ボタンを
+  作らない**（押しても何も起きない）
 
 ## 検証
 

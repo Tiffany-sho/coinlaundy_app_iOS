@@ -43,7 +43,13 @@
 - **認可判定をアプリ側で信じない。** ロールは UI の出し分けにだけ使う。正は Server Action。
 - **日付は必ず JST 基準で組み立てる。** `src/shared/date.ts` を通す。詳細は `docs/contracts.md`。
 - **集金登録は必ず Outbox 経由で送る。** 直接 POST しない。`Idempotency-Key`（uuid v4）を画面を開いた時点で発行し、下書きと一緒に保持する。
-- **課金導線を一切置かない。** アップグレードボタン・価格表・外部リンクに加え、「Web サイトで契約できます」等の**言及**も App Store のリジェクト事由になる。プランは read-only 表示のみ。
+- **課金はアプリ内課金（StoreKit）だけ。** 2026-07-29 に「read-only 表示のみ」から方針転換した。
+  出してよいのは `app/settings/plan.tsx` の購入導線と **StoreKit が返した `displayPrice`** のみ。
+  価格を文字列でハードコードしない（地域・為替・価格改定でずれ、Guideline 3.1.2 に触れる）。
+  **外部購入への言及の禁止は今も有効。** 「Web サイトで契約できます」等の**言及**、`collecie.com` への
+  購入リンク、Stripe を想起させる表記はいずれもリジェクト事由。
+- **購入はサーバで検証してから確定させる。** `purchaseToken`（JWS）を `POST /billing/apple/verify` に
+  送り、**200 が返ってから** `finishTransaction()` を呼ぶ。順序を逆にすると検証に失敗した購入が宙に浮く。
 
 ## API の呼び出し方
 
@@ -67,10 +73,12 @@
 | ディレクトリ | 対応する画面 | 中身の例 |
 |---|---|---|
 | `common/` | どこからでも使う汎用部品 | `ui` `form` `dialog` `toast` `SegmentedTabs` `CalendarPicker` |
-| `home/` | `app/(tabs)/index.tsx` | `MonthlySalesCarousel` `QuickActions` `useCardPaging` |
+| `home/` | `app/(tabs)/index.tsx` | `MonthlySalesCarousel` `QuickActions` `useCardSwipe` |
 | `stores/` | `app/(tabs)/stores/` | `StoreForm` `StoreImagePicker` `MachineListSheet` |
 | `revenue/` | `app/(tabs)/revenue.tsx` | `charts` `MonthlyRevenueCard` `MonthRangePicker` |
 | `manage/` | `app/(tabs)/manage/` | `StateEditSheet` `StockControls` `laundryState` |
+
+`revenue/` は「組み立て（純関数）」と「見た目」を分けてある。`historyRows.ts` が売上履歴の行を組み、`FundHistoryRows.tsx` がそれを描く。条件分岐を追うときは前者だけ読めば足りる。
 
 画面が増えたら同じ規則でディレクトリを足す（`collect/` `settings/` など）。
 
@@ -91,6 +99,9 @@
 - 成否の通知 → `useToast()`。**ミューテーションには成功・失敗どちらのトーストも必ず付ける**
 - 入力欄 → `@/components/common/form` の `Input` / `Field` / `RadioCardGroup` / `Checkbox`
 - 色・余白 → `src/theme/tokens.ts`。生の色コードを直接書かない
+- 金額・数値 → `numeric` を**丸ごと展開**する（`style={{ ...numeric, fontSize: 20 }}`）。
+  `fontFamily: font.num` だけ書くと `fontVariant` が落ち、Inter は等幅ではないので
+  金額を縦に並べたとき桁が揃わなくなる
 
 ### コメント
 
@@ -101,9 +112,56 @@
 Expo アプリは実装済み（タブ 4 本 + 集金モーダル + 設定）。ブラウザ実機確認の段階。
 BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参照）。
 
-残っている大きめの課題:
+アプリ内課金（StoreKit）とプッシュ通知はコードを実装済み。**ただしどちらも動作確認は
+まだ 1 度もできていない。** Expo Go では両方とも動かないので EAS の development build が
+要る（`eas.json` は用意済み）。
 
-- Supabase の Apple プロバイダが未有効（実機の Apple サインインが失敗する）
-- マイグレーション 002 が未適用
-- App Store 審査用の `/terms/app` ページが未作成
-- `/api/invite` が認証なしの Resend リレーになっている
+### 済んでいること（2026-07-30 時点）
+
+- マイグレーション **002 / 003 は適用済み**（PostgREST で列の存在を確認）
+- Edge Function `collect-reminder` は**デプロイ済み**（`--use-api --no-verify-jwt`）。
+  `CRON_SECRET` も設定済み。`?dryRun=1` で送信直前まで全経路が通ることを確認した
+  （`targetOrgs:2 / recipients:3 / tokens:0`）
+
+### 残っているタスク
+
+**A. 実機で動かす（ここが最大の関門。ほぼ全部がここ待ち）**
+
+- [ ] `eas init` — `app.json` に `extra.eas.projectId` が入る。
+      ⚠️ **これが無いと `getExpoPushTokenAsync` が落ちてトークンを取れない**
+- [ ] `eas device:create` — 実機の UDID 登録。忘れるとインストールできない
+- [ ] EAS の環境変数に `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` を登録
+      （`.env.local` は EAS に渡らない）
+- [ ] `eas build --profile development --platform ios` → 実機にインストール
+- [ ] アプリ本体の実機確認（**一度も実機で動かしていない**）
+
+**B. プッシュ通知（サーバー側は完成。端末待ち）**
+
+- [ ] 004（pg_cron）の適用と、`net._http_response` が 200 を返すことの確認
+      ⚠️ 403 なら Vault の値と `CRON_SECRET` が食い違っている
+- [ ] 実機で通知を許可 → `?dryRun=1` で `wouldSend` が 1 以上になることを確認
+- [ ] dryRun を外して実際に届くことを確認
+- [ ] **未検証の経路**: メッセージ組み立てと `sendToExpo`（トークン 0 件だと手前で return するため）
+
+**C. アプリ内課金（App Store Connect 待ち）**
+
+- [ ] **有料アプリ契約を Active にする**（審査中。数日〜1週間）
+      ⚠️ Active でないと `fetchProducts` は空配列を返すだけでエラーも出ない
+- [ ] サブスク商品 2 つを作成（`com.collecie.app.pro.monthly` / `.max.monthly`、グループ `collecie_plan`）
+- [ ] App Store Server Notifications V2 の URL 登録（`/api/apple/notifications`）
+- [ ] Vercel に `APPLE_BUNDLE_ID` と `APPLE_APP_APPLE_ID` を設定
+- [ ] Sandbox テスターで購入・復元・アップグレードを確認
+- [ ] **未検証の経路**: 購入フロー全体（商品取得すらできていない）
+
+**D. 以前からの積み残し**
+
+- [ ] Supabase の Apple プロバイダが未有効（実機の Apple サインインが失敗する。
+      Guideline 4.8 で必須なので審査前に必ず）
+- [ ] `/api/invite` が認証なしの Resend リレーになっている
+- [ ] Web の課金まわり（`/api/apple/*`、`/api/v1/billing/*`、Stripe の二重課金ガード）が**未デプロイ**
+
+**E. 審査提出前**
+
+- [ ] スクリーンショット・App プレビュー・説明文
+- [ ] 文言レビュー（外部購入への言及が無いこと。Guideline 3.1.3(a)）
+- [ ] アカウント削除の動線確認（Guideline 5.1.1(v)）
