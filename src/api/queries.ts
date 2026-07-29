@@ -1,4 +1,10 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type {
   ActionMessage,
@@ -92,10 +98,28 @@ export function uploadStoreImage(file: {
   uri: string;
   name: string;
   type: string;
+  /**
+   * ⚠️ ブラウザで確認するときは必須。react-native-web の FormData は素の DOM の FormData で、
+   *    { uri, name, type } を append すると "[object Object]" という文字列になって送られる。
+   *    expo-image-picker が web で返す asset.file をそのまま渡すこと。
+   */
+  blob?: Blob;
 }): Promise<StoreImage> {
   const form = new FormData();
-  // React Native の FormData はファイルを { uri, name, type } で受け取る（Blob 化は不要）
-  form.append("file", file as unknown as Blob, file.name);
+  if (file.blob) {
+    // ⚠️ BFF は part の Content-Type を見るが、web では Blob 自身の type がそれになる。
+    //    呼び出し側が正規化した type と食い違うときは包み直す
+    const part =
+      file.blob.type === file.type ? file.blob : new Blob([file.blob], { type: file.type });
+    form.append("file", part, file.name);
+  } else {
+    // React Native の FormData はファイルを { uri, name, type } で受け取る（Blob 化は不要）
+    form.append(
+      "file",
+      { uri: file.uri, name: file.name, type: file.type } as unknown as Blob,
+      file.name
+    );
+  }
   form.append("filename", file.name);
   return apiFetch<StoreImage>("/stores/images", { method: "POST", body: form });
 }
@@ -161,6 +185,48 @@ export function useFundList(storeId?: string) {
     // 満たない場合は最終ページ
     getNextPageParam: (lastPage, allPages) =>
       lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
+  });
+}
+
+/** 売上履歴の並び替え軸。値は collect_funds の列名そのもの（サーバの ORDER BY に渡る） */
+export type FundOrder = "date" | "totalFunds";
+
+/**
+ * 売上履歴。**全期間ぶんをサーバに並べさせて受け取る。**
+ *
+ * ⚠️ 期間を区切って取らないこと。「売上が高い順」の先頭が、取ってきた期間の中の
+ *    最高額でしかなくなる。並び替えは常に全データに対して効く必要がある。
+ *    一度に出す件数を絞るのは受け取ったあとの話（historyRows.ts）。
+ *
+ * ⚠️ useFundList（offset + limit）を売上履歴に使わないこと。あちらが呼ぶ
+ *    getOrgCollectFundsPaginated は startEpoch を「2 か月前の月初」に固定しており、
+ *    offset をいくら進めても**それより古いデータは絶対に返ってこない**。
+ *
+ * ⚠️ 並び替えはサーバの ORDER BY に任せること（order / asc を渡す）。
+ *    件数が増えたときにクライアントで並べ替えるのは無駄。
+ */
+export function useFundHistory({
+  storeId,
+  order,
+  asc,
+}: {
+  storeId?: string;
+  order: FundOrder;
+  asc: boolean;
+}) {
+  return useQuery({
+    queryKey: [...queryKeys.funds, "history", storeId ?? null, order, asc] as const,
+    queryFn: () => {
+      // from=0 かつ to 省略＝全期間（BFF の funds/route.js が開放端に対応済み）
+      const params = new URLSearchParams({ from: "0", order, asc: String(asc) });
+      if (storeId) params.set("storeId", storeId);
+      return apiFetch<FundListItem[]>(`/funds?${params.toString()}`);
+    },
+    /**
+     * 並び順を変えるとキーが変わる。これが無いと差し替えのたびに一覧が空になって
+     * 画面が飛ぶので、前の並びを出したまま裏で取り直す。
+     */
+    placeholderData: keepPreviousData,
   });
 }
 

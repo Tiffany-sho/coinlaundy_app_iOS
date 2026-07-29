@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Card } from "@/components/common/ui";
-import { color, font, spacing } from "@/theme/tokens";
+import { color, font, spacing, numeric } from "@/theme/tokens";
 import type { MonthlyPoint } from "@/api/types";
 
 /**
@@ -44,7 +44,7 @@ export function MonthlySummaryTable({ data }: { data: MonthlyPoint[] }) {
       {rows.map((row, i) => (
         <View key={row.label} style={[styles.tr, i % 2 === 1 && { backgroundColor: "#F8FAFC" }]}>
           <Text style={[styles.td, { flex: 1.4 }]}>{row.label}</Text>
-          <Text style={[styles.td, styles.right, styles.mono]}>{row.total.toLocaleString()}</Text>
+          <Text style={[styles.td, styles.right, styles.num]}>{row.total.toLocaleString()}</Text>
           <RateCell value={row.momRate} />
           <RateCell value={row.yoyRate} />
         </View>
@@ -60,7 +60,7 @@ function RateCell({ value }: { value: number | null }) {
   const positive = value >= 0;
   return (
     <Text
-      style={[styles.td, styles.right, styles.mono, { color: positive ? "#059669" : color.red500 }]}
+      style={[styles.td, styles.right, styles.num, { color: positive ? "#059669" : color.red500 }]}
     >
       {positive ? "+" : ""}
       {value.toFixed(1)}%
@@ -86,5 +86,5 @@ const styles = StyleSheet.create({
   tr: { flexDirection: "row", paddingVertical: spacing.sm, alignItems: "center" },
   td: { flex: 1, fontFamily: font.ui, fontSize: 12, color: color.textMain },
   right: { textAlign: "right" },
-  mono: { fontFamily: font.mono },
+  num: { ...numeric },
 });

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
-import { color, font, radius, shadow, spacing, STORE_COLORS } from "@/theme/tokens";
+import { color, font, radius, spacing, STORE_COLORS, numeric } from "@/theme/tokens";
 
 /**
  * グラフは素の View だけで描く。
@@ -111,8 +111,13 @@ export type StackedPoint = {
  * 月別売上の積み上げ棒。
  *
  * Web の ManyCoinDataChart.jsx が `<Bar stackId="stack">` を店舗ぶん並べて
- * 1 本の棒を店舗色で積み上げている。棒をタップすると Web のツールチップと同じく
- * 店舗ごとの内訳と合計を出す。凡例も Web と同じく棒の下に置く。
+ * 1 本の棒を店舗色で積み上げている。棒をタップすると、その月の店舗別内訳を
+ * **グラフの下**に一覧で出す。
+ *
+ * ⚠️ 内訳を棒の直上に浮かせる吹き出しにしない。棒が細いと吹き出しが指で隠れ、
+ *    端の月では位置を丸める必要があり、行数が増えるとグラフに被る。
+ *    下に置けば店舗が何店あっても縦に伸ばせるし、指の下に入らない。
+ *    凡例は内訳一覧が色見本を兼ねるので別に置かない（同じ行が 2 回並ぶだけ）。
  *
  * MonthlyBarChart（単色）は店舗別の内訳が取れないときの退避先として残してある。
  */
@@ -123,10 +128,8 @@ export function MonthlyStackedBarChart({
   data: StackedPoint[];
   series: StackSeries[];
 }) {
-  /** 吹き出しを出している月。null = 閉じている */
+  /** 内訳を出している月。null = まだ押していない（＝最新月） */
   const [selected, setSelected] = useState<string | null>(null);
-  /** 吹き出しの左右位置を決めるのに要る。棒の中心から出して画面端で丸める */
-  const [plotWidth, setPlotWidth] = useState(0);
 
   if (data.length === 0 || series.length === 0) {
     return <Text style={styles.empty}>表示できるデータがありません</Text>;
@@ -134,6 +137,11 @@ export function MonthlyStackedBarChart({
 
   const max = Math.max(...data.map((p) => p.total), 1);
   const active = data.find((p) => p.month === selected) ?? data[data.length - 1];
+
+  /** 一覧の中身。金額の多い順。0 円の店舗も色見本として末尾に残す（凡例を兼ねるため） */
+  const rows = series
+    .map((s) => ({ ...s, value: active.parts[s.key] ?? 0 }))
+    .sort((a, b) => b.value - a.value);
 
   // 棒が細くなると全ての月にラベルを置けない。12 本を超えたら間引く
   const labelStep = Math.ceil(data.length / 12);
@@ -147,23 +155,6 @@ export function MonthlyStackedBarChart({
       lastYear = year;
     }
   }
-
-  /** 吹き出しの中身。金額の多い順で、0 円の店舗は並べない */
-  const tipIndex = selected === null ? -1 : data.findIndex((p) => p.month === selected);
-  const tip =
-    tipIndex >= 0
-      ? {
-          point: data[tipIndex],
-          rows: series
-            .map((s) => ({ ...s, value: data[tipIndex].parts[s.key] ?? 0 }))
-            .filter((s) => s.value > 0)
-            .sort((a, b) => b.value - a.value),
-          heightPct: Math.max(
-            (data[tipIndex].total / max) * 100,
-            data[tipIndex].total > 0 ? 2 : 0
-          ),
-        }
-      : null;
 
   return (
     <View>
@@ -180,10 +171,7 @@ export function MonthlyStackedBarChart({
           <Text style={styles.axisLabel}>0</Text>
         </View>
 
-        <View
-          style={styles.plot}
-          onLayout={(e) => setPlotWidth(Math.round(e.nativeEvent.layout.width))}
-        >
+        <View style={styles.plot}>
           <View style={[styles.gridLine, { top: 0 }]} />
           <View style={[styles.gridLine, { top: "50%" }]} />
           <View style={[styles.gridLine, { bottom: 0 }]} />
@@ -196,10 +184,12 @@ export function MonthlyStackedBarChart({
                 <Pressable
                   key={point.month}
                   style={styles.barSlot}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${formatMonthLabel(point.month)}の内訳を見る`}
+                  accessibilityState={{ selected: isActive }}
                   onPress={() => {
                     Haptics.selectionAsync().catch(() => {});
-                    // 同じ棒をもう一度押したら閉じる
-                    setSelected((prev) => (prev === point.month ? null : point.month));
+                    setSelected(point.month);
                   }}
                 >
                   {/* 高さは % なので親（barSlot）に確定した高さが要る。
@@ -226,38 +216,6 @@ export function MonthlyStackedBarChart({
               );
             })}
           </View>
-
-          {/*
-            Web のツールチップに当たる内訳。棒の直上に浮かせる。
-            ⚠️ 以前は棒の上に常時展開していたので、店舗数ぶん縦を食ってグラフが潰れていた。
-               棒が高いときは上に出すと見切れるため、その場合だけ下向きに出す。
-          */}
-          {tip && tip.rows.length > 0 && (
-            <Pressable
-              onPress={() => setSelected(null)}
-              style={[
-                styles.tip,
-                tipOffset(tipIndex, data.length, plotWidth),
-                tip.heightPct > 55
-                  ? { top: `${100 - tip.heightPct}%`, marginTop: 6 }
-                  : { bottom: `${tip.heightPct}%`, marginBottom: 6 },
-              ]}
-            >
-              <View style={styles.tipHead}>
-                <Text style={styles.tipMonth}>{formatMonthLabel(tip.point.month)}</Text>
-                <Text style={styles.tipTotal}>¥{tip.point.total.toLocaleString()}</Text>
-              </View>
-              {tip.rows.map((item) => (
-                <View key={item.key} style={styles.breakdownRow}>
-                  <View style={[styles.swatch, { backgroundColor: item.color }]} />
-                  <Text style={styles.breakdownName} numberOfLines={1}>
-                    {item.name}店
-                  </Text>
-                  <Text style={styles.breakdownValue}>¥{item.value.toLocaleString()}</Text>
-                </View>
-              ))}
-            </Pressable>
-          )}
         </View>
       </View>
 
@@ -276,33 +234,52 @@ export function MonthlyStackedBarChart({
       </View>
       <Text style={styles.axisCaption}>月</Text>
 
-      {/* 凡例。Web も棒の下に色見本と店舗名を並べている */}
-      <View style={styles.legend}>
-        {series.map((s) => (
-          <View key={s.key} style={styles.legendItem}>
-            <View style={[styles.swatch, { backgroundColor: s.color }]} />
-            <Text style={styles.legendLabel} numberOfLines={1}>
-              {s.name}
-            </Text>
-          </View>
-        ))}
+      {/*
+        店舗別の内訳。押した棒に追従する（既定は一番右＝最新月）。
+        凡例を兼ねるので、その月に売上が無い店舗も色見本として ¥0 で残す。
+      */}
+      <View style={styles.breakdown}>
+        <View style={styles.breakdownHead}>
+          <Text style={styles.breakdownTitle}>{formatMonthLabel(active.month)}の店舗別</Text>
+          <Text style={styles.breakdownTotal}>¥{active.total.toLocaleString()}</Text>
+        </View>
+
+        {active.total === 0 ? (
+          <Text style={styles.breakdownEmpty}>この月の集金記録はありません</Text>
+        ) : (
+          rows.map((item) => {
+            const share = Math.round((item.value / active.total) * 100);
+            return (
+              <View key={item.key} style={styles.breakdownRow}>
+                <View
+                  style={[
+                    styles.swatch,
+                    { backgroundColor: item.color, opacity: item.value > 0 ? 1 : 0.35 },
+                  ]}
+                />
+                <Text
+                  style={[styles.breakdownName, item.value === 0 && styles.breakdownDim]}
+                  numberOfLines={1}
+                >
+                  {item.name}店
+                </Text>
+                <Text style={styles.breakdownShare}>{item.value > 0 ? `${share}%` : ""}</Text>
+                <Text
+                  style={[styles.breakdownValue, item.value === 0 && styles.breakdownDim]}
+                >
+                  ¥{item.value.toLocaleString()}
+                </Text>
+              </View>
+            );
+          })
+        )}
+
+        {data.length > 1 && (
+          <Text style={styles.breakdownHint}>棒を押すと、その月の内訳に切り替わります</Text>
+        )}
       </View>
     </View>
   );
-}
-
-/** 吹き出しの横幅。中身の文字数で伸び縮みさせると端の丸め計算ができない */
-const TIP_WIDTH = 168;
-
-/**
- * 吹き出しの左端。押した棒の中心に合わせつつ、グラフの外へはみ出さないよう丸める。
- * 幅がまだ測れていないうちは中央に置いておく。
- */
-function tipOffset(index: number, count: number, plotWidth: number) {
-  if (plotWidth <= 0) return { left: 0 };
-  const center = ((index + 0.5) / count) * plotWidth;
-  const left = Math.min(Math.max(center - TIP_WIDTH / 2, 0), Math.max(0, plotWidth - TIP_WIDTH));
-  return { left };
 }
 
 type StorePoint = { laundryId: string; laundryName: string; total: number };
@@ -356,7 +333,7 @@ const styles = StyleSheet.create({
   empty: { fontFamily: font.ui, fontSize: 13, color: color.textMuted, textAlign: "center", paddingVertical: spacing.xl },
   readout: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, marginBottom: spacing.md },
   readoutMonth: { fontFamily: font.ui, fontSize: 12, color: color.textMuted },
-  readoutValue: { fontFamily: font.mono, fontSize: 20, color: color.tealDeeper },
+  readoutValue: { ...numeric, fontSize: 20, color: color.tealDeeper },
   readoutCount: { fontFamily: font.ui, fontSize: 12, color: color.textFaint },
   plotRow: { flexDirection: "row", height: CHART_HEIGHT },
   yAxis: { width: 34, justifyContent: "space-between", paddingRight: spacing.xs },
@@ -374,43 +351,57 @@ const styles = StyleSheet.create({
   xSlot: { flex: 1, alignItems: "center" },
   xYear: { fontFamily: font.ui, fontSize: 8, color: color.textFaint, lineHeight: 10 },
   xMonth: { fontFamily: font.ui, fontSize: 9, color: color.textFaint, lineHeight: 12 },
-  /* 棒の上に浮かせる吹き出し。棒より手前に出すため zIndex / elevation を上げる */
-  tip: {
-    position: "absolute",
-    width: TIP_WIDTH,
-    backgroundColor: color.cardBg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.cyan200,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: 4,
-    zIndex: 10,
-    ...shadow.sm,
+  /* グラフの下に置く店舗別の内訳。凡例も兼ねる */
+  breakdown: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: color.divider,
+    gap: 2,
   },
-  tipHead: {
+  breakdownHead: {
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "space-between",
     gap: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: color.divider,
-    paddingBottom: 4,
-    marginBottom: 2,
+    marginBottom: spacing.xs,
   },
-  tipMonth: { fontFamily: font.ui, fontSize: 10, color: color.textMuted },
-  tipTotal: { fontFamily: font.mono, fontSize: 13, color: color.tealDeeper },
-  breakdownRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  breakdownName: { flex: 1, fontFamily: font.ui, fontSize: 11, color: color.textMuted },
-  breakdownValue: { fontFamily: font.mono, fontSize: 11, color: color.textMain },
+  breakdownTitle: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
+  breakdownTotal: { ...numeric, fontSize: 14, color: color.tealDeeper },
+  breakdownRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minHeight: 26,
+  },
+  breakdownName: { flex: 1, fontFamily: font.ui, fontSize: 12, color: color.textMuted },
+  /* 割合は右端の金額と揃えたいので幅を固定する。可変にすると行ごとに金額の左端がずれる */
+  breakdownShare: {
+    width: 34,
+    fontFamily: font.ui,
+    fontSize: 10,
+    color: color.textFaint,
+    textAlign: "right",
+  },
+  breakdownValue: { ...numeric, fontSize: 12, color: color.textMain },
+  breakdownDim: { color: color.textFaint },
+  breakdownEmpty: {
+    fontFamily: font.ui,
+    fontSize: 12,
+    color: color.textFaint,
+    paddingVertical: spacing.sm,
+  },
+  breakdownHint: {
+    fontFamily: font.ui,
+    fontSize: 10,
+    color: color.textFaint,
+    marginTop: spacing.xs,
+  },
   swatch: { width: 8, height: 8, borderRadius: 2 },
-  legend: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginTop: spacing.md },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 5, maxWidth: 120 },
-  legendLabel: { fontFamily: font.ui, fontSize: 10, color: color.textMuted, flexShrink: 1 },
   rankRow: { marginBottom: spacing.md },
   rankHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 },
   rankName: { fontFamily: font.uiBold, fontSize: 13, color: color.textMain, flex: 1 },
-  rankValue: { fontFamily: font.mono, fontSize: 13, color: color.tealDeeper },
+  rankValue: { ...numeric, fontSize: 13, color: color.tealDeeper },
   rankTrack: { height: 10, backgroundColor: color.divider, borderRadius: radius.pill, overflow: "hidden" },
   rankFill: { height: "100%", borderRadius: radius.pill },
 });

@@ -4,11 +4,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap } from "@/api/queries";
 import { color, font } from "@/theme/tokens";
 
-/** タブバーの中身（アイコン + ラベル）の高さ。下端の余白はここに含めない */
-const TAB_BAR_CONTENT_HEIGHT = 60;
+/**
+ * タブバーの中身（アイコン + ラベル）の高さ。下端の余白はここに含めない。
+ * ⚠️ 減らさないこと。アイコン 22px + ラベル 11px + 行間で、これ未満だとラベルが切れる。
+ */
+const TAB_BAR_CONTENT_HEIGHT = 66;
 
 /** ホームインジケータが無い端末でも下に指を置ける最低限の余白 */
-const TAB_BAR_MIN_BOTTOM = 12;
+const TAB_BAR_MIN_BOTTOM = 18;
 
 /**
  * Web の FooterNavbar と同じタブ構成にする。
@@ -32,7 +35,10 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: color.teal,
         tabBarInactiveTintColor: color.textFaint,
-        tabBarLabelStyle: { fontFamily: font.ui, fontSize: 10, marginTop: 2 },
+        /* ⚠️ ラベルは必ず出す。アイコンだけだと「水滴＝店舗」「箱＝管理」が伝わらない。
+              既定でも出るが、既定に頼ると将来の更新で消えても気づけないので明示する */
+        tabBarShowLabel: true,
+        tabBarLabelStyle: { fontFamily: font.uiBold, fontSize: 11, marginTop: 3 },
         // Web のフッターは白 95% の半透明。上端に細い区切り線だけ入る
         tabBarStyle: {
           backgroundColor: color.cardBg,
@@ -42,7 +48,9 @@ export default function TabsLayout() {
           paddingTop: 8,
           paddingBottom: bottomInset,
         },
-        tabBarItemStyle: { paddingVertical: 4 },
+        /* ⚠️ paddingVertical を足さないこと。tabBarStyle 側で高さを決めているので、
+              ここで詰めるとアイコンとラベルの間が潰れてラベルが切れる */
+        tabBarItemStyle: { paddingVertical: 0 },
       }}
     >
       <Tabs.Screen

@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
+  Animated,
+  Pressable,
   StyleSheet,
   Text,
   View,
   type LayoutChangeEvent,
 } from "react-native";
 import { HeroCard, MoneyText } from "@/components/common/ui";
-import { useCardPaging } from "@/components/home/useCardPaging";
+import { useCardSwipe } from "@/components/home/useCardSwipe";
 import { nowInJst } from "@/shared/date";
 import type { MonthlyPoint } from "@/api/types";
 import { color, font, spacing } from "@/theme/tokens";
@@ -16,15 +17,15 @@ import { color, font, spacing } from "@/theme/tokens";
 /**
  * 月の集金カード。横スワイプで過去の月に戻れる（Web の SalesCardClient.jsx と同じ挙動）。
  *
- * Web はタッチ座標を自前で拾って 3 枚のカードを transform で動かしているが、
- * ネイティブでは ScrollView に寄せる。
- * 並びは古い月 → 新しい月（左 → 右）。右へスワイプすると先月が出てくる順序で、
+ * 並びは古い月 → 新しい月（左 → 右）。右へ払うと先月が出てくる順序で、
  * これも Web（右スワイプ＝先月）と同じ向き。
  *
- * ⚠️ pagingEnabled は使わない。画面幅ちょうどでしか止まらないので、
- *    「隣のカードが少し見える」＝スライドできると分かる見た目と両立しない。
- *    カード幅を狭めて snapToInterval で止める（Web も calc(100% - 48px) + gap 8px で
- *    左右に 24px の覗き見を作っている）。
+ * ⚠️ ScrollView に載せないこと。ブラウザ標準のスクロール（＝スライド）に乗るだけで、
+ *    指で払う操作にならない。指の動きは useCardSwipe（PanResponder）で直接取り、
+ *    ここは transform をあてるだけにする。経緯はそちらのコメントを見ること。
+ *
+ * 左右 24px ずつ隣のカードを覗かせるのは Web と同じ（calc(100% - 48px) + gap 8px）。
+ * 「まだ続きがある」と分かる見た目を作るため。
  */
 
 /** 並べる月数の上限。ドットが並びきる範囲として「過去 1 年」に収める */
@@ -104,33 +105,20 @@ export function MonthlySalesCarousel({
   isError: boolean;
 }) {
   const months = useMemo(() => buildMonths(data), [data]);
-  const lastIndex = months.length - 1;
 
-  const scrollRef = useRef<ScrollView>(null);
   /** 帯そのものの幅（画面幅からホームの padding を引いたもの） */
   const [trackWidth, setTrackWidth] = useState(0);
 
-  // カード幅は左右の覗き見ぶんだけ狭く、止まる間隔はカード幅 + 隙間
+  // カード幅は左右の覗き見ぶんだけ狭く、送り幅はカード幅 + 隙間
   const cardWidth = Math.max(0, trackWidth - PEEK * 2);
   const interval = cardWidth > 0 ? cardWidth + GAP : 0;
 
-  // 1 回のフリックで 1 枚だけ送る。ネイティブと Web で経路が違うので
-  // useCardPaging に寄せてある（そちらのコメント参照）
-  const { index, resetTo, cancelPending, handlers } = useCardPaging({
+  // 指の動きを直接取って 1 枚ずつ送る（そちらのコメント参照）
+  const { index, translateX, panHandlers, goTo } = useCardSwipe({
+    count: months.length,
     interval,
-    lastIndex,
-    scrollRef,
+    peek: PEEK,
   });
-
-  // 初期表示は必ず当月（＝末尾）。幅が測れた時点と、データ到着で月数が増えた
-  // 時点の両方で合わせ直す
-  useEffect(() => {
-    if (interval <= 0) return;
-    scrollRef.current?.scrollTo({ x: interval * lastIndex, animated: false });
-    resetTo(lastIndex);
-  }, [interval, lastIndex, resetTo]);
-
-  useEffect(() => cancelPending, [cancelPending]);
 
   function onLayout(e: LayoutChangeEvent) {
     const width = Math.round(e.nativeEvent.layout.width);
@@ -139,42 +127,42 @@ export function MonthlySalesCarousel({
 
   return (
     <View>
-      <View onLayout={onLayout}>
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          /* pagingEnabled は使わない（画面幅ぴったりでしか止まらず覗き見が作れない）。
-             snapToInterval / disableIntervalMomentum はネイティブでの下支え。
-             Web ではどちらも無視されるので useCardPaging が代わりに寄せる */
-          snapToInterval={interval > 0 ? interval : undefined}
-          snapToAlignment="start"
-          disableIntervalMomentum
-          decelerationRate="fast"
-          scrollEventThrottle={16}
-          {...handlers}
-          contentContainerStyle={{ paddingHorizontal: PEEK }}
-        >
-          {/* 幅が測れるまではカードを組めない。1 フレームだけ最低高さで場所を確保する */}
-          {interval > 0 ? (
-            months.map((card, i) => (
-              <View
-                key={card.key}
-                style={{ width: cardWidth, marginRight: i === lastIndex ? 0 : GAP }}
-              >
+      {/* 帯からはみ出したカードは見せない。ここが窓になる */}
+      <View onLayout={onLayout} style={styles.viewport}>
+        {/* 幅が測れるまではカードを組めない。1 フレームだけ最低高さで場所を確保する */}
+        {interval > 0 ? (
+          <Animated.View
+            style={[
+              styles.row,
+              { width: interval * months.length, transform: [{ translateX }] },
+            ]}
+            {...panHandlers}
+          >
+            {months.map((card) => (
+              <View key={card.key} style={{ width: cardWidth, marginRight: GAP }}>
                 <MonthHero card={card} isLoading={isLoading} isError={isError} />
               </View>
-            ))
-          ) : (
-            <View style={styles.track} />
-          )}
-        </ScrollView>
+            ))}
+          </Animated.View>
+        ) : (
+          <View style={styles.track} />
+        )}
       </View>
 
       {months.length > 1 && (
         <View style={styles.dots}>
           {months.map((card, i) => (
-            <View key={card.key} style={[styles.dot, i === index && styles.dotActive]} />
+            /* 端の月まで払い続けるのは面倒なので、ドットからも直接飛べるようにする */
+            <Pressable
+              key={card.key}
+              onPress={() => goTo(i)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`${card.year}年${card.month}月を表示`}
+              accessibilityState={{ selected: i === index }}
+            >
+              <View style={[styles.dot, i === index && styles.dotActive]} />
+            </Pressable>
           ))}
         </View>
       )}
@@ -243,6 +231,9 @@ function MonthHero({
 }
 
 const styles = StyleSheet.create({
+  /* 窓。ここからはみ出したカードは切り取る */
+  viewport: { overflow: "hidden" },
+  row: { flexDirection: "row" },
   track: { minHeight: 176 },
   heroMonth: {
     fontFamily: font.ui,

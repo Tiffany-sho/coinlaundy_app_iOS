@@ -8,7 +8,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useLaundryStates, useStores } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { Input } from "@/components/common/form";
-import { useDialog } from "@/components/common/dialog";
+import {
+  SortControls,
+  type SortAxis,
+  type SortDirection,
+} from "@/components/common/SortControls";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { needsAttention } from "@/components/manage/laundryState";
 import { CenterMessage, Card, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
@@ -28,32 +32,64 @@ const NO_IMAGE =
  */
 type StoreFilter = "all" | "alert";
 
-/** 並び替えの軸。Web の一覧は DB の返り順のままで並び替えを持たないので、ここで決めている */
-type StoreSort = "name" | "alert" | "newest";
+/**
+ * 並び替えの軸。Web の一覧は DB の返り順のままで並び替えを持たないので、ここで決めている。
+ *
+ * ⚠️ かつてあった「要対応が先」は廃止した。上の「すべて / 要対応」タブと役割が重複していて、
+ *    しかも 3 択だとダイアログを開かないと今どの軸で並んでいるか分からなかった。
+ *    要対応だけ見たいならタブで絞る。
+ */
+type StoreSort = "name" | "created";
 
 const FILTERS = [
   { value: "all", label: "すべて" },
   { value: "alert", label: "要対応" },
 ] as const satisfies readonly { value: StoreFilter; label: string }[];
 
-const SORT_LABEL: Record<StoreSort, string> = {
-  name: "店舗名順",
-  alert: "要対応が先",
-  newest: "登録が新しい順",
-};
+/**
+ * 店舗の登録日時（epoch ミリ秒）。取れなければ null。
+ *
+ * ⚠️ `Date.parse(...)` の結果をそのまま比較に使わないこと。壊れた文字列だと NaN が返り、
+ *    比較関数が NaN を返す＝**並び順が変わらない**（エラーも出ない）。
+ *    Postgres の timestamptz は小数第 6 位まで返ってくるので、実際に取りこぼしうる。
+ *
+ * ⚠️ そもそも created_at は laundry_store の DB 既定値まかせで、Web の createStore は
+ *    書いていない。列が後から足された環境では既存行が NULL のままになる。
+ */
+function createdAtOf(store: Store): number | null {
+  if (!store.created_at) return null;
+  const ms = Date.parse(store.created_at);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+const SORT_AXES = [
+  {
+    value: "name",
+    label: "店舗名",
+    // 「昇順」では中身が伝わらないので、実際の並びで書く
+    hint: { asc: "あ→わ", desc: "わ→あ" },
+    defaultDirection: "asc",
+  },
+  {
+    value: "created",
+    label: "登録日",
+    hint: { desc: "新しい順", asc: "古い順" },
+    defaultDirection: "desc",
+  },
+] as const satisfies readonly SortAxis<StoreSort>[];
 
 export default function Stores() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const dialog = useDialog();
   const { data, isLoading, isRefetching, refetch, error } = useStores();
-  // 在庫・設備の状況。「要対応」の絞り込みと並び替えに使う
+  // 在庫・設備の状況。「要対応」の絞り込みに使う
   const states = useLaundryStates();
   const bootstrap = useBootstrap();
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StoreFilter>("all");
   const [sort, setSort] = useState<StoreSort>("name");
+  const [direction, setDirection] = useState<SortDirection>("asc");
 
   const isOffline = error instanceof ApiError && error.code === "OFFLINE";
   // 店舗の作成は admin だけ（Web の createStore も myRole !== "admin" を弾く）
@@ -87,21 +123,39 @@ export default function Stores() {
       );
     });
 
+    /** 日本語の店名を辞書順で並べる。同点時のよりどころにも使う */
+    const byName = (a: Store, b: Store) => a.store.localeCompare(b.store, "ja");
+
     return [...filtered].sort((a, b) => {
-      if (sort === "alert") {
-        const diff = Number(alertIds.has(b.id)) - Number(alertIds.has(a.id));
-        if (diff !== 0) return diff;
+      if (sort === "created") {
+        /**
+         * ⚠️ 欠けている店舗は**向きに関係なく末尾**へ回すこと。
+         *    -Infinity を入れて差で比べると、古い順にしたとたん先頭に固まる。
+         */
+        const at = createdAtOf(a);
+        const bt = createdAtOf(b);
+        if (at === null || bt === null) {
+          if (at !== bt) return at === null ? 1 : -1;
+        } else if (at !== bt) {
+          // ⚠️ 日付は desc が「新しい順」。店舗名の asc/desc とは向きの意味が逆なので
+          //    共通の係数で反転させないこと（一度これで古い順と新しい順が入れ替わった）
+          return direction === "desc" ? bt - at : at - bt;
+        }
+        return byName(a, b);
       }
-      if (sort === "newest") {
-        // created_at は省略されうる。欠けているものは末尾へ回す
-        const at = a.created_at ? Date.parse(a.created_at) : Number.NEGATIVE_INFINITY;
-        const bt = b.created_at ? Date.parse(b.created_at) : Number.NEGATIVE_INFINITY;
-        if (at !== bt) return bt - at;
-      }
-      // 既定と同点時のよりどころ。日本語の店名を辞書順で並べる
-      return a.store.localeCompare(b.store, "ja");
+      return direction === "asc" ? byName(a, b) : byName(b, a);
     });
-  }, [data, query, filter, sort, alertIds]);
+  }, [data, query, filter, sort, direction, alertIds]);
+
+  /**
+   * 登録日で並べられるか。1 店舗でも日付が取れれば並べる意味がある。
+   * ⚠️ 取れないときに黙って店舗名順になると「押しても効かない」としか見えないので、
+   *    理由を出す（実際にこれで「並び替えが適用されない」と報告を受けた）。
+   */
+  const canSortByCreated = useMemo(
+    () => (data ?? []).some((store) => createdAtOf(store) !== null),
+    [data]
+  );
 
   /** 件数の出し方は Web の countText と同じ */
   const countText = useMemo(() => {
@@ -110,21 +164,6 @@ export default function Stores() {
     if (query.trim() || filter === "alert") return `${visibleStores.length}件 / 全${total}店舗`;
     return `全${total}店舗`;
   }, [data?.length, visibleStores.length, query, filter]);
-
-  async function chooseSort() {
-    const picked = await dialog.choose<StoreSort>({
-      title: "並び替え",
-      options: (Object.keys(SORT_LABEL) as StoreSort[]).map((value) => ({
-        value,
-        label: SORT_LABEL[value],
-        selected: value === sort,
-      })),
-    });
-    if (picked) setSort(picked);
-  }
-
-  /** 既定（店舗名順）から外れているか。外れているときだけボタンを塗る */
-  const isSortActive = sort !== "name";
 
   if (isLoading && !data) {
     return (
@@ -193,25 +232,27 @@ export default function Stores() {
 
             <View style={styles.metaRow}>
               <Muted style={{ flex: 1, fontSize: 13 }}>{countText}</Muted>
-              <Pressable
-                onPress={chooseSort}
-                accessibilityLabel="並び替えを変える"
-                style={({ pressed }) => [
-                  styles.sortButton,
-                  isSortActive && styles.sortButtonActive,
-                  pressed && { opacity: 0.7 },
-                ]}
-              >
-                <Ionicons
-                  name="swap-vertical"
-                  size={15}
-                  color={isSortActive ? "#FFFFFF" : color.teal}
-                />
-                <Text style={[styles.sortLabel, isSortActive && styles.sortLabelActive]}>
-                  {SORT_LABEL[sort]}
-                </Text>
-              </Pressable>
+              {/* 軸ごとにボタンを置く。効いている方を押すと逆順になる */}
+              <SortControls
+                axes={SORT_AXES}
+                field={sort}
+                direction={direction}
+                onChange={(nextField, nextDirection) => {
+                  setSort(nextField);
+                  setDirection(nextDirection);
+                }}
+              />
             </View>
+
+            {/* 押しても並びが変わらない理由を出す。黙って店舗名順に落ちると故障に見える */}
+            {sort === "created" && !canSortByCreated && (
+              <View style={styles.sortNote}>
+                <Ionicons name="information-circle-outline" size={14} color={color.orange500} />
+                <Text style={styles.sortNoteLabel}>
+                  登録日が記録されていないため、店舗名順で表示しています
+                </Text>
+              </View>
+            )}
           </>
         )}
       </View>
@@ -347,18 +388,8 @@ const styles = StyleSheet.create({
   searchInput: { paddingLeft: 38, paddingRight: 42 },
   searchClear: { position: "absolute", right: spacing.md },
   metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  sortButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    minHeight: HIT_SIZE,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-  },
-  /* 既定以外の軸で並べているときは塗って、効いていることを一目で分かるようにする */
-  sortButtonActive: { backgroundColor: color.teal },
-  sortLabel: { fontFamily: font.uiBold, fontSize: 13, color: color.teal },
-  sortLabelActive: { color: "#FFFFFF" },
+  sortNote: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  sortNoteLabel: { flex: 1, fontFamily: font.ui, fontSize: 11, color: color.orange500 },
 
   card: {
     backgroundColor: color.cardBg,
