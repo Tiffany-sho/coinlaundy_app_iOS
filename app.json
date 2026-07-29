@@ -7,7 +7,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.collecie.app",
@@ -52,6 +51,14 @@
       "expo-image",
       "expo-font",
       "expo-apple-authentication",
+      "expo-iap",
+      [
+        "expo-notifications",
+        {
+          "color": "#0891B2",
+          "defaultChannel": "default"
+        }
+      ],
       [
         "expo-image-picker",
         {

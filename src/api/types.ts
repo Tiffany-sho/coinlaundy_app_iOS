@@ -48,8 +48,19 @@ export type Organization = {
   myRole: Role;
 };
 
+export type PlanKey = "free" | "pro" | "max";
+
+/**
+ * 契約の出どころ。null = 有料契約なし。
+ *
+ * ⚠️ `"stripe"` の組織にアプリから購入させない。Apple と Stripe の両方から
+ *    引き落とされ、Apple 側は Web から解約できないので返金対応になる。
+ *    判定の正はサーバ（applyAppleTransaction）で、ここは UI の出し分け用。
+ */
+export type PlanSource = "stripe" | "apple" | null;
+
 export type Plan = {
-  plan: "free" | "pro" | "max" | string;
+  plan: PlanKey | string;
   storeCount: number;
   /** 無制限プランは null */
   storeLimit: number | null;
@@ -57,6 +68,19 @@ export type Plan = {
   stripeCustomerId: string | null;
   orgId: string;
   myRole: Role;
+  planSource: PlanSource;
+  appleProductId: string | null;
+  /** ISO8601。App Store 側の失効時刻 */
+  appleExpiresAt: string | null;
+};
+
+/** POST /api/v1/billing/apple/verify の戻り */
+export type ApplePurchaseResult = {
+  plan: PlanKey | string;
+  planSource: PlanSource;
+  productId: string | null;
+  expiresAt: string | null;
+  active: boolean;
 };
 
 /** organizations.collect_schedule。weekly は 0=日…6=土、monthly は 1…31 */
