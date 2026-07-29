@@ -91,10 +91,23 @@ export default function Settings() {
           </ListCard>
         </View>
 
+        <View style={{ marginTop: spacing.lg }}>
+          <ListCard icon="notifications-outline" title="通知">
+            <LinkRow
+              label="通知の設定"
+              onPress={() => router.push("/settings/notifications")}
+              last
+            />
+          </ListCard>
+        </View>
+
         {/*
-          プランは read-only 表示のみ。
-          ⚠️ アップグレードボタン・価格・外部リンク・「Web で契約できます」等の文言は
-             App Store Guideline 3.1.3(a) のリジェクト事由になるため絶対に足さないこと。
+          プランの変更はアプリ内課金（App Store）でのみ行う。
+
+          ⚠️ 価格・外部リンク・「Web サイトで契約できます」等の**言及**は
+             App Store Guideline 3.1.3(a) のリジェクト事由になる。
+             価格を出してよいのは StoreKit の displayPrice を使うプラン画面だけで、
+             ここには金額を書かないこと。
         */}
         <View style={{ marginTop: spacing.lg }}>
           <ListCard icon="card-outline" title="プラン">
@@ -104,24 +117,35 @@ export default function Settings() {
               value={
                 data?.plan ? `${data.plan.storeCount} / ${data.plan.storeLimit ?? "無制限"}` : "—"
               }
+            />
+            <LinkRow
+              label="プランを見る"
+              onPress={() => router.push("/settings/plan")}
               last
             />
           </ListCard>
         </View>
 
         {/*
-          ⚠️ ここに出せるのはプライバシーポリシーだけ。
+          ⚠️ 出せるのは Web 側の `/app/*`（アプリ専用ページ）だけ。
 
           Web の /terms は「Proプラン ¥780/月」「クレジットカードによる月次自動引き落とし」
           「解約はマイページの『プランを管理する』から」を、/tokushoho は販売価格と決済条件を、
           /help は「アップグレードができます」を含む。
           これらをアプリ内 WebView で表示すると Guideline 3.1.3(a)（外部購入への誘導）に触れる。
 
-          リンクを戻すには、価格・決済・アップグレードへの言及を除いた
-          アプリ専用ページ（例: /terms/app）を Web 側に用意すること。
+          /app/terms は料金・解約の条文を落としたアプリ専用版。ナビとフッターも消してあり、
+          WebView 側も許可リストで他ページへの遷移を止めている（app/settings/webview.tsx）。
+
+          ⚠️ 特商法は載せない。アプリ内課金が無い以上、アプリに掲示義務は生じない。
+             載せると販売価格と決済条件がそのままアプリ内に出ることになる。
         */}
         <View style={{ marginTop: spacing.lg }}>
           <ListCard icon="document-text-outline" title="その他">
+            <LinkRow
+              label="利用規約"
+              onPress={() => router.push("/settings/webview?page=terms" as Href)}
+            />
             <LinkRow
               label="プライバシーポリシー"
               onPress={() => router.push("/settings/webview?page=privacy" as Href)}

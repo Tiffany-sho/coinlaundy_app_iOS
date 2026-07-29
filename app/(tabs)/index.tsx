@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useHome, useMonthlySummary, queryKeys } from "@/api/queries";
 import { useOutbox } from "@/offline/OutboxProvider";
+import { usePushPriming } from "@/push/usePushPriming";
 import { ApiError } from "@/api/client";
 import { GreetingHeader } from "@/components/home/GreetingHeader";
 import { CollectCountdown } from "@/components/home/CollectCountdown";
@@ -28,6 +29,9 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
+
+  // 初回の集金登録を終えた人にだけ通知許可を聞く（集金モーダルの中では聞けない）
+  usePushPriming();
 
   const bootstrap = useBootstrap();
   const hasOrg = Boolean(bootstrap.data?.organization);
