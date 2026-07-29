@@ -1,12 +1,14 @@
+import { useMemo } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useFundList, useMonthlySummary, useStore } from "@/api/queries";
-import { MonthlyBarChart } from "@/components/revenue/charts";
+import { useFundList, useMonthlySummary, useStore, useStoreRevenue } from "@/api/queries";
+import { MonthlyRevenueCard } from "@/components/revenue/MonthlyRevenueCard";
 import { MonthlySummaryTable } from "@/components/revenue/MonthlySummaryTable";
 import { Card, CenterMessage, MoneyText, Muted, Screen } from "@/components/common/ui";
+import type { StoreRevenue } from "@/api/types";
 import { formatJstDate } from "@/shared/date";
 import { color, font, spacing } from "@/theme/tokens";
 import type { FundListItem } from "@/api/types";
@@ -29,10 +31,24 @@ export default function StoreFunds() {
   const store = useStore(id);
   const list = useFundList(id);
   const monthly = useMonthlySummary(id, Boolean(id));
+  const revenue = useStoreRevenue();
 
   const rows = list.data?.pages.flat() ?? [];
   const points = monthly.data ?? [];
-  const total = points.reduce((sum, m) => sum + m.total, 0);
+
+  /**
+   * 月別売上カードに渡す店舗。1 件だけ渡すと表示店舗の絞り込みが消え、
+   * 期間だけのシートになる（MonthlyRevenueCard 側が stores.length > 1 で出し分けている）。
+   *
+   * ⚠️ /funds/summary/stores は集金実績のある店舗しか返さない。
+   *    まだ 1 件も集金していない店舗は空になるので、名前だけ作って ¥0 で渡す。
+   */
+  const storeRevenue: StoreRevenue[] = useMemo(() => {
+    const found = (revenue.data ?? []).find((s) => s.laundryId === id);
+    if (found) return [found];
+    if (!id) return [];
+    return [{ laundryId: id, laundryName: store.data?.store ?? "", total: 0 }];
+  }, [revenue.data, id, store.data?.store]);
 
   if (list.isLoading && rows.length === 0 && monthly.isLoading) {
     return (
@@ -75,15 +91,11 @@ export default function StoreFunds() {
         }
         ListHeaderComponent={
           <View>
-            <Card style={{ marginBottom: spacing.lg }}>
-              <Text style={styles.cardTitle}>月別売上</Text>
-              {/* ラベルと金額は隣り合わせにする。離すとどの数字の説明か分からなくなる */}
-              <Muted>集金総額</Muted>
-              <View style={{ marginTop: 2, marginBottom: spacing.lg }}>
-                <MoneyText value={total} size={26} tone="deeper" />
-              </View>
-              <MonthlyBarChart data={points} />
-            </Card>
+            {/* 収益タブと同じカード。期間を選べるので「直近◯か月だけ見る」ができる */}
+            <MonthlyRevenueCard
+              stores={storeRevenue}
+              isLoading={revenue.isLoading && !revenue.data}
+            />
 
             <MonthlySummaryTable data={points} />
 
@@ -138,12 +150,6 @@ const styles = StyleSheet.create({
     fontFamily: font.uiBold,
     fontSize: 16,
     color: color.textMain,
-  },
-  cardTitle: {
-    fontFamily: font.uiBold,
-    fontSize: 14,
-    color: color.tealDeeper,
-    marginBottom: spacing.md,
   },
   sectionTitle: {
     fontFamily: font.uiBold,

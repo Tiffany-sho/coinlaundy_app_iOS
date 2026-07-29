@@ -11,13 +11,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/common/ui";
-import { Field, FormError, Input } from "@/components/common/form";
+import { Field, Input } from "@/components/common/form";
 import { StoreImagePicker } from "@/components/stores/StoreImagePicker";
+import { MachineSection } from "@/components/stores/MachineSection";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 import type { Machine, StoreImage } from "@/api/types";
+import { makeUuid } from "@/shared/uuid";
 
 /**
  * 店舗の登録・編集フォーム。Web の CoinLaundryForm.jsx（+ MachineForm.jsx / PropoverForm.jsx）を移植。
@@ -33,20 +34,14 @@ import type { Machine, StoreImage } from "@/api/types";
  *    店舗数の上限に達した場合はサーバが課金に触れない文言を返すので、それをそのまま出す。
  */
 
-/** Web の CoinLaundryFormContext の initialState と同じ 5 種類。よく使う機種の呼び出し用 */
-const PRESET_MACHINES = [
-  "洗濯乾燥機",
-  "乾燥機",
-  "洗濯機",
-  "スニーカー洗濯機",
-  "ソフター自販機",
-] as const;
-
 /**
  * 編集中の機種 1 行。
  * laundry_store.machines の 1 要素は Web では { id, name, num, comment } を持ち、
  * 店舗詳細（HaveMachines.jsx）が「台数: {num}」「価格: {comment}」で表示している。
- * num / comment を落とすと Web 側の表示が壊れるので、必ず往復させること。
+ *
+ * ⚠️ comment はアプリの入力欄から外したが、**型と往復からは外さないこと**。
+ *    machines は保存のたびに配列ごと置き換わるので、落とすと Web で入れた価格帯が全部消える。
+ *    アプリでは触らず、読んだ値をそのまま返すだけにしてある。
  */
 export type MachineRow = Machine & { num: number; comment: string };
 
@@ -127,43 +122,8 @@ export function StoreForm({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [machines, setMachines] = useState<MachineRow[]>(() => toMachineRows(initial?.machines));
   const [images, setImages] = useState<StoreImage[]>(() => initial?.images ?? []);
-  const [newMachineName, setNewMachineName] = useState("");
-  /** 機種の追加に失敗した理由。Web の reducer の msg と同じ役割 */
-  const [machineError, setMachineError] = useState<string | null>(null);
 
   const canSubmit = store.trim().length > 0 && !submitting;
-
-  function addMachine(rawName: string) {
-    const name = rawName.trim();
-    if (!name) return;
-    // Web の ADD_MACHINES と同じ判定・同じ文言
-    if (machines.some((m) => m.name === name)) {
-      setMachineError("同じ機器名が含まれています");
-      return;
-    }
-    setMachineError(null);
-    setMachines((prev) => [...prev, { id: makeUuid(), name, num: 1, comment: "" }]);
-    setNewMachineName("");
-    Haptics.selectionAsync().catch(() => {});
-  }
-
-  function removeMachine(id: string) {
-    setMachineError(null);
-    setMachines((prev) => prev.filter((m) => m.id !== id));
-    Haptics.selectionAsync().catch(() => {});
-  }
-
-  /** 台数の増減。Web は 0 で自動削除するが、アプリはゴミ箱で消す方が分かりやすいので 1 台を下限にする */
-  function changeNum(id: string, delta: number) {
-    setMachines((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, num: Math.max(1, m.num + delta) } : m))
-    );
-    Haptics.selectionAsync().catch(() => {});
-  }
-
-  function changeComment(id: string, comment: string) {
-    setMachines((prev) => prev.map((m) => (m.id === id ? { ...m, comment } : m)));
-  }
 
   function submit() {
     if (!canSubmit) return;
@@ -175,10 +135,6 @@ export function StoreForm({
       images,
     });
   }
-
-  const remainingPresets = PRESET_MACHINES.filter(
-    (name) => !machines.some((m) => m.name === name)
-  );
 
   return (
     <>
@@ -265,121 +221,7 @@ export function StoreForm({
               <Ionicons name="construct-outline" size={17} color={color.teal} />
               <Text style={styles.sectionLabel}>機械</Text>
             </View>
-            <Text style={styles.lead}>
-              登録した機械は集金入力の項目になります。台数と価格帯は店舗詳細に表示されます。
-            </Text>
-
-            {machines.length === 0 ? (
-              <Text style={styles.emptyMachines}>まだ機械が登録されていません</Text>
-            ) : (
-              <View style={{ gap: spacing.md }}>
-                {machines.map((machine) => (
-                  <View key={machine.id} style={styles.machineCard}>
-                    <View style={styles.machineHead}>
-                      <Text style={styles.machineName} numberOfLines={1}>
-                        {machine.name}
-                      </Text>
-                      <Pressable
-                        onPress={() => removeMachine(machine.id)}
-                        hitSlop={10}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${machine.name}を削除`}
-                        style={styles.machineTrash}
-                      >
-                        <Ionicons name="trash-outline" size={17} color={color.red400} />
-                      </Pressable>
-                    </View>
-
-                    <View style={styles.stepperRow}>
-                      <Text style={styles.machineFieldLabel}>台数</Text>
-                      <View style={styles.stepper}>
-                        <Pressable
-                          onPress={() => changeNum(machine.id, -1)}
-                          disabled={machine.num <= 1}
-                          hitSlop={6}
-                          accessibilityRole="button"
-                          accessibilityLabel="台数を減らす"
-                          style={({ pressed }) => [
-                            styles.stepperButton,
-                            machine.num <= 1 && styles.stepperButtonDisabled,
-                            pressed && machine.num > 1 && { opacity: 0.7 },
-                          ]}
-                        >
-                          <Ionicons
-                            name="remove"
-                            size={18}
-                            color={machine.num <= 1 ? color.textFaint : color.textMuted}
-                          />
-                        </Pressable>
-                        <Text style={styles.stepperValue}>{machine.num}</Text>
-                        <Pressable
-                          onPress={() => changeNum(machine.id, 1)}
-                          hitSlop={6}
-                          accessibilityRole="button"
-                          accessibilityLabel="台数を増やす"
-                          style={({ pressed }) => [
-                            styles.stepperButton,
-                            pressed && { opacity: 0.7 },
-                          ]}
-                        >
-                          <Ionicons name="add" size={18} color={color.textMuted} />
-                        </Pressable>
-                      </View>
-                    </View>
-
-                    <Text style={styles.machineFieldLabel}>価格帯・コメント</Text>
-                    <Input
-                      value={machine.comment}
-                      onChangeText={(text) => changeComment(machine.id, text)}
-                      placeholder="例) 20kg/1000円, 8分/100円"
-                      style={styles.machineComment}
-                    />
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* 追加。Web は PropoverForm の「機械名 + 台数」ダイアログ */}
-            <View style={styles.addBox}>
-              <Text style={styles.machineFieldLabel}>機械を追加</Text>
-              <View style={styles.addRow}>
-                <Input
-                  value={newMachineName}
-                  onChangeText={(text) => {
-                    setNewMachineName(text);
-                    if (machineError) setMachineError(null);
-                  }}
-                  placeholder="機械名"
-                  style={{ flex: 1 }}
-                  returnKeyType="done"
-                  onSubmitEditing={() => addMachine(newMachineName)}
-                />
-                <Button
-                  label="追加"
-                  variant="primary"
-                  disabled={newMachineName.trim().length === 0}
-                  onPress={() => addMachine(newMachineName)}
-                />
-              </View>
-
-              {remainingPresets.length > 0 && (
-                <View style={styles.presetRow}>
-                  {remainingPresets.map((name) => (
-                    <Pressable
-                      key={name}
-                      onPress={() => addMachine(name)}
-                      style={({ pressed }) => [styles.preset, pressed && { opacity: 0.7 }]}
-                      accessibilityRole="button"
-                    >
-                      <Ionicons name="add" size={13} color={color.tealDeeper} />
-                      <Text style={styles.presetLabel}>{name}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-              {machineError && <FormError message={machineError} />}
-            </View>
+            <MachineSection machines={machines} onChange={setMachines} />
           </View>
 
           <View style={{ gap: spacing.sm }}>
@@ -399,15 +241,6 @@ export function StoreForm({
       </KeyboardAvoidingView>
     </>
   );
-}
-
-/** expo-crypto を足さずに済ませるための簡易 uuid v4（app/collect/[storeId].tsx と同じ） */
-function makeUuid(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
 }
 
 const styles = StyleSheet.create({
@@ -446,72 +279,5 @@ const styles = StyleSheet.create({
 
   sectionHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   sectionLabel: { fontFamily: font.uiBold, fontSize: 15, color: color.tealDeeper },
-  lead: { fontFamily: font.ui, fontSize: 12, color: color.textMuted, lineHeight: 18 },
-  emptyMachines: {
-    fontFamily: font.ui,
-    fontSize: 13,
-    color: color.textFaint,
-    textAlign: "center",
-    paddingVertical: spacing.lg,
-  },
 
-  machineCard: {
-    backgroundColor: color.appBg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: color.cyan100,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  machineHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  machineName: { flex: 1, fontFamily: font.uiBold, fontSize: 15, color: color.textMain },
-  machineTrash: { padding: 4 },
-  machineFieldLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.textMuted },
-  machineComment: { minHeight: 44, paddingVertical: spacing.sm },
-
-  stepperRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  stepper: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  stepperButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: color.divider,
-    backgroundColor: color.cardBg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepperButtonDisabled: { opacity: 0.5 },
-  stepperValue: {
-    fontFamily: font.mono,
-    fontSize: 18,
-    color: color.tealDeeper,
-    minWidth: 48,
-    textAlign: "center",
-    paddingVertical: spacing.sm,
-    backgroundColor: color.tealPale,
-    borderRadius: radius.md,
-    overflow: "hidden",
-  },
-
-  addBox: {
-    borderTopWidth: 1,
-    borderTopColor: color.divider,
-    paddingTop: spacing.lg,
-    gap: spacing.sm,
-  },
-  addRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  presetRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.xs },
-  preset: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    minHeight: 34,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: color.tealPale,
-    borderWidth: 1,
-    borderColor: color.cyan200,
-  },
-  presetLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
 });

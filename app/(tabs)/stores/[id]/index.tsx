@@ -21,7 +21,7 @@ import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEdi
 import { useDialog } from "@/components/common/dialog";
 import { useDeleteStoreAction } from "@/components/stores/useDeleteStoreAction";
 import { CenterMessage, Screen } from "@/components/common/ui";
-import { color, font, radius, shadow, spacing } from "@/theme/tokens";
+import { color, font, radius, shadow, spacing, numeric } from "@/theme/tokens";
 
 const NO_IMAGE =
   "https://hhdipgftsrsmmuqyifgt.supabase.co/storage/v1/object/public/Laundry-Images/public/no-image.png";
@@ -377,8 +377,8 @@ const styles = StyleSheet.create({
   tileTappable: { borderWidth: 2, borderColor: color.cyan200 },
   tileHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   tileLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.textMuted },
-  tileMoney: { fontFamily: font.mono, fontSize: 22, color: color.tealDeeper },
-  tileNumber: { fontFamily: font.mono, fontSize: 24, color: color.tealDeeper },
+  tileMoney: { ...numeric, fontSize: 22, color: color.tealDeeper },
+  tileNumber: { ...numeric, fontSize: 24, color: color.tealDeeper },
   tileStatus: { fontFamily: font.uiBold, fontSize: 16 },
   tileSub: { fontFamily: font.ui, fontSize: 11, color: color.textMuted, marginTop: 2 },
   // 押した先があることを文字でも出す。アイコンだけだと現場で気付かれない
