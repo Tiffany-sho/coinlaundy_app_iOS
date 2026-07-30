@@ -12,7 +12,9 @@
       "bundleIdentifier": "com.collecie.app",
       "buildNumber": "1",
       "usesAppleSignIn": true,
-      "associatedDomains": ["applinks:www.collecie.com"],
+      "associatedDomains": [
+        "applinks:www.collecie.com"
+      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -78,6 +80,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f3f39a07-51eb-46bf-bcda-b7daed02e008"
+      }
+    },
+    "owner": "tiffany1111"
   }
 }
