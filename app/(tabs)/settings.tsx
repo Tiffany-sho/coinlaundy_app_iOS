@@ -67,11 +67,16 @@ export default function Settings() {
         </View>
 
         <ListCard icon="person-outline" title="アカウント">
+          <InfoRow label="氏名" value={data?.profile?.full_name ?? "—"} />
           <InfoRow label="表示名" value={data?.profile?.username ?? "—"} />
           <InfoRow label="メールアドレス" value={data?.user.email ?? "—"} />
           <InfoRow
             label="権限"
             value={data?.organization ? (ROLE_LABEL[data.organization.myRole] ?? "—") : "—"}
+          />
+          <LinkRow
+            label="アカウント情報を編集"
+            onPress={() => router.push("/settings/account")}
             last
           />
         </ListCard>

@@ -3,9 +3,9 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as ImagePicker from "expo-image-picker";
 import { uploadStoreImage } from "@/api/queries";
 import { apiErrorMessage } from "@/components/stores/StoreForm";
+import { pickImage } from "@/components/common/pickImage";
 import { Muted } from "@/components/common/ui";
 import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { StoreImage } from "@/api/types";
@@ -25,49 +25,6 @@ import { makeUuid } from "@/shared/uuid";
  *    先に消すと、保存をやめたときに既存の画像だけ失う。
  */
 
-/** Web の useStoreSubmit.js と同じ制限。値は保存するファイル名の拡張子 */
-const ALLOWED_MIME: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/jpg": "jpg",
-  "image/png": "png",
-};
-
-/** mimeType を返さない環境向けの保険。ファイル名の末尾から引く */
-const EXT_TO_MIME: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-};
-
-/**
- * アップロードできる上限。`docs/contracts.md` に載せている 10MB に揃えてある。
- *
- * ⚠️ **実体は BFF を通らない**（`uploadStoreImage` が署名付き URL で Storage へ
- *    直接送る）。以前は Vercel のサーバーレス関数の 4.5MB 上限に当たり、しかも
- *    拒否がアップロード途中の接続切断として現れるため「通信できませんでした」
- *    という無関係な文言しか出なかった。いま効いているのは Storage の
- *    バケット設定だけなので、ここは早めに気づかせるための保険。
- */
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-
-/**
- * 選んだ画像の形式を決める。
- *
- * ⚠️ URI の拡張子から取ってはいけない。
- *    - ブラウザの uri は `blob:http://…/uuid` で**拡張子が無い**（expo-image-picker の
- *      ExponentImagePicker.web.ts が URL.createObjectURL を返す）。末尾を切り出すと
- *      URI 全体が「拡張子」になり、jpeg を選んでも弾かれる
- *    - Android の uri は `content://…` でこれも拡張子が無い
- *    mimeType はどのプラットフォームでも入るので、まずそれを見る。
- */
-function resolveMime(asset: ImagePicker.ImagePickerAsset): string | null {
-  const fromAsset = asset.mimeType ?? asset.file?.type;
-  if (fromAsset) return fromAsset.toLowerCase();
-  const name = asset.fileName ?? "";
-  const ext = name.split("?")[0].split(".").pop()?.toLowerCase();
-  return ext ? (EXT_TO_MIME[ext] ?? null) : null;
-}
-
 export function StoreImagePicker({
   images,
   onChange,
@@ -85,70 +42,26 @@ export function StoreImagePicker({
 
   async function pick() {
     if (disabled || busy) return;
-    Haptics.selectionAsync().catch(() => {});
     setError(null);
 
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("写真へのアクセスが許可されていません。設定から許可してください。");
-      return;
-    }
-
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.8,
-      /**
-       * ⚠️ iPhone で撮った写真は既定で HEIC。これを付けないと PHPicker が HEIC のまま渡してきて
-       *    （expo-image-picker の ImageUtils.swift が `case UTType.heic: return (rawData, ".heic")`）、
-       *    jpeg/png 判定で弾かれる。ブラウザは HEIC を表示できないので通すわけにもいかない。
-       *    Compatible にすると PHPicker 側が JPEG に変換して渡してくれる。
-       */
-      preferredAssetRepresentationMode:
-        ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
-    });
-    if (picked.canceled || picked.assets.length === 0) return;
-
-    const asset = picked.assets[0];
-    const mime = resolveMime(asset);
-
-    // 切り分け用。実機で「通信できませんでした」が出たときはまずこの行を見る
-    console.log(
-      `[store-image] mime=${mime} size=${asset.fileSize ?? "?"}B ` +
-        `${asset.width}x${asset.height} uri=${asset.uri.slice(0, 60)}`
-    );
-
-    const ext = mime ? ALLOWED_MIME[mime] : undefined;
-    if (!ext) {
-      setError(
-        mime === "image/heic" || mime === "image/heif"
-          ? "この写真は HEIC 形式のため登録できません。JPEG で保存し直してから選んでください。"
-          : "jpeg または png の画像を選んでください"
-      );
-      return;
-    }
-
-    const size = asset.fileSize ?? 0;
-    if (size > MAX_UPLOAD_BYTES) {
-      setError(
-        `画像のサイズが大きすぎます（${(size / 1024 / 1024).toFixed(1)}MB）。` +
-          `10MB 以下の画像を選んでください。`
-      );
+    // 形式の判定・HEIC・サイズ上限は共通化してある（components/common/pickImage.ts）
+    const result = await pickImage("store-image");
+    if (result.status === "canceled") return;
+    if (result.status === "error") {
+      setError(result.message);
       return;
     }
 
     // ファイル名は本家と同じ「時刻_uuid.拡張子」。衝突しないので upsert が要らない
-    const name = `${Date.now()}_${makeUuid()}.${ext}`;
+    const name = `${Date.now()}_${makeUuid()}.${result.image.ext}`;
 
     setBusy(true);
     try {
       const uploaded = await uploadStoreImage({
-        uri: asset.uri,
+        uri: result.image.uri,
         name,
-        // ⚠️ BFF は part の Content-Type を "image/jpeg" / "image/png" と厳密に比較する。
-        //    端末が返す "image/jpg" をそのまま送ると同じエラー文で弾かれるので正規化する
-        type: EXT_TO_MIME[ext],
-        // web はここが無いと "[object Object]" が送られる（queries.ts のコメント参照）
-        blob: asset.file,
+        type: result.image.type,
+        blob: result.image.blob,
       });
       onUploaded?.(uploaded);
       onChange([...images, uploaded]);

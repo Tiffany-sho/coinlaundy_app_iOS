@@ -92,6 +92,41 @@ stock_thresholds: stock_thresholds ?? { detergent: 1, softener: 1 },
 - 月単位のもの（`getMonthFunds` / `getMonthFundsByOffset` / `getAllMonthBenefits`）は
   1 か月に 1000 件を超えないので素のままにしてある
 
+## プロフィール
+
+- ⚠️ **表示名（`username`）と氏名（`full_name`）は両方必須。** Web の `updateProfile` が
+  `if (!fullname || !username) return { error: "空のフォームデータがあります" }` で弾くので、
+  片方だけ送ると 400 になる。空文字も同じ扱いなので、どちらかを消すことはできない
+- `PATCH /api/v1/profile` は**1 回に 1 種類だけ**反映する（`collectMethod` →
+  `avatarExt` → `username`/`fullname` の順に早期 return）。まとめて送っても先に
+  当たったものしか効かない
+
+### アカウントのアイコン
+
+店舗画像と同じ 2 段構え（署名付き URL → 端末から直接 `PUT`）だが、3 点違う。
+
+1. `POST /api/v1/profile/avatar/signed-url` に送るのは `contentType` **だけ**。
+   ⚠️ **ファイル名を送らない。** 保存先は `avatars/{user.id}.{ext}` とサーバが決める。
+   名前を渡せるようにすると他人のアイコンを差し替えられる
+2. ⚠️ **`x-upsert: true`。** パスが固定なので 2 回目以降は必ず上書きになる
+   （店舗画像は時刻 + uuid で衝突しないので `false`。ここだけ逆）
+3. アップロードのあと `PATCH /api/v1/profile` に `{ avatarExt }` を送って確定する。
+   ⚠️ **URL は送らない。** サーバが `user.id` から組み直す。URL を受け付けると、
+   他メンバーの画面に描かれる画像の src を自由に差し替えられる
+
+- ⚠️ **保存する URL には `?v=<時刻>` が付く。** パスが固定なので、付けないと URL が
+  1 文字も変わらず、端末とブラウザのキャッシュが古い画像を出し続ける
+  （変えたのに変わらないように見える）。DB に入れる値ごとキャッシュバスタを含める
+- ⚠️ **Web の `/api/upload/avatar`（multipart）をアプリから使わない。** 実体が Vercel の
+  関数を通るので 4.5MB 上限に当たる（店舗画像と同じ罠）
+
+## 集金スケジュール
+
+- 「設定しない」は `PUT /api/v1/org/collect-schedule` に **`{ schedule: null }`** を送る。
+  ⚠️ `{ type, days: [] }` ではない。BFF が「集金日を 1 つ以上選んでください」で 400 を返す
+- ⚠️ 未設定にすると**集金前日・当日のリマインダー通知も止まる**（Edge Function が
+  `collect_schedule` を見て対象組織を選ぶ）。画面でそう説明してある
+
 ## テーブルの辿り方
 
 - ⚠️ **`collect_funds` に `organization_id` は無い。** 組織で絞るには

@@ -180,6 +180,94 @@ export function deleteStoreImage(path: string): Promise<{ path: string }> {
   return apiFetch<{ path: string }>("/stores/images", { method: "DELETE", body: { path } });
 }
 
+/**
+ * アカウントのアイコンを差し替える。店舗写真と同じ 2 段構え（署名付き URL → 直接 PUT）。
+ *
+ * 店舗写真と違う点が 3 つある。
+ *   - **ファイル名を送らない。** 保存先は `avatars/{user.id}.{ext}` とサーバが決める。
+ *     ⚠️ 名前を渡せるようにすると他人のアイコンを差し替えられる
+ *   - **`x-upsert: true`。** パスが固定なので 2 回目以降は必ず上書きになる
+ *   - **アップロードのあと確定が要る。** `PATCH /profile { avatarExt }` を送るまで
+ *     `profiles.avatar_url` は変わらない。⚠️ 先に URL を書くと、PUT が失敗したときに
+ *     存在しないファイルを指すことになる
+ *
+ * 返るのは保存された公開 URL。⚠️ `?v=<時刻>` が付いている。パスが固定なので、
+ * 付けないと URL が 1 文字も変わらず端末とブラウザのキャッシュが古い画像を出し続ける。
+ */
+export async function uploadAvatar(file: {
+  uri: string;
+  /** 正規化済みの content-type（image/jpeg | image/png） */
+  type: string;
+  /** ⚠️ ブラウザ確認時は必須。web の uri は blob: なので picker が返した File を使う */
+  blob?: Blob;
+}): Promise<{ avatarUrl: string }> {
+  const { signedUrl, ext } = await apiFetch<{ signedUrl: string; ext: string }>(
+    "/profile/avatar/signed-url",
+    { method: "POST", body: { contentType: file.type } }
+  );
+
+  // ⚠️ 生のバイト列で送る。FormData で送ると解釈が実装依存になる（uploadStoreImage と同じ）
+  const body = file.blob ?? (await fetch(file.uri).then((r) => r.arrayBuffer()));
+
+  const response = await fetch(signedUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": file.type,
+      // ⚠️ パスが `avatars/{user.id}.{ext}` で固定なので上書きを許すしかない
+      "x-upsert": "true",
+      "cache-control": "max-age=3600",
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    // ⚠️ Storage のエラーは { statusCode, error, message } で返る（BFF の形とは違う）
+    let detail = "";
+    try {
+      const payload = await response.json();
+      detail = payload?.message ?? payload?.error ?? "";
+    } catch {
+      detail = "";
+    }
+    throw new ApiError(
+      detail ? `アイコンのアップロードに失敗しました: ${detail}` : "アイコンのアップロードに失敗しました",
+      response.status,
+      "BAD_REQUEST"
+    );
+  }
+
+  // ⚠️ ここまでは Storage に置いただけ。DB に反映されるのはこの 1 行
+  return apiFetch<{ avatarUrl: string }>("/profile", {
+    method: "PATCH",
+    body: { avatarExt: ext },
+  });
+}
+
+/**
+ * 表示名と氏名の更新。
+ *
+ * ⚠️ **両方必ず送ること。** Web の `updateProfile` が
+ *    `if (!fullname || !username) return { error: "空のフォームデータがあります" }` で
+ *    弾くので、片方だけ送ると 400 になる。空文字も同じ扱いなのでどちらも必須入力。
+ */
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { fullname: string; username: string }) =>
+      apiFetch("/profile", { method: "PATCH", body: input }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap }),
+  });
+}
+
+/** アイコンの差し替え。⚠️ 成否のトーストは呼び出し側で必ず出すこと */
+export function useUploadAvatar() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: uploadAvatar,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap }),
+  });
+}
+
 export function useCreateStore() {
   const queryClient = useQueryClient();
   return useMutation({
