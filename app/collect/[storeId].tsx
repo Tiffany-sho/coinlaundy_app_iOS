@@ -17,7 +17,7 @@ import { useBootstrap, useSetCollectMethod, useStore } from "@/api/queries";
 import { CalendarPicker, formatJstDateLong } from "@/components/common/CalendarPicker";
 import { Divider, SectionHead } from "@/components/common/section";
 import { DialogProvider, useDialog } from "@/components/common/dialog";
-import { useToast } from "@/components/common/toast";
+import { ToastProvider, useToast, type ToastApi } from "@/components/common/toast";
 import { CenterMessage, Screen } from "@/components/common/ui";
 import { useKeyboardVisible } from "@/components/common/useKeyboardVisible";
 import {
@@ -62,21 +62,31 @@ import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens"
  * **キャンセルも戻るも無反応になる。** ここで包み直すと `Modal` が
  * この画面側の VC に属するので正しく上に出る。
  *
- * ⚠️ **ToastProvider は包まないこと。** この画面のトーストは
- * 「一時保存しました」「集金データを登録しました」のように `router.back()` の
- * 直前に出すものが多く、ここで包むと画面のアンマウントと同時に消えてしまう。
- * （その代わり、画面に留まる `toast.error("金額が入力されていません")` は
- * いまも見えていない。別途対処が必要）
+ * `ToastProvider` も同じ理由でルートのものはこの画面の下に隠れる（`position: "absolute"`
+ * のオーバーレイなので `Modal` ですらない）。こちらも包み直すが、**2 つを使い分ける。**
+ *
+ * ⚠️ **`router.back()` の直前に出すトーストはルート側（`rootToast`）を使うこと。**
+ *    ネスト側で出すと画面のアンマウントと同時に消えて一瞬も読めない。
+ *    逆に画面に留まる入力検証のエラーは**ネスト側**でないと見えない。
+ *    だから包む前にルート側を掴んでおき、両方を持ったまま下へ渡している。
  */
 export default function CollectMoneyModal() {
+  // ⚠️ 包む前に掴む。ここで useToast() を呼ぶとルート側の ToastProvider に解決される
+  const rootToast = useToast();
   return (
     <DialogProvider>
-      <CollectMoney />
+      <ToastProvider>
+        <CollectMoney rootToast={rootToast} />
+      </ToastProvider>
     </DialogProvider>
   );
 }
 
-function CollectMoney() {
+/**
+ * @param rootToast 画面を離れたあとも残るトースト。`router.back()` の直前に使う。
+ *                  この画面に留まるときは `useToast()`（ネスト側）を使う
+ */
+function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
   const { storeId } = useLocalSearchParams<{ storeId: string }>();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
@@ -201,7 +211,8 @@ function CollectMoney() {
       debounced.cancel();
       if (action === "save") {
         saveDraft(buildDraft());
-        toast.success("入力内容を一時保存しました");
+        // ⚠️ 直後に router.back() するのでルート側。ネスト側だと消える
+        rootToast.success("入力内容を一時保存しました");
       } else if (storeId) {
         // 入力中は 1.5 秒ごとに自動保存しているので、破棄を選んだら
         // 書き込み済みの下書きも消す。消さないと次に開いたときバナーが出てしまう
@@ -321,7 +332,8 @@ function CollectMoney() {
       // 重ねられないので、閉じてホームに戻ってから usePushPriming が出す
       markCollectRegistered();
       // 触覚はトースト側が鳴らすのでここでは鳴らさない（二重に振動するため）
-      toast.success(
+      // ⚠️ 直後に router.back() するのでルート側。ネスト側だと消える
+      rootToast.success(
         isOnline
           ? "集金データを登録しました"
           : "送信待ちに追加しました。電波が戻ると自動送信されます"

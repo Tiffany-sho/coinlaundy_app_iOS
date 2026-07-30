@@ -89,12 +89,31 @@
   ダイアログの結果を待つ処理は**押しても無反応**になる（集金画面のキャンセルと戻るが
   これで死んでいた）。**その画面の中で `DialogProvider` を包み直す**と直る
 - ⚠️ **同じ理由で、ルートの絶対配置オーバーレイもモーダル画面の下に隠れる。**
-  `ToastProvider` は `position: "absolute"` なので、`fullScreenModal` の画面に
-  留まったまま出すトースト（入力検証エラーなど）は見えない。
-  ⚠️ ただし `ToastProvider` を画面の中で包み直すと、`router.back()` の直前に出す
-  トーストが画面のアンマウントと同時に消える。包む前に用途を確認すること
-  （恒久的に直すなら react-native-screens の `FullWindowOverlay`。別 UIWindow に
-  描くのでネイティブのモーダルより上に出る。⚠️ iOS 専用で、中に `Modal` は置けない）
+  `ToastProvider` は `position: "absolute"` なので（`Modal` ですらない）、
+  `fullScreenModal` の画面に留まったまま出すトースト（入力検証エラーなど）は見えない
+- **モーダル画面のトーストは 2 つ使い分ける。** `ToastProvider` を画面の中で包み直すと
+  画面に留まるトーストは見えるようになるが、⚠️ **`router.back()` の直前に出すトーストが
+  画面のアンマウントと同時に消えて一瞬も読めなくなる。** そこで**包む前にルート側を
+  掴んでおき**、両方を持ったまま下へ渡す（`app/collect/[storeId].tsx` がこれ）:
+
+  ```tsx
+  export default function Screen() {
+    const rootToast = useToast();            // ← 包む前に掴む＝ルート側
+    return (
+      <DialogProvider>
+        <ToastProvider>
+          <Inner rootToast={rootToast} />    // 中では useToast() がネスト側になる
+        </ToastProvider>
+      </DialogProvider>
+    );
+  }
+  ```
+
+  `router.back()` の直前は `rootToast`、画面に留まるときは `useToast()`。
+  逆にすると「一瞬も出ない」か「見えない」のどちらかになる
+- 全画面まとめて直すなら react-native-screens の `FullWindowOverlay`。別 UIWindow に
+  描くのでネイティブのモーダルより上に出る。⚠️ iOS 専用で、中に `Modal` は置けないので
+  `DialogProvider` の作りごと変えることになる
 - ⚠️ **`presentation: "fullScreenModal"` は下の画面をアンマウントしない。** 画面いっぱいに
   覆うので消えたように見えるが、Stack の上に載っているだけ。したがって
   **モーダルから戻ってきたときに下の画面の `useEffect` は再実行されない**（deps が

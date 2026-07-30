@@ -17,7 +17,7 @@ import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
 type ToastKind = "success" | "error" | "info";
 
-type ToastApi = {
+export type ToastApi = {
   show: (kind: ToastKind, message: string) => void;
   success: (message: string) => void;
   error: (message: string) => void;
