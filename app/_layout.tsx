@@ -57,6 +57,17 @@ export default function RootLayout() {
                 contentStyle: { backgroundColor: color.appBg },
               }}
             >
+              {/*
+                ⚠️ タブ全体を**スワイプで戻れなくする**。
+                   ログインは router.replace("/") → "/" が <Redirect href="/(tabs)" /> と
+                   2 段で着地するが、その下には /welcome が**残っている**（replace が
+                   置き換えるのは自分だけで、履歴は消えない）。iOS の画面端スワイプは
+                   これを popping できてしまうので、ログイン直後に右へ払うと
+                   未ログイン画面に戻る。gestureEnabled: false が唯一の防波堤。
+                   ⚠️ タブの中の Stack（stores/ manage/）には影響しない。
+                      あちらは自前の Stack が持つので、店舗詳細のスワイプ戻りは生きている。
+              */}
+              <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
               {/* 集金入力はフルスクリーンモーダル（設計図 7.2） */}
               <Stack.Screen
                 name="collect/[storeId]"

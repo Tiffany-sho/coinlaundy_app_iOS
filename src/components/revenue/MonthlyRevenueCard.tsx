@@ -151,7 +151,13 @@ export function MonthlyRevenueCard({
       ) : chart.isError ? (
         <Muted style={styles.fallbackNote}>売上を取得できませんでした</Muted>
       ) : (
-        <MonthlyStackedBarChart data={stacked} series={series} />
+        /* ⚠️ 店舗が 1 軒だけのときは内訳を出さない（店舗別の収益ページがこれ）。
+              棒の合計と内訳の金額が同じになり、同じ数字が縦に 2 回並ぶだけになる */
+        <MonthlyStackedBarChart
+          data={stacked}
+          series={series}
+          showBreakdown={stores.length > 1}
+        />
       )}
     </Card>
   );

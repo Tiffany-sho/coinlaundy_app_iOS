@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useFundHistory, useMonthlySummary, useStore, useStoreRevenue } from "@/api/queries";
 import { StoreChartTabs } from "@/components/revenue/StoreChartTabs";
+import { TotalRevenueCard } from "@/components/revenue/TotalRevenueCard";
 import { HistoryControls, type HistorySortField } from "@/components/revenue/HistoryControls";
 import type { SortDirection } from "@/components/common/SortControls";
 import {
@@ -18,6 +19,7 @@ import {
   buildHistoryRows,
   collecterName,
   initialLimit,
+  latestFundDate,
   limitStep,
 } from "@/components/revenue/historyRows";
 import { Card, CenterMessage, Muted, Screen } from "@/components/common/ui";
@@ -86,6 +88,16 @@ export default function StoreFunds() {
   }, [revenue.data, id, store.data?.store]);
 
   /**
+   * この店舗の全期間の売上総額。
+   *
+   * ⚠️ **`rows` の総和で出さない。** 担当者で絞ると総額まで動いてしまう。
+   *    /funds/summary/stores は全件を店舗ごとに畳んだものなので、これが正。
+   * ⚠️ 月次サマリー（points）の総和でも出さない。あちらは前年同月比のため
+   *    **過去 2 年に固定**されていて、それより前の集金が落ちる。
+   */
+  const storeTotal = storeRevenue[0]?.total ?? 0;
+
+  /**
    * 月の見出しでまとめるか。
    * ⚠️ 売上順のときは畳まない。高い順に並んだものを月で区切っても区切りが意味を持たない。
    */
@@ -147,6 +159,23 @@ export default function StoreFunds() {
         }
         ListHeaderComponent={
           <View>
+            {/* 全体版と同じカード。店舗が固定なので 2 列目を「店舗数」から「集金回数」に替える */}
+            <TotalRevenueCard
+              title={store.data ? `${store.data.store}店の売上総額` : "売上総額"}
+              total={storeTotal}
+              countLabel="集金回数"
+              countValue={rows.length > 0 ? `${rows.length}回` : "—"}
+              firstMonth={points[0]?.month}
+              lastMonth={points[points.length - 1]?.month}
+              /* 過去 2 年ぶんの総和が総額に届かない＝それより前にも集金がある */
+              hasOlderThanWindow={
+                points.length > 0 &&
+                storeTotal > points.reduce((sum, point) => sum + point.total, 0)
+              }
+              latestFundDate={latestFundDate(rows)}
+              isLoading={revenue.isLoading && !revenue.data}
+            />
+
             <StoreChartTabs
               storeRevenue={storeRevenue}
               revenueLoading={revenue.isLoading && !revenue.data}

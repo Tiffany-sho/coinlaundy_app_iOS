@@ -28,6 +28,7 @@ import {
   buildHistoryRows,
   collecterName,
   initialLimit,
+  latestFundDate,
   limitStep,
   type HistoryRow,
 } from "@/components/revenue/historyRows";
@@ -35,7 +36,6 @@ import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { useToast } from "@/components/common/toast";
 import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
 import { color, font, radius, spacing } from "@/theme/tokens";
-import type { FundListItem } from "@/api/types";
 
 /** グラフカードの切り替えタブ。既定は「月別」（Web も月別売上カードが主役） */
 type ChartTab = "store" | "monthly" | "summary";
@@ -227,7 +227,8 @@ export default function Revenue() {
 
             <TotalRevenueCard
               total={allTimeTotal}
-              storeCount={stores.length}
+              countLabel="店舗数"
+              countValue={stores.length > 0 ? `${stores.length}店舗` : "—"}
               firstMonth={points[0]?.month}
               lastMonth={points[points.length - 1]?.month}
               /* 過去 2 年ぶんの総和が全期間の総額に届かない＝それより前にも集金がある */
@@ -235,7 +236,7 @@ export default function Revenue() {
                 points.length > 0 &&
                 allTimeTotal > points.reduce((sum, point) => sum + point.total, 0)
               }
-              latestFundDate={latestDate(rows)}
+              latestFundDate={latestFundDate(rows)}
               isLoading={byStore.isLoading && !byStore.data}
             />
 
@@ -338,15 +339,6 @@ export default function Revenue() {
       />
     </Screen>
   );
-}
-
-/** 読み込み済みの中で一番新しい集金日。無ければ null */
-function latestDate(rows: FundListItem[]): number | null {
-  let latest: number | null = null;
-  for (const item of rows) {
-    if (latest === null || item.date > latest) latest = item.date;
-  }
-  return latest;
 }
 
 const styles = StyleSheet.create({

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
@@ -8,7 +9,6 @@ import { useOutbox } from "@/offline/OutboxProvider";
 import { usePushPriming } from "@/push/usePushPriming";
 import { ApiError } from "@/api/client";
 import { GreetingHeader } from "@/components/home/GreetingHeader";
-import { CollectCountdown } from "@/components/home/CollectCountdown";
 import { MonthlySalesCarousel } from "@/components/home/MonthlySalesCarousel";
 import { QuickActions } from "@/components/home/QuickActions";
 import {
@@ -25,10 +25,15 @@ import {
 import { formatJstDate } from "@/shared/date";
 import { color, font, radius, spacing } from "@/theme/tokens";
 
+/** 「過去1ヶ月の集金記録」の初期表示件数。残りは「さらに表示」で開く */
+const RECENT_STEP = 5;
+
 export default function Home() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
+  /** 集金記録を何件まで出しているか。⚠️ 取得範囲ではなく表示量 */
+  const [recentLimit, setRecentLimit] = useState(RECENT_STEP);
 
   // 初回の集金登録を終えた人にだけ通知許可を聞く（集金モーダルの中では聞けない）
   usePushPriming();
@@ -76,7 +81,13 @@ export default function Home() {
     );
   }
 
+  /**
+   * ⚠️ BFF は過去 1 か月を**全件**返す（見出しどおりの範囲にするため）。
+   *    ホームに全部並べると縦に長くなるので、ここで表示量だけ絞る。
+   */
   const recent = home.data?.recentFunds ?? [];
+  const visibleRecent = recent.slice(0, recentLimit);
+  const remainingRecent = recent.length - visibleRecent.length;
 
   return (
     <Screen>
@@ -91,7 +102,7 @@ export default function Home() {
           />
         }
       >
-        <GreetingHeader username={username} />
+        <GreetingHeader username={username} schedule={bootstrap.data.collectSchedule} />
 
         {outbox.items.length > 0 && (
           <Pressable onPress={() => outbox.flush()} style={styles.outboxBadge}>
@@ -112,10 +123,7 @@ export default function Home() {
           />
         </View>
 
-        {/* 集金日のカウントダウンは月のカードの下。まず金額、次に次回予定の順で読ませる */}
-        <View style={{ marginTop: spacing.lg }}>
-          <CollectCountdown schedule={bootstrap.data.collectSchedule} />
-        </View>
+        {/* ⚠️ 集金日のカウントダウンはヘッダー（日付の隣）へ移した。ここに戻さないこと */}
 
         {/* Web と同じ位置（売上カードの下・今日の対応状況の上） */}
         <View style={{ marginTop: spacing.xl }}>
@@ -126,17 +134,34 @@ export default function Home() {
         <View style={{ marginTop: spacing.xl }}>
           <SectionHeading>今日の対応状況</SectionHeading>
           <View style={styles.statusRow}>
+            {/*
+              ⚠️ **どちらのタブを開くかを必ず渡す。** 管理タブはタブバーの下で
+                 マウントされたまま残るので、segment が前回のまま復活し
+                 「在庫状況を押したのに設備が出る」ことになる（実際にこれで壊れていた）。
+                 t は毎回変える値。同じ tab を続けて押しても params が変わらないと
+                 受け側の効果が再実行されない。
+              ⚠️ **push ではなく navigate。** push は同じ画面をスタックに積み増すので、
+                 押した回数だけ戻る操作が要るようになる。navigate は既にある管理画面へ
+                 戻って params だけ差し替える
+            */}
             <StatusCard
               icon="cube-outline"
               label="在庫状況"
               count={home.data?.lowStockCount ?? 0}
-              onPress={() => router.push("/manage")}
+              onPress={() =>
+                router.navigate({ pathname: "/manage", params: { tab: "stock", t: Date.now() } })
+              }
             />
             <StatusCard
               icon="construct-outline"
               label="設備状況"
               count={home.data?.brokenMachineCount ?? 0}
-              onPress={() => router.push("/manage")}
+              onPress={() =>
+                router.navigate({
+                  pathname: "/manage",
+                  params: { tab: "equipment", t: Date.now() },
+                })
+              }
             />
           </View>
         </View>
@@ -153,18 +178,32 @@ export default function Home() {
             ) : recent.length === 0 ? (
               <ListEmpty text="過去1ヶ月の集金記録はありません" />
             ) : (
-              recent.map((fund, i) => (
-                <ListRow key={String(fund.id)} last={i === recent.length - 1}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.rowTitle}>{fund.laundryName}</Text>
-                    <View style={styles.rowMetaRow}>
-                      <Text style={styles.rowMeta}>{formatJstDate(fund.date)}</Text>
-                      {fund.collecter && <Text style={styles.rowFaint}>{fund.collecter}</Text>}
+              <>
+                {visibleRecent.map((fund, i) => (
+                  <ListRow
+                    key={String(fund.id)}
+                    last={i === visibleRecent.length - 1 && remainingRecent === 0}
+                    onPress={() =>
+                      router.push({ pathname: "/funds/[id]", params: { id: String(fund.id) } })
+                    }
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowTitle}>{fund.laundryName}</Text>
+                      <View style={styles.rowMetaRow}>
+                        <Text style={styles.rowMeta}>{formatJstDate(fund.date)}</Text>
+                        {fund.collecter && <Text style={styles.rowFaint}>{fund.collecter}</Text>}
+                      </View>
                     </View>
-                  </View>
-                  <MoneyText value={fund.totalFunds} size={15} tone="deeper" />
-                </ListRow>
-              ))
+                    <MoneyText value={fund.totalFunds} size={15} tone="deeper" />
+                  </ListRow>
+                ))}
+                {remainingRecent > 0 && (
+                  <ListRow last onPress={() => setRecentLimit((n) => n + RECENT_STEP)}>
+                    <Text style={styles.moreText}>さらに表示（残り {remainingRecent} 件）</Text>
+                    <Ionicons name="chevron-down" size={14} color={color.teal} />
+                  </ListRow>
+                )}
+              </>
             )}
           </ListCard>
         </View>
@@ -236,6 +275,7 @@ const styles = StyleSheet.create({
   rowMetaRow: { flexDirection: "row", gap: spacing.sm, marginTop: 2 },
   rowMeta: { fontFamily: font.ui, fontSize: 12, color: color.textMuted },
   rowFaint: { fontFamily: font.ui, fontSize: 12, color: color.textFaint },
+  moreText: { flex: 1, fontFamily: font.uiBold, fontSize: 13, color: color.teal },
   outboxBadge: {
     flexDirection: "row",
     alignItems: "center",

@@ -124,9 +124,16 @@ export type StackedPoint = {
 export function MonthlyStackedBarChart({
   data,
   series,
+  showBreakdown = true,
 }: {
   data: StackedPoint[];
   series: StackSeries[];
+  /**
+   * 店舗別の内訳を下に出すか。
+   * ⚠️ 店舗が 1 軒しか無いとき（店舗別の収益ページ）は false。
+   *    棒の合計と内訳が同じ数字になり、色見本としての役割も無いので同じ行が 2 回並ぶだけになる。
+   */
+  showBreakdown?: boolean;
 }) {
   /** 内訳を出している月。null = まだ押していない（＝最新月） */
   const [selected, setSelected] = useState<string | null>(null);
@@ -237,47 +244,47 @@ export function MonthlyStackedBarChart({
       {/*
         店舗別の内訳。押した棒に追従する（既定は一番右＝最新月）。
         凡例を兼ねるので、その月に売上が無い店舗も色見本として ¥0 で残す。
+
+        ⚠️ **ここに月の合計を出さない。** すぐ上の readout が同じ月の同じ金額を
+           出しているので、同じ数字が縦に 2 回並ぶ。見出しは月と「店舗別」だけ。
       */}
-      <View style={styles.breakdown}>
-        <View style={styles.breakdownHead}>
+      {showBreakdown && (
+        <View style={styles.breakdown}>
           <Text style={styles.breakdownTitle}>{formatMonthLabel(active.month)}の店舗別</Text>
-          <Text style={styles.breakdownTotal}>¥{active.total.toLocaleString()}</Text>
+
+          {active.total === 0 ? (
+            <Text style={styles.breakdownEmpty}>この月の集金記録はありません</Text>
+          ) : (
+            rows.map((item) => {
+              const share = Math.round((item.value / active.total) * 100);
+              return (
+                <View key={item.key} style={styles.breakdownRow}>
+                  <View
+                    style={[
+                      styles.swatch,
+                      { backgroundColor: item.color, opacity: item.value > 0 ? 1 : 0.35 },
+                    ]}
+                  />
+                  <Text
+                    style={[styles.breakdownName, item.value === 0 && styles.breakdownDim]}
+                    numberOfLines={1}
+                  >
+                    {item.name}店
+                  </Text>
+                  <Text style={styles.breakdownShare}>{item.value > 0 ? `${share}%` : ""}</Text>
+                  <Text style={[styles.breakdownValue, item.value === 0 && styles.breakdownDim]}>
+                    ¥{item.value.toLocaleString()}
+                  </Text>
+                </View>
+              );
+            })
+          )}
+
+          {data.length > 1 && (
+            <Text style={styles.breakdownHint}>棒を押すと、その月の内訳に切り替わります</Text>
+          )}
         </View>
-
-        {active.total === 0 ? (
-          <Text style={styles.breakdownEmpty}>この月の集金記録はありません</Text>
-        ) : (
-          rows.map((item) => {
-            const share = Math.round((item.value / active.total) * 100);
-            return (
-              <View key={item.key} style={styles.breakdownRow}>
-                <View
-                  style={[
-                    styles.swatch,
-                    { backgroundColor: item.color, opacity: item.value > 0 ? 1 : 0.35 },
-                  ]}
-                />
-                <Text
-                  style={[styles.breakdownName, item.value === 0 && styles.breakdownDim]}
-                  numberOfLines={1}
-                >
-                  {item.name}店
-                </Text>
-                <Text style={styles.breakdownShare}>{item.value > 0 ? `${share}%` : ""}</Text>
-                <Text
-                  style={[styles.breakdownValue, item.value === 0 && styles.breakdownDim]}
-                >
-                  ¥{item.value.toLocaleString()}
-                </Text>
-              </View>
-            );
-          })
-        )}
-
-        {data.length > 1 && (
-          <Text style={styles.breakdownHint}>棒を押すと、その月の内訳に切り替わります</Text>
-        )}
-      </View>
+      )}
     </View>
   );
 }
@@ -359,15 +366,12 @@ const styles = StyleSheet.create({
     borderTopColor: color.divider,
     gap: 2,
   },
-  breakdownHead: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: spacing.sm,
+  breakdownTitle: {
+    fontFamily: font.uiBold,
+    fontSize: 12,
+    color: color.tealDeeper,
     marginBottom: spacing.xs,
   },
-  breakdownTitle: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
-  breakdownTotal: { ...numeric, fontSize: 14, color: color.tealDeeper },
   breakdownRow: {
     flexDirection: "row",
     alignItems: "center",

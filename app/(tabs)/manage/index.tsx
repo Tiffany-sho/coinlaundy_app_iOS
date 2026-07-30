@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useLaundryStates } from "@/api/queries";
 import { ApiError } from "@/api/client";
@@ -35,6 +35,20 @@ export default function Manage() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [segment, setSegment] = useState<StateEditMode>("stock");
+  /**
+   * ホームの「在庫状況 / 設備状況」から開いたときに、そのタブを出す。
+   *
+   * ⚠️ **この画面はタブバーの下でマウントされたまま残る。** つまり segment は
+   *    前に開いたときの値を保持していて、何も渡さないと「在庫状況を押したのに
+   *    設備が出る」ことになる（キャッシュではなく生きた state が残るのが原因）。
+   * ⚠️ t は呼び出し側が毎回変える値。同じ tab を続けて押しても params が
+   *    変わらないと、この効果が再実行されない。
+   */
+  const { tab, t } = useLocalSearchParams<{ tab?: string; t?: string }>();
+  useEffect(() => {
+    if (tab === "stock" || tab === "equipment") setSegment(tab);
+  }, [tab, t]);
+
   const { data, isLoading, error, refetch, isRefetching } = useLaundryStates();
   const bootstrap = useBootstrap();
   const { isOnline } = useOutbox();
