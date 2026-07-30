@@ -81,6 +81,20 @@
 - `(tabs)` グループは URL に現れない
 - `stores.tsx` と `stores/_layout.tsx` は**共存できない**。ディレクトリ化するなら単体ファイルは消す
 - **フッター（タブバー）を残したい画面はタブ配下に Stack をネストする。** `app/(tabs)/stores/_layout.tsx` がその例。`app/` 直下に置くとタブバーが消える
+- ⚠️ **`presentation: "fullScreenModal"` の画面ではルートの `Modal` が出せない。**
+  react-native-screens はルートの UIViewController から新しい VC をモーダル表示するので、
+  ルートの React ツリーにある `Modal`（`DialogProvider`）は「すでにモーダルを出している
+  VC から更にモーダルを出す」ことになり、**何も表示されずに失敗する。**
+  Metro に `Attempt to present ... which is already presenting ...` が出る。
+  ダイアログの結果を待つ処理は**押しても無反応**になる（集金画面のキャンセルと戻るが
+  これで死んでいた）。**その画面の中で `DialogProvider` を包み直す**と直る
+- ⚠️ **同じ理由で、ルートの絶対配置オーバーレイもモーダル画面の下に隠れる。**
+  `ToastProvider` は `position: "absolute"` なので、`fullScreenModal` の画面に
+  留まったまま出すトースト（入力検証エラーなど）は見えない。
+  ⚠️ ただし `ToastProvider` を画面の中で包み直すと、`router.back()` の直前に出す
+  トーストが画面のアンマウントと同時に消える。包む前に用途を確認すること
+  （恒久的に直すなら react-native-screens の `FullWindowOverlay`。別 UIWindow に
+  描くのでネイティブのモーダルより上に出る。⚠️ iOS 専用で、中に `Modal` は置けない）
 - ⚠️ **`presentation: "fullScreenModal"` は下の画面をアンマウントしない。** 画面いっぱいに
   覆うので消えたように見えるが、Stack の上に載っているだけ。したがって
   **モーダルから戻ってきたときに下の画面の `useEffect` は再実行されない**（deps が

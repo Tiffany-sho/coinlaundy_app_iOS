@@ -16,7 +16,7 @@ import * as Haptics from "expo-haptics";
 import { useBootstrap, useSetCollectMethod, useStore } from "@/api/queries";
 import { CalendarPicker, formatJstDateLong } from "@/components/common/CalendarPicker";
 import { Divider, SectionHead } from "@/components/common/section";
-import { useDialog } from "@/components/common/dialog";
+import { DialogProvider, useDialog } from "@/components/common/dialog";
 import { useToast } from "@/components/common/toast";
 import { CenterMessage, Screen } from "@/components/common/ui";
 import { useKeyboardVisible } from "@/components/common/useKeyboardVisible";
@@ -48,7 +48,35 @@ import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens"
  *
  * 見た目は components/collect/ に切り出してある。ここは状態と送信だけ。
  */
-export default function CollectMoney() {
+/**
+ * ⚠️ **この画面の中に DialogProvider をもう 1 つ置いている。**
+ *
+ * この画面はアプリで唯一 `presentation: "fullScreenModal"`（`app/_layout.tsx`）で、
+ * react-native-screens が**ルートの UIViewController から新しい VC をモーダル表示**する。
+ * 一方ルートの DialogProvider が持つ `Modal` はルートの React ツリーに属するので、
+ * iOS では「すでにモーダルを出している VC から更にモーダルを出す」ことになり
+ * **何も表示されずに失敗する**（Metro に
+ * "Attempt to present ... which is already presenting ..." が出る）。
+ *
+ * `onCancel` は入力があると `dialog.choose` の結果を待つため、ダイアログが出ないと
+ * **キャンセルも戻るも無反応になる。** ここで包み直すと `Modal` が
+ * この画面側の VC に属するので正しく上に出る。
+ *
+ * ⚠️ **ToastProvider は包まないこと。** この画面のトーストは
+ * 「一時保存しました」「集金データを登録しました」のように `router.back()` の
+ * 直前に出すものが多く、ここで包むと画面のアンマウントと同時に消えてしまう。
+ * （その代わり、画面に留まる `toast.error("金額が入力されていません")` は
+ * いまも見えていない。別途対処が必要）
+ */
+export default function CollectMoneyModal() {
+  return (
+    <DialogProvider>
+      <CollectMoney />
+    </DialogProvider>
+  );
+}
+
+function CollectMoney() {
   const { storeId } = useLocalSearchParams<{ storeId: string }>();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
