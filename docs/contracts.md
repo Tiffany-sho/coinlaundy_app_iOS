@@ -11,6 +11,11 @@ Web の Server Action がそのまま正。ここに書いてあるのは**間�
 
 `getEpochTimeInSeconds` は**名前に反してミリ秒を返す**（`Date.UTC(y, m-1, d) - 32_400_000`）。Web の `src/functions/makeDate/date.js` からのコピーなので、直すときは両方同時に直す。
 
+⚠️ **期間の下限を `Date.now() - N日` で作らない。** `date` は JST 深夜 0 時なので、
+UTC の「今この瞬間」から引くと境界が JST の 1 日の途中（前日 15:00Z）に落ち、
+**境目の日が丸ごと欠ける**。JST の年月日を出してから `getEpochTimeInSeconds` で組むこと
+（`getRecentCollectFunds` がこれで「過去1ヶ月」から 1 日落としていた）。
+
 DatePicker が返す `Date` の `getTime()` をそのまま送ると端末 TZ 依存で 1 日ずれる。年月日だけ取り出して `toJstMidnightEpoch()` を通すこと。
 
 ## 文字列の値
@@ -91,6 +96,7 @@ stock_thresholds: stock_thresholds ?? { detergent: 1, softener: 1 },
 - `GET /funds/summary/monthly` は前年同月比のため**過去 2 年固定**。任意期間は `/funds/chart?groupBy=month`（`byStore` 付き）を使う
 - ⚠️ **`GET /funds` の `offset` + `limit` は「直近 2 か月」しか返さない。** `getOrgCollectFundsPaginated` が `startEpoch = changeEpocFromNowYearMonth(-2)` を固定しているため、`offset` をいくら進めてもそれより古いデータには**絶対に届かない**。全件を見せる画面では使わないこと（`useFundList` がこれ）
 - 売上履歴は `GET /funds?from=0&order=&asc=`（`to` は省略＝全期間）を使う。`getOrgCollectFundsInPeriod` は期間の下限が無く、**`ORDER BY` もサーバで効く**。`useFundHistory` がこれ
+- `GET /home` の `recentFunds` は**過去 1 か月を全件**返す（上限 200 件）。件数はアプリが決める。⚠️ **BFF 側で切らないこと。** カードの見出しが「過去1ヶ月の集金記録」なので、5 件に切ると集金の多い組織では半月ぶんしか届かず見出しと中身が食い違う（実際にそう見えていた）
 - ⚠️ **並び替えの対象を期間で絞らない。** 期間を区切って取ると「売上が高い順」の先頭がその期間の中の最高額になり、全期間の最高額ではなくなる。一度に出す件数を絞るのは**受け取ったあと**（`historyRows.ts` の `limit`）で、取得範囲とは別の話
 
 ## プッシュ通知

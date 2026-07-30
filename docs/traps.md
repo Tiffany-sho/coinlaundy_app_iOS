@@ -97,6 +97,23 @@
 
 - `(tabs)` グループは URL に現れない
 - `stores.tsx` と `stores/_layout.tsx` は**共存できない**。ディレクトリ化するなら単体ファイルは消す
+- ⚠️ **`router.replace` は履歴を消さない。置き換えるのは自分の 1 枚だけ。**
+  ログインは `/welcome` → `/login` と積んだうえで `router.replace("/")` し、
+  `/` が `<Redirect href="/(tabs)" />` で更に置き換える。**この時点でも `/welcome` は
+  下に残っている**ので、iOS の画面端スワイプで pop できてしまう
+  （ログインした直後に右へ払うと未ログイン画面に戻る）。
+  ルートの `<Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />` で塞ぐ。
+  ⚠️ タブの**中**の Stack には影響しない（あちらは自前の Stack が持つ）ので、
+  店舗詳細などのスワイプ戻りは生きたまま
+- ⚠️ **タブの画面はマウントされたまま残る。ローカル state も前回の値のまま復活する。**
+  タブを切り替えても unmount されないので、`useState` で持っている表示状態
+  （管理タブの在庫 / 設備の切り替えなど）が前に開いたときのまま出る。
+  ホームの「在庫状況」を押したのに設備が出ていた原因がこれ。
+  **どこを開くかは必ず params で渡す**こと。
+  ⚠️ 受け側の `useEffect` を再実行させるには**毎回変わる値も一緒に渡す**
+  （同じ tab を続けて押すと params が変わらず効果が走らない）。
+  ⚠️ 遷移は `push` ではなく **`navigate`**。`push` は同じ画面をスタックに積み増すので、
+  押した回数だけ戻る操作が要るようになる
 - **フッター（タブバー）を残したい画面はタブ配下に Stack をネストする。** `app/(tabs)/stores/_layout.tsx` がその例。`app/` 直下に置くとタブバーが消える
 - ⚠️ **`presentation: "fullScreenModal"` の画面ではルートの `Modal` が出せない。**
   react-native-screens はルートの UIViewController から新しい VC をモーダル表示するので、
