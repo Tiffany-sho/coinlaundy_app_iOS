@@ -8,6 +8,7 @@ import {
 import { ApiError, apiFetch } from "./client";
 import type {
   ActionMessage,
+  Announcement,
   Bootstrap,
   CollectSchedule,
   DeletionSummary,
@@ -38,7 +39,25 @@ export const queryKeys = {
   fundDetail: (id: string) => ["funds", "detail", id] as const,
   revenueByStore: ["funds", "summary", "stores"] as const,
   states: ["states"] as const,
+  announcements: ["announcements"] as const,
 };
+
+/**
+ * 開発者からのお知らせ。組織に関係なく全ユーザー共通。
+ *
+ * ⚠️ 下書きと期限切れは BFF が落とすので、返ってきたものはそのまま出してよい。
+ * ⚠️ 未読の判定はサーバに持たせていない（端末ごとに独立）。
+ *    `src/components/settings/announcementsRead.ts` を参照。
+ */
+export function useAnnouncements(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.announcements,
+    queryFn: () => apiFetch<Announcement[]>("/announcements"),
+    enabled,
+    // 頻繁に変わるものではないので、開くたびに取り直さない
+    staleTime: 1000 * 60 * 30,
+  });
+}
 
 export function useBootstrap(enabled = true) {
   return useQuery({

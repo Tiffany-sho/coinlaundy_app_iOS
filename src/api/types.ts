@@ -42,6 +42,27 @@ export type Profile = {
   avatar_url: string | null;
 };
 
+/**
+ * 開発者からのお知らせ。組織に関係なく全ユーザー共通。
+ *
+ * ⚠️ 下書き（`published = false`）と期限切れは BFF が落とすので、ここには来ない。
+ * ⚠️ 投稿は Supabase の Table Editor から手で行う。アプリからは読むだけ。
+ */
+export type Announcement = {
+  id: string;
+  /**
+   * 公開日時の epoch（ミリ秒）。
+   * ⚠️ BFF が ISO 文字列から畳んで返している。**アプリで ISO をパースしない**
+   *    （Hermes のパースに寄りかかると実機だけ NaN になる。docs/traps.md 参照）。
+   */
+  publishedAt: number;
+  /** "info" | "feature" | "maintenance" | "incident"。⚠️ 未知の値も来うる */
+  category: string;
+  title: string;
+  /** プレーンテキスト。改行はそのまま出す（Markdown は解釈しない） */
+  body: string;
+};
+
 export type Organization = {
   id: string;
   name: string;

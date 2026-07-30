@@ -3,7 +3,8 @@ import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useBootstrap } from "@/api/queries";
+import { useAnnouncements, useBootstrap } from "@/api/queries";
+import { useUnreadAnnouncementCount } from "@/components/settings/announcementsRead";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, ListCard, ListRow, Muted, Screen, Title } from "@/components/common/ui";
 import { color, font, spacing } from "@/theme/tokens";
@@ -26,6 +27,9 @@ export default function Settings() {
   const router = useRouter();
   const { signOut } = useAuth();
   const { data } = useBootstrap();
+  /** ⚠️ 既読は端末ローカル（MMKV）。機種変更やアプリの入れ直しでリセットされる */
+  const announcements = useAnnouncements();
+  const unreadNews = useUnreadAnnouncementCount(announcements.data);
 
   async function onSignOut() {
     await signOut();
@@ -148,6 +152,11 @@ export default function Settings() {
         <View style={{ marginTop: spacing.lg }}>
           <ListCard icon="document-text-outline" title="その他">
             <LinkRow
+              label="開発者からのお知らせ"
+              badge={unreadNews}
+              onPress={() => router.push("/settings/news")}
+            />
+            <LinkRow
               label="利用規約"
               onPress={() => router.push("/settings/webview?page=terms" as Href)}
             />
@@ -184,11 +193,29 @@ function InfoRow({ label, value, last }: { label: string; value: string; last?: 
   );
 }
 
-function LinkRow({ label, onPress, last }: { label: string; onPress: () => void; last?: boolean }) {
+function LinkRow({
+  label,
+  onPress,
+  last,
+  badge,
+}: {
+  label: string;
+  onPress: () => void;
+  last?: boolean;
+  /** 未読の件数。0 のときは何も出さない */
+  badge?: number;
+}) {
   return (
     <ListRow last={last} onPress={onPress}>
       <Text style={styles.linkLabel}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={color.cyan300} />
+      <View style={styles.linkRight}>
+        {badge != null && badge > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeLabel}>{badge}</Text>
+          </View>
+        )}
+        <Ionicons name="chevron-forward" size={16} color={color.cyan300} />
+      </View>
     </ListRow>
   );
 }
@@ -196,6 +223,18 @@ function LinkRow({ label, onPress, last }: { label: string; onPress: () => void;
 const styles = StyleSheet.create({
   value: { fontFamily: font.ui, fontSize: 15, color: color.textMain, flexShrink: 1, textAlign: "right" },
   linkLabel: { fontFamily: font.ui, fontSize: 15, color: color.textMain },
+  linkRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  /* 未読の件数。⚠️ 2 桁でも丸くつぶれないよう最小幅を持たせる */
+  badge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 999,
+    backgroundColor: color.orange500,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeLabel: { fontFamily: font.uiBold, fontSize: 11, color: "#FFFFFF" },
   avatarRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginBottom: spacing.lg },
   avatar: {
     width: 64,
