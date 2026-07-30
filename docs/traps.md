@@ -70,6 +70,34 @@
   ただし呼ぶたびに console.warn が出るので `isPushSupported()` で塞いでいる
 - **`react-native-mmkv` v4 のキー削除は `remove()`。** `delete()` は存在しない
 
+## EAS / 実機に入れるまで
+
+新しい端末を足すときに毎回同じところで止まるので、順番と落とし穴だけ。
+
+- **コマンドは `npx eas-cli`。** `npx eas` は
+  *could not determine executable to run* で落ちる。npx が引数を**パッケージ名**として
+  探すのに対し、パッケージ名は `eas-cli` で、その中の実行ファイルが `eas` という名前
+  だから。グローバルに入れれば（`npm i -g eas-cli`）`eas` だけで通る
+- ⚠️ **端末登録はビルドより前に。** Ad Hoc のプロビジョニングプロファイルは
+  ビルド時点で登録されている端末しか含まない。後から登録した端末は
+  インストールできず、**ビルドのやり直しになる**（`eas-cli device:list` で先に確認）
+- **`device:create` は `Website` を選ぶ。** `Current Machine` は Apple Silicon Mac 用
+  なので Windows では使えない。QR は **Safari で開く**（Chrome では構成プロファイルを
+  扱えない）
+- ⚠️ **プロファイルはダウンロードしただけでは入らない。** iOS 16 以降は
+  設定 → 一般 → VPN とデバイス管理 → インストール、まで手で進める必要がある
+- ⚠️ **iOS 16 以降はデベロッパモードが要る。** development ビルドを起動すると
+  「デベロッパモードが必要です」で止まる。設定 → プライバシーとセキュリティ →
+  デベロッパモード → オン → **端末を再起動**（再起動しないと有効にならない）。
+  この項目は**開発署名のアプリを起動しようとした後でないと設定に現れない**
+- **APNs キーは Team で 1 個あれば足りる。** `eas-cli credentials` の
+  `Set up your project to use Push Notifications` を選べば作成と割り当てを両方やる。
+  ⚠️ `Add a new push key` を繰り返すと **Apple の上限（アカウント 2 個）**に当たる。
+  `.p8` は一度しかダウンロードできないので、自分で保存せず EAS に預けたままにする
+- **`developmentClient: true` のビルドは JS を埋め込まない。** 起動には
+  `npx expo start --dev-client` が要り、`EXPO_PUBLIC_*` は**ローカルの `.env.local`**
+  が効く（EAS 側の環境変数が必須になるのは `preview` / `production` から）
+
 ## pg_cron → pg_net → Edge Function
 
 004 を適用したあと、通知が届かないときに見る場所。**失敗が 2 つのテーブルに
