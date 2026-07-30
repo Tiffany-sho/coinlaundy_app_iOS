@@ -12,7 +12,7 @@ import {
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { StatusBar } from "expo-status-bar";
+import { useStatusBarStyle } from "@/components/common/useStatusBarStyle";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
@@ -100,6 +100,14 @@ const COLLAGE_GAP = 10;
 const FILL = { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 } as const;
 
 export default function Welcome() {
+  /**
+   * 背景が濃色なのでステータスバーだけ白抜きにする。
+   * ⚠️ `<StatusBar style="light" />` を置かないこと。あれは離れても元に戻らないので、
+   *    この画面を通ったあと薄い水色の背景に白文字が残って時計も電池も読めなくなる
+   *    （`useStatusBarStyle` のコメント参照）。
+   */
+  useStatusBarStyle("light");
+
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -125,9 +133,6 @@ export default function Welcome() {
 
   return (
     <View style={styles.root}>
-      {/* 背景が濃色なのでステータスバーだけ白抜きにする（他画面は dark のまま） */}
-      <StatusBar style="light" />
-
       <LinearGradient
         colors={["#155E75", "#0891B2", "#06B6D4"]}
         locations={[0, 0.55, 1]}

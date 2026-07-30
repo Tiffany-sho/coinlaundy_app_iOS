@@ -53,6 +53,18 @@
   `addListener()` が `{ remove: () => {} }` を返すだけの no-op で `isVisible()` も常に
   false（`dist/exports/Keyboard/index.js`）。落ちないので分岐は要らない
 
+## expo-status-bar
+
+- ⚠️ **`<StatusBar style="…" />` はマウント時に設定するだけで、アンマウント時に
+  元へ戻さない。** 暗い背景の画面で `light` にすると、そこを離れた後も**白文字が
+  残り続ける。** 背景が薄い水色（`color.appBg`）なので時計も電池も読めなくなる。
+  ルートの `<StatusBar style="dark" />` は効果が 1 回だけなので戻してくれない。
+  ⚠️ **画面から出ないと気づけない**（その画面の中では正しく見える）。
+  画面ごとに変えたいときは `useStatusBarStyle()`（`src/components/common/`）を使う。
+  `useFocusEffect` の後片付けで既定（`dark`）へ戻すので離れれば必ず黒文字になる
+- web では `setStatusBarStyle` が no-op（`expo-status-bar` の `StatusBar.web.ts`）。
+  呼んでも害は無いので分岐は要らない
+
 ## Hermes（実機の JS エンジン）
 
 ブラウザ確認では最後まで再現しない。**実機で初めて出る。**
