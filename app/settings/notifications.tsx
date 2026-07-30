@@ -14,11 +14,31 @@ import {
   type PushPermission,
 } from "@/push/pushToken";
 import { Card, CenterMessage, Muted, Screen, Title } from "@/components/common/ui";
+import { Select, type SelectOption } from "@/components/common/form";
 import { useToast } from "@/components/common/toast";
-import { color, font, numeric, radius, spacing } from "@/theme/tokens";
+import { color, font, radius, spacing } from "@/theme/tokens";
 
-/** 集金リマインダを送る時刻の候補。深夜は現場が見ないので出さない */
-const HOURS = [6, 7, 8, 9, 10, 12, 15, 18, 20];
+/**
+ * 集金リマインダを送る時刻。
+ *
+ * ⚠️ **0〜23 の範囲を外れた値を送らない。** Edge Function は毎時起動して現在の
+ *    JST 時刻と突き合わせるので、範囲外だと永久に一致せず通知が止まる
+ *    （BFF 側でも弾いている。docs/contracts.md）。
+ */
+const HOUR_OPTIONS: SelectOption<number>[] = Array.from({ length: 24 }, (_, hour) => ({
+  value: hour,
+  label: `${hour}:00`,
+}));
+
+/**
+ * 送信側の既定値（docs/contracts.md）。
+ *
+ * ⚠️ **MMKV に残った古い応答には `reminderHour` が無いことがある。**
+ *    型は number なので TypeScript は何も言わないが実体は undefined で、
+ *    そのままだとセレクトが「選択してください」になり未設定に見える。
+ *    サーバも「キーが無い＝8時」として扱うので、ここで補うのが実態と合う。
+ */
+const DEFAULT_REMINDER_HOUR = 8;
 
 const ITEMS: { key: keyof NotificationPrefs; label: string; note: string }[] = [
   { key: "collectReminder", label: "集金日のお知らせ", note: "集金日の前日と当日に通知します" },
@@ -127,9 +147,15 @@ export default function NotificationSettings() {
                         <Text style={styles.rowLabel}>{item.label}</Text>
                         <Text style={styles.rowNote}>{item.note}</Text>
                       </View>
+                      {/*
+                        ⚠️ **isPending で disabled にしない。** 押してから応答が返るまで
+                           操作を止めると、その間トグルが動かず「固まってから切り替わる」
+                           ように見える。楽観的更新（src/push/queries.ts）で即座に
+                           反映し、失敗したら自動で戻る。
+                      */}
                       <Switch
                         value={Boolean(data?.[item.key])}
-                        disabled={blocked || update.isPending}
+                        disabled={blocked}
                         onValueChange={(value) => set({ [item.key]: value })}
                         trackColor={{ true: color.teal, false: color.divider }}
                       />
@@ -138,24 +164,13 @@ export default function NotificationSettings() {
                 </Card>
 
                 <Text style={styles.sectionLabel}>集金日のお知らせを送る時刻</Text>
-                <View style={[styles.hourGrid, blocked && { opacity: 0.5 }]}>
-                  {HOURS.map((hour) => {
-                    const selected = data?.reminderHour === hour;
-                    return (
-                      <Pressable
-                        key={hour}
-                        onPress={() => set({ reminderHour: hour })}
-                        disabled={blocked || update.isPending}
-                        accessibilityRole="button"
-                        style={[styles.hour, selected && styles.hourSelected]}
-                      >
-                        <Text style={[styles.hourLabel, selected && styles.hourLabelSelected]}>
-                          {hour}:00
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                <Select
+                  title="お知らせを送る時刻"
+                  value={data?.reminderHour ?? DEFAULT_REMINDER_HOUR}
+                  options={HOUR_OPTIONS}
+                  onChange={(reminderHour) => set({ reminderHour })}
+                  disabled={blocked}
+                />
                 <Muted style={{ fontSize: 11, marginTop: spacing.sm }}>
                   日本時間です。前日のお知らせも同じ時刻に届きます。
                 </Muted>
@@ -203,19 +218,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     marginBottom: spacing.sm,
   },
-  hourGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  hour: {
-    minWidth: 64,
-    minHeight: 40,
-    paddingHorizontal: spacing.md,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: color.cyan100,
-    backgroundColor: color.cardBg,
-  },
-  hourSelected: { backgroundColor: color.tealPale, borderColor: color.cyan400 },
-  hourLabel: { ...numeric, fontSize: 13, color: color.textMuted },
-  hourLabelSelected: { color: color.tealDeeper },
 });
