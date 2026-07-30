@@ -40,6 +40,20 @@ const EXT_TO_MIME: Record<string, string> = {
 };
 
 /**
+ * アップロードできる上限。
+ *
+ * ⚠️ **BFF の 10MB ではなくこちらが実際の壁。** Vercel のサーバーレス関数は
+ *    リクエストボディが 4.5MB を超えると**関数に届く前に**弾く
+ *    （FUNCTION_PAYLOAD_TOO_LARGE）。アップロード途中で接続を切られるので、
+ *    端末側では fetch の例外になり「通信できませんでした」しか出ず、
+ *    電波のせいだと誤解する。BFF 側の 10MB チェックはここより後なので
+ *    **一度も到達しない。**
+ *    iPhone の写真は quality 0.8 でも 2〜5MB になるので現実的に踏む。
+ *    multipart のヘッダぶんの余裕を見て 4MB にしてある。
+ */
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+/**
  * 選んだ画像の形式を決める。
  *
  * ⚠️ URI の拡張子から取ってはいけない。
@@ -99,12 +113,30 @@ export function StoreImagePicker({
 
     const asset = picked.assets[0];
     const mime = resolveMime(asset);
+
+    // 切り分け用。実機で「通信できませんでした」が出たときはまずこの行を見る
+    console.log(
+      `[store-image] mime=${mime} size=${asset.fileSize ?? "?"}B ` +
+        `${asset.width}x${asset.height} uri=${asset.uri.slice(0, 60)}`
+    );
+
     const ext = mime ? ALLOWED_MIME[mime] : undefined;
     if (!ext) {
       setError(
         mime === "image/heic" || mime === "image/heif"
           ? "この写真は HEIC 形式のため登録できません。JPEG で保存し直してから選んでください。"
           : "jpeg または png の画像を選んでください"
+      );
+      return;
+    }
+
+    // ⚠️ 上限は BFF ではなくゲートウェイ側で決まる（MAX_UPLOAD_BYTES のコメント参照）。
+    //    ここで止めないと「通信できませんでした」という無関係な文言になる
+    const size = asset.fileSize ?? 0;
+    if (size > MAX_UPLOAD_BYTES) {
+      setError(
+        `画像のサイズが大きすぎます（${(size / 1024 / 1024).toFixed(1)}MB）。` +
+          `4MB 以下の画像を選んでください。`
       );
       return;
     }

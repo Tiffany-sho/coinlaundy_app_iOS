@@ -10,12 +10,18 @@ const CLIENT_VERSION = `ios/${Constants.expoConfig?.version ?? "0.0.0"}`;
 export class ApiError extends Error {
   readonly status: number;
   readonly code: ApiErrorCode;
+  /**
+   * fetch が投げた元の理由。`code === "OFFLINE"` のときだけ入る。
+   * ⚠️ ユーザーには出さない（英語のうえ内部事情なので）。ログと切り分け用。
+   */
+  readonly detail?: string;
 
-  constructor(message: string, status: number, code: ApiErrorCode) {
+  constructor(message: string, status: number, code: ApiErrorCode, detail?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.detail = detail;
   }
 
   /** 再試行しても無駄なエラーか（Outbox がリトライ対象を判断するのに使う） */
@@ -64,6 +70,21 @@ async function send(path: string, options: RequestOptions, token: string | null)
 }
 
 /**
+ * fetch が投げたときの ApiError を組む。
+ *
+ * ⚠️ **元の例外を捨てないこと。** fetch が投げる理由（送るファイルが読めない、
+ *    ボディが大きすぎてゲートウェイに接続を切られた、DNS、TLS、タイムアウト）は
+ *    すべてこの中にしか無い。捨てると画面には「通信できませんでした」だけが残り、
+ *    電波が悪いのかアプリのバグなのか区別できなくなる（画像アップロードの
+ *    切り分けで実際に詰まった）。
+ */
+function offline(cause: unknown, path: string, options: RequestOptions): ApiError {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  console.warn(`[api] ${options.method ?? "GET"} ${path} が失敗: ${detail}`);
+  return new ApiError("通信できませんでした", 0, "OFFLINE", detail);
+}
+
+/**
  * BFF を叩く唯一の入口。
  *
  * - 401 を受けたら「1 回だけ」セッションを更新して再試行する。
@@ -76,9 +97,9 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   let response: Response;
   try {
     response = await send(path, options, token);
-  } catch {
+  } catch (e) {
     // ネットワーク到達不可。オフラインバナーの判定に使う
-    throw new ApiError("通信できませんでした", 0, "OFFLINE");
+    throw offline(e, path, options);
   }
 
   if (response.status === 401) {
@@ -87,8 +108,8 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       token = data.session.access_token;
       try {
         response = await send(path, options, token);
-      } catch {
-        throw new ApiError("通信できませんでした", 0, "OFFLINE");
+      } catch (e) {
+        throw offline(e, path, options);
       }
     }
   }
