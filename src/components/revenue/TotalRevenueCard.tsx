@@ -7,9 +7,14 @@ import { color, font, spacing } from "@/theme/tokens";
  * 総額収益。Web の StoreRevenueChart にある「全店舗累計」に当たる。
  * 期間の切り替えに関係なく変わらない数字なので、タブの外（常時表示）に置く。
  *
- * ⚠️ **期間は 1 行使い切る。** 以前は「期間 / 店舗数 / 最終集金日」を横 3 列にして
- *    期間だけ 2 行に折っていたが、列幅が 1/3 しか無いので西暦を 2 桁に削っても窮屈で、
- *    `〜` が行頭に落ちて範囲なのか単独の月なのか読み取れなかった。
+ * 収益タブと店舗別の収益ページで**同じカード・同じ見出し**を使う。どちらの画面かは
+ * ページのヘッダ（「◯◯店の収益」）で分かるので、見出しに店舗名を混ぜない。
+ *
+ * ⚠️ **期間は見出しの右に置く。ラベルは付けない。**
+ *    以前は「期間 / 店舗数 / 最終集金日」を横 3 列にして期間だけ 2 行に折っていたが、
+ *    列幅が 1/3 しか無いので西暦を 2 桁に削っても窮屈で、`〜` が行頭に落ちて
+ *    範囲なのか単独の月なのか読み取れなかった。金額の直上に横並びで置けば
+ *    「この期間の合計」と一息で読める。
  *
  * ⚠️ **期間は /funds/summary/stores の firstDate / lastDate から作る。**
  *    月次サマリー（/funds/summary/monthly）は前年同月比のため**過去 2 年に固定**で、
@@ -18,15 +23,12 @@ import { color, font, spacing } from "@/theme/tokens";
  *    その但し書きはもう要らない（濁す理由が無くなったので消してある）。
  */
 export function TotalRevenueCard({
-  title = "総額収益",
   total,
   stats,
   firstDate,
   lastDate,
   isLoading,
 }: {
-  /** 店舗別の画面では「〇〇店の売上総額」のように差し替える */
-  title?: string;
   total: number;
   /** 下段に横並びで出す項目。全体版は「店舗数 / 集金回数」、店舗版は「集金回数」だけ */
   stats: { label: string; value: string }[];
@@ -44,27 +46,25 @@ export function TotalRevenueCard({
 
   return (
     <Card style={{ marginBottom: spacing.lg }}>
-      <Text style={styles.cardTitle}>{title}</Text>
+      <View style={styles.headRow}>
+        <Text style={styles.cardTitle}>総額収益</Text>
+        {/* ⚠️ 集金が 1 件も無いときは何も出さない。ラベルが無いので「—」だけ置くと
+               何の「—」か分からない */}
+        {!isLoading && hasPeriod && (
+          <View style={styles.period}>
+            <Text style={styles.date}>{formatJstDate(firstDate as number)}</Text>
+            <Text style={styles.tilde}>〜</Text>
+            <Text style={styles.date}>{formatJstDate(lastDate as number)}</Text>
+          </View>
+        )}
+      </View>
+
       {isLoading ? (
         <ActivityIndicator color={color.teal} style={{ alignSelf: "flex-start" }} />
       ) : (
         <>
           {/* ¥ を分けるのはホームのヒーローだけ（ui.tsx の MoneyText のコメント参照） */}
           <MoneyText value={total} size={30} tone="deeper" />
-
-          {/* 期間は横 1 行。開始 → 〜 → 終了の順で目が流れる */}
-          <View style={styles.periodRow}>
-            <Text style={styles.periodLabel}>期間</Text>
-            {hasPeriod ? (
-              <View style={styles.periodValue}>
-                <Text style={styles.date}>{formatJstDate(firstDate as number)}</Text>
-                <Text style={styles.tilde}>〜</Text>
-                <Text style={styles.date}>{formatJstDate(lastDate as number)}</Text>
-              </View>
-            ) : (
-              <Text style={styles.date}>—</Text>
-            )}
-          </View>
 
           <View style={styles.stats}>
             {stats.map((stat, i) => (
@@ -96,28 +96,20 @@ function Stat({
 }
 
 const styles = StyleSheet.create({
-  cardTitle: {
-    fontFamily: font.uiBold,
-    fontSize: 14,
-    color: color.tealDeeper,
-    marginBottom: spacing.md,
-  },
-  periodRow: {
+  headRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: spacing.md,
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: color.divider,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
-  periodLabel: { fontFamily: font.ui, fontSize: 11, color: color.textFaint },
-  periodValue: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  /* ⚠️ 日付に numeric（Inter）を使わない。区切りが "/" だけとはいえ、
-        他の日付表示（font.ui 系）と並んだときに書体が揃わない */
-  date: { fontFamily: font.uiBold, fontSize: 14, color: color.textMain },
-  tilde: { fontFamily: font.ui, fontSize: 12, color: color.textFaint },
+  cardTitle: { fontFamily: font.uiBold, fontSize: 14, color: color.tealDeeper },
+  /* ⚠️ shrink を付ける。期間が長い（西暦 4 桁 + 2 桁日）ときに見出しを押し出さない */
+  period: { flexDirection: "row", alignItems: "center", gap: 5, flexShrink: 1 },
+  /* ⚠️ 日付に numeric（Inter）を使わない。他の日付表示（font.ui 系）と並んだときに
+        書体が揃わない */
+  date: { fontFamily: font.uiBold, fontSize: 12, color: color.textMuted },
+  tilde: { fontFamily: font.ui, fontSize: 11, color: color.textFaint },
   stats: {
     flexDirection: "row",
     marginTop: spacing.md,

@@ -167,9 +167,11 @@ export default function StoreFunds() {
         }
         ListHeaderComponent={
           <View>
-            {/* 全体版と同じカード。店舗が固定なので下段は「集金回数」だけ */}
+            {/*
+              全体版と同じカード・同じ見出し。店舗が固定なので下段は「集金回数」だけ。
+              ⚠️ 見出しに店舗名を混ぜない。どの店舗かは上のヘッダ（「◯◯店の収益」）で分かる
+            */}
             <TotalRevenueCard
-              title={store.data ? `${store.data.store}店の売上総額` : "売上総額"}
               total={summary?.total ?? 0}
               stats={[
                 {
