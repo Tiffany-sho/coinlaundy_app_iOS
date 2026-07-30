@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useHome, useMonthlySummary, queryKeys } from "@/api/queries";
 import { useOutbox } from "@/offline/OutboxProvider";
@@ -34,6 +34,12 @@ export default function Home() {
   const queryClient = useQueryClient();
   /** 集金記録を何件まで出しているか。⚠️ 取得範囲ではなく表示量 */
   const [recentLimit, setRecentLimit] = useState(RECENT_STEP);
+  /**
+   * ホームタブをもう一度押したら先頭へ戻す。
+   * ⚠️ 「今いる画面がそのタブの 1 枚目のとき」だけ動く（useScrollToTop の判定）。
+   */
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
 
   // 初回の集金登録を終えた人にだけ通知許可を聞く（集金モーダルの中では聞けない）
   usePushPriming();
@@ -93,6 +99,7 @@ export default function Home() {
     <Screen>
       {isOffline && <OfflineBanner />}
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.body, { paddingTop: insets.top + spacing.lg }]}
         refreshControl={
           <RefreshControl
@@ -125,12 +132,9 @@ export default function Home() {
 
         {/* ⚠️ 集金日のカウントダウンはヘッダー（日付の隣）へ移した。ここに戻さないこと */}
 
-        {/* Web と同じ位置（売上カードの下・今日の対応状況の上） */}
-        <View style={{ marginTop: spacing.xl }}>
-          <SectionHeading>クイックアクション</SectionHeading>
-          <QuickActions myRole={bootstrap.data.organization.myRole} />
-        </View>
-
+        {/* ⚠️ 今日の対応状況をクイックアクションより先に出す（2026-07-30）。
+               Web は逆順だが、アプリでは「まず今日どうなっているか」を見て
+               そのあと操作を選ぶ流れにしてある。Web に合わせ直さないこと */}
         <View style={{ marginTop: spacing.xl }}>
           <SectionHeading>今日の対応状況</SectionHeading>
           <View style={styles.statusRow}>
@@ -164,6 +168,11 @@ export default function Home() {
               }
             />
           </View>
+        </View>
+
+        <View style={{ marginTop: spacing.xl }}>
+          <SectionHeading>クイックアクション</SectionHeading>
+          <QuickActions myRole={bootstrap.data.organization.myRole} />
         </View>
 
         <View style={{ marginTop: spacing.xl }}>
@@ -266,7 +275,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1.5,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    /* ⚠️ 縦の余白は 2 つのカードで必ず揃える。片方だけ変えると
+          「問題なし」と「N店舗 要対応」で高さが違って段差が出る */
+    paddingVertical: spacing.lg,
+    minHeight: 76,
   },
   statusIcon: { borderRadius: 999, padding: 6 },
   statusLabel: { fontFamily: font.uiBold, fontSize: 11, color: color.textMuted },

@@ -95,6 +95,41 @@
 
 ## expo-router v4
 
+- ⚠️ **型付きルート（`.expo/types/router.d.ts`）は dev server が動いたまま
+  ファイルを増減させると壊れる。** 差分生成が働くので、
+  - `account.tsx` を `account/index.tsx` に移すと `/settings/account` ではなく
+    **`/settings/account/index`** という誤ったパスを吐く
+  - 逆にディレクトリを足すと `/settings/account` の行が**丸ごと消える**
+  - `src/components/**` のファイルが `/../src/components/…` として**ルート扱いで混入する**
+
+  症状は `router.push("/settings/account")` が
+  *is not assignable to parameter of type …* で落ちること。**コードは正しい。**
+  直し方は全再生成:
+
+  ```bash
+  rm -f .expo/types/router.d.ts
+  npx expo start --port 8092    # ⚠️ 動いている dev server と別のポートで
+  ```
+
+  ⚠️ **`npx expo start` は非対話モードだとポート衝突で黙って終わる**
+  （`Port 8081 is being used` → `Skipping dev server`）。型は生成されないので、
+  ファイルができたか確認すること。⚠️ Git Bash に `pkill` は無いので、
+  後片付けは PowerShell の `Get-NetTCPConnection -LocalPort … | Stop-Process`
+
+- ⚠️ **タブバーは「今いるタブ」を押しても何もしない。** react-navigation の
+  `BottomTabBar` が `if (!isFocused)` で囲っているため。タブの中に Stack を
+  入れている画面（`stores/` `manage/`）ではこれが行き止まりになる。
+  ホームから `/stores/[id]` へ入ると**その Stack は詳細 1 枚だけ**になり、
+  戻るは一覧ではなくホームへ抜け、店舗タブを押しても何も起きない
+  ＝**一覧に二度と辿り着けない**。
+  ⚠️ `unstable_settings.anchor: "index"` を書いてあっても防げない
+  （効くのは URL からの復元で、他タブからの `router.push` では下に積まれない）。
+  ⚠️ `dismissAll`（popToTop）でも直らない。積まれているのが 1 枚なので既に先頭。
+  **`router.dismissTo("/stores")`** を `tabPress` で呼ぶこと（「その href まで pop、
+  無ければ現在の画面を置き換える」なので、どちらの積まれ方でも一覧に着く）。
+  スクロールを先頭へ戻すのは `useScrollToTop(ref)`（`expo-router` から取れる。
+  ⚠️ 焦点があり、かつ Stack の 1 枚目のときだけ動く）
+
 - `(tabs)` グループは URL に現れない
 - `stores.tsx` と `stores/_layout.tsx` は**共存できない**。ディレクトリ化するなら単体ファイルは消す
 - ⚠️ **`router.replace` は履歴を消さない。置き換えるのは自分の 1 枚だけ。**
@@ -168,9 +203,25 @@
 
 ## App Store 審査
 
-- **アプリ内 WebView に出してよいのは Web 側の `/app/*` だけ。** `/terms` は「Proプラン ¥780/月」、`/tokushoho` は特商法の性質上**必ず**販売価格と決済条件を書く、`/help` は「アップグレードができます」を含む。いずれも Guideline 3.1.3(a)（アプリ外の購入手段への誘導）に触れる
-- **本文を消しただけでは足りない。** Next の `src/app/layout.js` が全ページを Navbar + Footer で包んでいるので、規約ページからサイトのナビ経由でプラン画面へ辿れてしまう。`appLegalPaths.js` に載せてナビごと消し、アプリ側も `onShouldStartLoadWithRequest` で許可リスト外の遷移を止める。**片方だけ直しても意味がない**
-- **特商法はアプリからリンクしない。** アプリ内課金が無い以上、アプリに掲示義務は生じない
+- ⚠️ **Web のページをアプリに出す経路はもう無い**（2026-07-30 に WebView を廃止し、
+  規約とプライバシーはアプリ内のテキストになった。`src/content/legal/`）。
+  したがって下の 2 つは**復活させるときだけ**効く話:
+  - アプリ内 WebView に出してよいのは Web 側の `/app/*` だけ。`/terms` は
+    「Proプラン ¥780/月」、`/tokushoho` は販売価格と決済条件、`/help` は
+    「アップグレードができます」を含む
+  - **本文を消しただけでは足りない。** Next の `src/app/layout.js` が全ページを
+    Navbar + Footer で包んでいるので、規約ページからナビ経由でプラン画面へ辿れる。
+    `appLegalPaths.js` に載せてナビごと消し、アプリ側も許可リストで止める。
+    **片方だけ直しても意味がない**
+- ⚠️ **「アプリ内課金が無い」を前提にした判断は 2026-07-29 に全部失効している。**
+  IAP を入れたため。この節にはもともと「特商法はアプリ内課金が無い以上、掲示義務が
+  生じない」と書いてあったが、**前提が逆になっている。**
+  - 特商法は今もアプリに載せていない。理由は「App Store 経由の購読では Apple が
+    販売者になる」こと。⚠️ **法務の判断なので審査提出前に確認すること**
+  - 利用規約は逆に**購読の条件を書く側に変わった**（第5条・第6条）。
+    Guideline 3.1.3(a) が禁じるのは**外部での購入への誘導**であって、
+    アプリ内課金の条件を書くことではない。3.1.2 はむしろ開示を求める
+  - ⚠️ **価格を数字で書かない**のは今も同じ（出してよいのは `displayPrice` だけ）
 
 ## プッシュ通知（expo-notifications）
 

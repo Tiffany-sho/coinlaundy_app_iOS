@@ -3,7 +3,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { color, font, radius, shadow, spacing } from "@/theme/tokens";
+import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
 
 /**
  * トースト。Web の showToast()（functions/makeToast/toast.js）に相当する。
@@ -41,6 +41,16 @@ const STYLE: Record<
   error: { bg: color.red500, fg: "#FFFFFF", icon: "alert-circle" },
   info: { bg: color.gray800, fg: "#FFFFFF", icon: "information-circle" },
 };
+
+/**
+ * 画面上端の「戻る」ボタンを避けるための高さ。
+ *
+ * ⚠️ **詰めないこと。トーストは Pressable なので、重なると見た目だけでなく
+ *    戻るボタンが押せなくなる**（成功トーストで 2.6 秒、失敗で 4.2 秒）。
+ *    各画面のヘッダは `paddingTop: insets.top + spacing.sm` に HIT_SIZE の
+ *    ボタンを置く形で揃えてあるので、その下端 + 余白ぶん下げる。
+ */
+const HEADER_CLEARANCE = spacing.sm + HIT_SIZE + spacing.xs;
 
 type ToastState = { id: number; kind: ToastKind; message: string };
 
@@ -106,11 +116,12 @@ function ToastView({ toast, onDismiss }: { toast: ToastState; onDismiss: () => v
 
   return (
     <Animated.View
-      // タブバーやキーボードに隠れないよう画面上部に出す
+      /* タブバーやキーボードに隠れないよう画面上部に出す。
+         ⚠️ ただし上端いっぱいには出さない（HEADER_CLEARANCE を参照） */
       style={[
         styles.wrap,
         {
-          top: insets.top + spacing.sm,
+          top: insets.top + HEADER_CLEARANCE,
           opacity: anim,
           transform: [
             { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) },

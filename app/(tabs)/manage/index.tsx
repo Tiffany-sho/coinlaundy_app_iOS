@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useLaundryStates } from "@/api/queries";
 import { ApiError } from "@/api/client";
@@ -33,6 +33,9 @@ const SEGMENTS = [
  */
 export default function Manage() {
   const insets = useSafeAreaInsets();
+  /** タブをもう一度押したら先頭へ戻す（今いる画面がタブの 1 枚目のときだけ動く） */
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
   const router = useRouter();
   const [segment, setSegment] = useState<StateEditMode>("stock");
   /**
@@ -76,6 +79,7 @@ export default function Manage() {
         />
       ) : (
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={color.teal} />

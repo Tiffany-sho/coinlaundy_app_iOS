@@ -1,4 +1,4 @@
-import { Tabs } from "expo-router";
+import { Tabs, router, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap } from "@/api/queries";
@@ -12,6 +12,34 @@ const TAB_BAR_CONTENT_HEIGHT = 66;
 
 /** ホームインジケータが無い端末でも下に指を置ける最低限の余白 */
 const TAB_BAR_MIN_BOTTOM = 18;
+
+/**
+ * 「今いるタブをもう一度押したら、そのタブの先頭画面へ戻す」ためのリスナー。
+ *
+ * ⚠️ **React Navigation の既定は「今いるタブを押しても何もしない」。**
+ *    BottomTabBar の onPress が `if (!isFocused)` で囲われているため。
+ *    タブの中に Stack を入れている stores / manage では、これが行き止まりを生む:
+ *    ホームのクイックアクションから `/stores/[id]` へ入ると、店舗タブの Stack は
+ *    **詳細 1 枚だけ**になり（一覧がその下に積まれない）、
+ *      - 戻る → 一覧ではなくホームへ抜ける
+ *      - 店舗タブを押す → 既に focused なので**何も起きない**
+ *    となって**店舗一覧に二度と辿り着けなくなる。**
+ *
+ * ⚠️ **`dismissAll`（popToTop）では直らない。** 積まれているのが詳細 1 枚なので、
+ *    その 1 枚が既に「先頭」であり何も起きない。
+ *    `dismissTo` は「その href まで pop、無ければ**現在の画面を置き換える**」ので
+ *    どちらの積まれ方でも一覧に着く。
+ *
+ * 先頭画面に既にいるときは何も起きない。そのときスクロールを上に戻すのは
+ * 各タブの `useScrollToTop(ref)` の担当（こちらは tabPress を別途拾っている）。
+ */
+function backToTabRoot(href: Href) {
+  return ({ navigation }: { navigation: { isFocused: () => boolean } }) => ({
+    tabPress: () => {
+      if (navigation.isFocused()) router.dismissTo(href);
+    },
+  });
+}
 
 /**
  * Web の FooterNavbar と同じタブ構成にする。
@@ -66,6 +94,7 @@ export default function TabsLayout() {
           入れ子にしてあるので詳細へ進んでもタブバーが出たままになる */}
       <Tabs.Screen
         name="stores"
+        listeners={backToTabRoot("/stores")}
         options={{
           title: "店舗",
           href: hasOrg ? undefined : null,
@@ -86,6 +115,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="manage"
+        listeners={backToTabRoot("/manage")}
         options={{
           title: "管理",
           href: hasOrg ? undefined : null,

@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { FlashList } from "@shopify/flash-list";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useLaundryStates, useStores } from "@/api/queries";
 import { ApiError } from "@/api/client";
@@ -80,6 +80,9 @@ const SORT_AXES = [
 
 export default function Stores() {
   const insets = useSafeAreaInsets();
+  /** タブをもう一度押したら先頭へ戻す（今いる画面がタブの 1 枚目のときだけ動く） */
+  const listRef = useRef<FlashListRef<Store>>(null);
+  useScrollToTop(listRef);
   const router = useRouter();
   const { data, isLoading, isRefetching, refetch, error } = useStores();
   // 在庫・設備の状況。「要対応」の絞り込みに使う
@@ -258,6 +261,7 @@ export default function Stores() {
       </View>
 
       <FlashList
+        ref={listRef}
         data={visibleStores}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl }}

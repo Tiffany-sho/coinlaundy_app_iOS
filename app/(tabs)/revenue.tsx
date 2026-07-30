@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useScrollToTop } from "expo-router";
 import { useFundHistory, useMonthlySummary, useStoreRevenue } from "@/api/queries";
 import { useOutbox } from "@/offline/OutboxProvider";
 import { StoreRankBars } from "@/components/revenue/charts";
@@ -155,6 +155,8 @@ export default function Revenue() {
    *    下の useEffect の依存に limit を入れない。
    */
   const listRef = useRef<FlashListRef<HistoryRow>>(null);
+  /** タブをもう一度押したら先頭へ戻す（今いる画面がタブの 1 枚目のときだけ動く） */
+  useScrollToTop(listRef);
   /** 売上履歴の見出しがコンテンツ先頭から何 px 下にあるか */
   const historyOffset = useRef(0);
   const mounted = useRef(false);
