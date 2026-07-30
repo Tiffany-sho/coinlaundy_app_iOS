@@ -149,10 +149,23 @@ export type FundDetail = {
   fundsArray: FundEntry[] | null;
 };
 
+/**
+ * 店舗ごとの累計（/funds/summary/stores）。
+ *
+ * ⚠️ **全期間を見ている唯一の集計。** 月次サマリー（/funds/summary/monthly）は
+ *    前年同月比のため過去 2 年に固定されているので、「いつから いつまで」「何回」を
+ *    正しく出せるのはこちらだけ。総額収益カードの期間はここから作る。
+ */
 export type StoreRevenue = {
   laundryId: string;
   laundryName: string;
   total: number;
+  /** 集金レコード数（全期間） */
+  count: number;
+  /** 最初の集金日。JST 深夜 0 時の epoch（ミリ秒）。1 件も無ければ null */
+  firstDate: number | null;
+  /** 最後の集金日。同上 */
+  lastDate: number | null;
 };
 
 /** laundry_state.machines の 1 要素 */

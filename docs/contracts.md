@@ -74,6 +74,24 @@ stock_thresholds: stock_thresholds ?? { detergent: 1, softener: 1 },
 - ⚠️ **`filename` の検証は BFF の `signed-url` ルートが唯一の防波堤。** Server Action 側は
   検証していないので、`..` や `/` を通すと `laundry/` の外へ書けてしまう
 
+## 行数の上限（PostgREST）
+
+⚠️ **`.limit()` も `.range()` も付けない select は 1000 行で打ち切られる。**
+`supabase/config.toml` の `max_rows = 1000` がそれで、**エラーも警告も出ない**。
+「合計が実際より少ない」「履歴が途中で終わっている」という形でしか気づけない。
+
+5 店舗 × 月 8 回なら**年 480 件**なので、必ず届く数字。実際に総額収益
+（`getStoreRevenueSummary`）と売上履歴（`getOrgCollectFundsInPeriod`）が
+この上限に向かっていた。
+
+- Web 側の**全件取得は `src/functions/fetchAllRows.js` を通す。** 1000 件ずつページングする
+- ⚠️ **並び順に一意な列が要る。** `date` や `totalFunds` は同点があるので、それだけで
+  並べるとページの境目で行が重複したり飛んだりする（`fetchAllRows` が最後に `id` を足している）
+- ⚠️ **`PAGE_SIZE` は `max_rows` 以下でなければならない。** 超えると 1 ページが満たされず、
+  「短いページ＝終端」と誤判定して**途中で打ち切る**。`max_rows` を下げるときは両方直す
+- 月単位のもの（`getMonthFunds` / `getMonthFundsByOffset` / `getAllMonthBenefits`）は
+  1 か月に 1000 件を超えないので素のままにしてある
+
 ## テーブルの辿り方
 
 - ⚠️ **`collect_funds` に `organization_id` は無い。** 組織で絞るには

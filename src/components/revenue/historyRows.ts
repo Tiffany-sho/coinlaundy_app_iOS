@@ -60,19 +60,11 @@ export function collecterName(item: FundListItem): string {
   return item.profiles?.username ?? UNKNOWN_COLLECTER;
 }
 
-/**
- * 読み込み済みの中で一番新しい集金日。無ければ null。
- *
- * ⚠️ **先頭の要素を取らないこと。** 並び順は画面の設定しだいで、金額順のときは
- *    日付が飛び飛びになる。必ず全件から最大を探す。
+/*
+ * ⚠️ 「最初 / 最後の集金日」をここで一覧から出さないこと。
+ *    一覧は担当者で絞り込まれていることがあり、絞ると期間まで動いてしまう。
+ *    StoreRevenue の firstDate / lastDate（/funds/summary/stores）を使う。
  */
-export function latestFundDate(items: FundListItem[]): number | null {
-  let latest: number | null = null;
-  for (const item of items) {
-    if (latest === null || item.date > latest) latest = item.date;
-  }
-  return latest;
-}
 
 /**
  * 集金 1 件の金額。

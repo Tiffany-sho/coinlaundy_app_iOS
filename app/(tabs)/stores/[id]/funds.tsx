@@ -19,7 +19,6 @@ import {
   buildHistoryRows,
   collecterName,
   initialLimit,
-  latestFundDate,
   limitStep,
 } from "@/components/revenue/historyRows";
 import { Card, CenterMessage, Muted, Screen } from "@/components/common/ui";
@@ -84,18 +83,27 @@ export default function StoreFunds() {
     const found = (revenue.data ?? []).find((s) => s.laundryId === id);
     if (found) return [found];
     if (!id) return [];
-    return [{ laundryId: id, laundryName: store.data?.store ?? "", total: 0 }];
+    return [
+      {
+        laundryId: id,
+        laundryName: store.data?.store ?? "",
+        total: 0,
+        count: 0,
+        firstDate: null,
+        lastDate: null,
+      },
+    ];
   }, [revenue.data, id, store.data?.store]);
 
   /**
-   * この店舗の全期間の売上総額。
+   * この店舗の全期間の売上総額・回数・期間。
    *
-   * ⚠️ **`rows` の総和で出さない。** 担当者で絞ると総額まで動いてしまう。
+   * ⚠️ **`rows` から出さない。** 担当者で絞ると総額まで動いてしまう。
    *    /funds/summary/stores は全件を店舗ごとに畳んだものなので、これが正。
-   * ⚠️ 月次サマリー（points）の総和でも出さない。あちらは前年同月比のため
+   * ⚠️ 月次サマリー（points）からも出さない。あちらは前年同月比のため
    *    **過去 2 年に固定**されていて、それより前の集金が落ちる。
    */
-  const storeTotal = storeRevenue[0]?.total ?? 0;
+  const summary = storeRevenue[0];
 
   /**
    * 月の見出しでまとめるか。
@@ -159,20 +167,18 @@ export default function StoreFunds() {
         }
         ListHeaderComponent={
           <View>
-            {/* 全体版と同じカード。店舗が固定なので 2 列目を「店舗数」から「集金回数」に替える */}
+            {/* 全体版と同じカード。店舗が固定なので下段は「集金回数」だけ */}
             <TotalRevenueCard
               title={store.data ? `${store.data.store}店の売上総額` : "売上総額"}
-              total={storeTotal}
-              countLabel="集金回数"
-              countValue={rows.length > 0 ? `${rows.length}回` : "—"}
-              firstMonth={points[0]?.month}
-              lastMonth={points[points.length - 1]?.month}
-              /* 過去 2 年ぶんの総和が総額に届かない＝それより前にも集金がある */
-              hasOlderThanWindow={
-                points.length > 0 &&
-                storeTotal > points.reduce((sum, point) => sum + point.total, 0)
-              }
-              latestFundDate={latestFundDate(rows)}
+              total={summary?.total ?? 0}
+              stats={[
+                {
+                  label: "集金回数",
+                  value: (summary?.count ?? 0) > 0 ? `${summary.count}回` : "—",
+                },
+              ]}
+              firstDate={summary?.firstDate ?? null}
+              lastDate={summary?.lastDate ?? null}
               isLoading={revenue.isLoading && !revenue.data}
             />
 

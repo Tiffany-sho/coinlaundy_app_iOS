@@ -288,6 +288,24 @@
 - `deepLinkToSubscriptions()` は iOS の購読管理を開くだけ。**自前の「解約する」ボタンを
   作らない**（押しても何も起きない）
 
+## react-query の永続キャッシュ（MMKV）
+
+- ⚠️ **API の応答に項目を足したら、その項目は「無いことがある」と考える。**
+  `PersistQueryClientProvider` が MMKV から**前のバージョンの応答をそのまま復元**し、
+  起動直後はそちらが `data` として即座に返る（`maxAge` は 7 日）。
+  型は新しいので **TypeScript は何も言わない**が、実体は `undefined`。
+
+  ```ts
+  // ✗ 前のキャッシュでは count が undefined。合計が NaN になり画面に出る
+  stores.reduce((sum, s) => sum + s.count, 0)
+  // ✗ undefined !== null は true なので素通りする。Math.min(undefined) = NaN
+  dates.filter((d) => d !== null)
+  ```
+
+  数値であることまで確かめる（`?? 0` / `Number.isFinite`）。
+  ⚠️ **開発機では踏みにくい。** アプリを入れ直すとキャッシュごと消えるので、
+  「前のバージョンを一度起動した端末」でしか出ない
+
 ## 検証
 
 - 型チェックは `npx tsc --noEmit`

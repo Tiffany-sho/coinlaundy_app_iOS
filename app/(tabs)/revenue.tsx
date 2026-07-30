@@ -28,7 +28,6 @@ import {
   buildHistoryRows,
   collecterName,
   initialLimit,
-  latestFundDate,
   limitStep,
   type HistoryRow,
 } from "@/components/revenue/historyRows";
@@ -92,14 +91,24 @@ export default function Revenue() {
   const points = monthly.data ?? [];
 
   /**
-   * 総額収益。
+   * 総額収益と、その集計期間。
    *
    * ⚠️ 月別売上カードの「集金総額」とは集計範囲が違う。月次サマリー
    *    （/funds/summary/monthly）は前年同月比のために過去 2 年分しか返さないので、
    *    その総和は「全期間」にならない。全期間の総額は店舗別集計
    *    （/funds/summary/stores＝全件を店舗ごとに畳んだもの）の総和で出す。
+   *    ⚠️ 期間と回数も同じ理由で店舗別集計から取る。あちらの月次から作ると
+   *       2 年より前の集金が範囲に入らない。
    */
   const allTimeTotal = stores.reduce((sum, store) => sum + store.total, 0);
+  /**
+   * ⚠️ **`?? 0` を外さないこと。** count / firstDate / lastDate は後から足した項目で、
+   *    MMKV に残っている**前のバージョンのキャッシュには入っていない**（起動直後は
+   *    そちらが即座に返る）。素で足すと NaN になり、そのまま画面に出る。
+   */
+  const fundCount = stores.reduce((sum, store) => sum + (store.count ?? 0), 0);
+  const firstDate = minDate(stores.map((store) => store.firstDate));
+  const lastDate = maxDate(stores.map((store) => store.lastDate));
 
   /**
    * 月の見出しでまとめるか。
@@ -227,16 +236,12 @@ export default function Revenue() {
 
             <TotalRevenueCard
               total={allTimeTotal}
-              countLabel="店舗数"
-              countValue={stores.length > 0 ? `${stores.length}店舗` : "—"}
-              firstMonth={points[0]?.month}
-              lastMonth={points[points.length - 1]?.month}
-              /* 過去 2 年ぶんの総和が全期間の総額に届かない＝それより前にも集金がある */
-              hasOlderThanWindow={
-                points.length > 0 &&
-                allTimeTotal > points.reduce((sum, point) => sum + point.total, 0)
-              }
-              latestFundDate={latestFundDate(rows)}
+              stats={[
+                { label: "店舗数", value: stores.length > 0 ? `${stores.length}店舗` : "—" },
+                { label: "集金回数", value: fundCount > 0 ? `${fundCount}回` : "—" },
+              ]}
+              firstDate={firstDate}
+              lastDate={lastDate}
               isLoading={byStore.isLoading && !byStore.data}
             />
 
@@ -339,6 +344,31 @@ export default function Revenue() {
       />
     </Screen>
   );
+}
+
+/**
+ * 店舗ごとの最初 / 最後の集金日から、組織全体の範囲を出す。
+ *
+ * ⚠️ **`!== null` で弾かない。** 1 件も集金が無い店舗は null を返してくるが、
+ *    それとは別に、MMKV に残っている**前のバージョンのキャッシュには
+ *    この項目自体が無い**（undefined）。`undefined !== null` は true なので
+ *    素通りし、Math.min が NaN を返して日付が「NaN/NaN/NaN」になる。
+ *    数値であることまで確かめること。
+ */
+function knownDates(dates: (number | null)[]): number[] {
+  return dates.filter(
+    (date): date is number => typeof date === "number" && Number.isFinite(date)
+  );
+}
+
+function minDate(dates: (number | null)[]): number | null {
+  const known = knownDates(dates);
+  return known.length > 0 ? Math.min(...known) : null;
+}
+
+function maxDate(dates: (number | null)[]): number | null {
+  const known = knownDates(dates);
+  return known.length > 0 ? Math.max(...known) : null;
 }
 
 const styles = StyleSheet.create({
