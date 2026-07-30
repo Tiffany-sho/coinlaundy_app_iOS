@@ -58,17 +58,6 @@ export function formatJstDate(epochMs: number): string {
   return `${d.getUTCFullYear()}/${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
-/**
- * epoch（ミリ秒）の JST での曜日。0=日 … 6=土
- *
- * ⚠️ `new Date(epochMs).getDay()` は端末 TZ で数えるので使わない。
- *    `collect_funds.date` は JST 深夜 0 時の epoch なので、端末が JST より西だと
- *    前日の曜日になる。
- */
-export function jstWeekday(epochMs: number): number {
-  return new Date(epochMs + EPOCH_ERROR).getUTCDay();
-}
-
 /** epoch（ミリ秒）を "7/27 14:32" 形式にする。オフラインバナーの最終更新表示用 */
 export function formatJstDateTime(epochMs: number): string {
   const d = new Date(epochMs + EPOCH_ERROR);

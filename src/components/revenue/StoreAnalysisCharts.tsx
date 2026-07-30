@@ -2,10 +2,8 @@ import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { formatAxisValue } from "@/components/revenue/charts";
-import { jstWeekday } from "@/shared/date";
-import { fundAmount } from "@/components/revenue/historyRows";
 import { color, font, numeric, radius, spacing } from "@/theme/tokens";
-import type { FundListItem, MonthlyPoint } from "@/api/types";
+import type { MonthlyPoint } from "@/api/types";
 
 /**
  * 店舗 1 軒を見るときの分析グラフ。
@@ -16,10 +14,6 @@ import type { FundListItem, MonthlyPoint } from "@/api/types";
  * ⚠️ 依存は足していない。`charts.tsx` と同じく素の View だけで描く
  *    （理由は charts.tsx 冒頭のコメント）。
  */
-
-/* ------------------------------------------------------------------ */
-/* 1 回あたり平均の推移                                                 */
-/* ------------------------------------------------------------------ */
 
 /**
  * 月ごとの「1 回あたり平均集金額」。
@@ -125,126 +119,6 @@ export function AveragePerCollectChart({ data }: { data: MonthlyPoint[] }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* 曜日別の売上                                                        */
-/* ------------------------------------------------------------------ */
-
-const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
-
-/**
- * 曜日ごとの 1 回あたり平均集金額。
- *
- * 「いつ回るのが効率的か」を決めるための材料。合計で見ると
- * **その曜日に何回行ったかに引きずられる**ので、平均を主に出して合計は添える。
- *
- * ⚠️ 曜日は `jstWeekday()` で数える。`new Date(epochMs).getDay()` は端末 TZ 基準で、
- *    端末が JST より西だと前日の曜日になる（`collect_funds.date` は JST 深夜 0 時の epoch）。
- *
- * ⚠️ 渡すのは**全期間**の集金。期間を絞ると「土曜が強い」という結論が
- *    その期間の偏りだけで決まる。
- */
-export function WeekdayRevenueChart({ items }: { items: FundListItem[] }) {
-  const buckets = useMemo(() => {
-    const out = WEEKDAY_LABELS.map((label, index) => ({
-      index,
-      label,
-      total: 0,
-      count: 0,
-      average: 0,
-    }));
-    for (const item of items) {
-      const bucket = out[jstWeekday(item.date)];
-      bucket.total += fundAmount(item);
-      bucket.count += 1;
-    }
-    for (const bucket of out) {
-      bucket.average = bucket.count > 0 ? Math.round(bucket.total / bucket.count) : 0;
-    }
-    return out;
-  }, [items]);
-
-  const [selected, setSelected] = useState<number | null>(null);
-
-  const withData = buckets.filter((b) => b.count > 0);
-  if (withData.length === 0) {
-    return <Text style={styles.empty}>表示できるデータがありません</Text>;
-  }
-
-  const max = Math.max(...buckets.map((b) => b.average), 1);
-  // 既定は「平均が一番高い曜日」。何も選んでいないときに見たい情報がこれ
-  const best = withData.reduce((a, b) => (b.average > a.average ? b : a));
-  const active = selected !== null ? buckets[selected] : best;
-
-  return (
-    <View>
-      <View style={styles.readout}>
-        <Text style={styles.readoutLabel}>{active.label}曜日</Text>
-        <Text style={styles.readoutValue}>
-          {active.count > 0 ? `¥${active.average.toLocaleString()}` : "—"}
-        </Text>
-        <Text style={styles.readoutSub}>
-          {active.count > 0
-            ? `1回あたり・${active.count}回 / 合計 ¥${active.total.toLocaleString()}`
-            : "この曜日の集金はありません"}
-        </Text>
-      </View>
-
-      <View style={styles.plotRow}>
-        <View style={styles.yAxis}>
-          <Text style={styles.axisLabel}>{formatAxisValue(max)}</Text>
-          <Text style={styles.axisLabel}>{formatAxisValue(Math.round(max / 2))}</Text>
-          <Text style={styles.axisLabel}>0</Text>
-        </View>
-
-        <View style={styles.plot}>
-          <View style={[styles.gridLine, { top: 0 }]} />
-          <View style={[styles.gridLine, { top: "50%" }]} />
-          <View style={[styles.gridLine, { bottom: 0 }]} />
-
-          <View style={styles.bars}>
-            {buckets.map((bucket) => {
-              const isActive = bucket.index === active.index;
-              const heightPct = Math.max((bucket.average / max) * 100, bucket.average > 0 ? 2 : 0);
-              return (
-                <Pressable
-                  key={bucket.index}
-                  style={styles.barSlot}
-                  onPress={() => {
-                    Haptics.selectionAsync().catch(() => {});
-                    setSelected(bucket.index);
-                  }}
-                >
-                  <View
-                    style={[
-                      styles.bar,
-                      {
-                        height: `${heightPct}%`,
-                        backgroundColor: isActive ? color.teal : color.tealPale,
-                      },
-                    ]}
-                  />
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.xAxis}>
-        {buckets.map((bucket) => (
-          <Text
-            key={bucket.index}
-            style={[styles.xLabel, bucket.index === active.index && styles.xLabelActive]}
-          >
-            {bucket.label}
-          </Text>
-        ))}
-      </View>
-      <Text style={styles.axisCaption}>1回あたりの平均</Text>
-    </View>
-  );
-}
-
 /** "2026-07" → "2026年7月" */
 function formatMonthLabel(month: string): string {
   const [year, m] = month.split("-");
@@ -291,7 +165,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: color.textFaint,
   },
-  xLabelActive: { fontFamily: font.uiBold, color: color.teal },
   axisCaption: {
     fontFamily: font.ui,
     fontSize: 10,

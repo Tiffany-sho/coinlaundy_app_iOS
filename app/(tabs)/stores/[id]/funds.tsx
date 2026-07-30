@@ -34,7 +34,7 @@ import { color, font, spacing } from "@/theme/tokens";
  *
  * 全体版と違うのは 2 点だけ。
  *   - 店舗が固定なので「店舗別の売上」タブが無い。代わりに店舗の中の傾向を出す
- *     2 枚（1回あたりの推移 / 曜日別）を足してある
+ *     「1回あたり」を足してある
  *   - 総額収益カード（TotalRevenueCard）は組織全体の話なので出さない
  */
 export default function StoreFunds() {
@@ -151,8 +151,6 @@ export default function StoreFunds() {
               storeRevenue={storeRevenue}
               revenueLoading={revenue.isLoading && !revenue.data}
               points={points}
-              /* ⚠️ 全期間を渡す。曜日別は期間を絞るとその期間の偏りで傾向が決まる */
-              items={rows}
             />
 
             <Text style={styles.sectionTitle}>売上履歴</Text>
