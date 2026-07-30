@@ -222,9 +222,24 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 - [x] Supabase の Apple プロバイダを有効化（Guideline 4.8）。**実機で確認済み**。
       Client IDs に `com.collecie.app` を入れるだけで、Services ID や `.p8` は要らない
       （理由は `docs/contracts.md` の「既知の未対応」）
-- [ ] `/api/invite` が認証なしの Resend リレーになっている
-      ⚠️ `withAuth` も `getUser` も無いので**誰でも招待メールを送れる**。Resend の
-      送信枠を他人に使われ、こちらのドメインから任意の宛先へメールが出る
+- [x] `/api/invite` を塞いだ。**認証 + その組織の admin であることを確認**し、
+      宛先・組織名・ロール・招待者名・リンクは**すべて DB と環境変数から組み立てる**
+      （body の値は一切使わない）。あわせて招待メールの HTML をエスケープした
+      （組織名・招待者名は自由入力なので、生のまま差し込むとリンクを差し替えられる）
+- [ ] **保留**: アプリに Google ログインを足すか（2026-07-30 に保留と判断）
+      - Web は Google / GitHub を出しているが、アプリはメール + パスワードと Apple のみ。
+        ⚠️ **Web で Google / GitHub で登録した人はアプリにログインできない**
+        （パスワードを持たないため）。回避策は Web の「パスワードをお忘れですか」で
+        パスワードを設定してもらうことだが気づかれない
+      - 費用はかからない（Google の OAuth は無料、同意画面の審査も基本スコープなら不要）
+      - ⚠️ **Google Cloud を触らずに済む。** `signInWithOAuth`（ブラウザ経由）なら
+        リダイレクト先が Supabase の `/auth/v1/callback` で、それは Web のために
+        既に Google 側へ登録済み。要るのは `expo-web-browser` の追加（→ EAS 再ビルド 1 回）と
+        Supabase の Redirect URLs に `collecie://` を足すことだけ
+      - ⚠️ `WebView` では実装できない。Google が埋め込み WebView の OAuth を拒否するので
+        `openAuthSessionAsync`（`ASWebAuthenticationSession`）を使う
+      - 判断材料: Supabase の Authentication → Users に `google` の行が実際にあるか。
+        ゼロなら急がない
 
 **E. 審査提出前**
 
