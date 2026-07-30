@@ -129,6 +129,14 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
   - `/app/terms` `/app/privacy` … 200。**描画後の HTML に他ページへのリンクが 1 本も無い**
     （ナビ・フッター・戻るリンクが全て消えている。Guideline 3.1.3(a)）
   - `/terms` `/tokushoho`（公開側）は従来どおりナビと戻るリンクが出る
+- **004（pg_cron）は適用済み**。`pg_cron 1.6.4` / `pg_net 0.19.5`、
+  `collect-reminder-hourly` が `0 * * * *` / `active=true`、Vault は 2 件とも `rows=1`。
+  cron の本文を手で撃って **200 + `{"sent":0,"reason":"no_target_org","orgsWithSchedule":2,
+  "schedules":[{"daysUntil":3,"type":"monthly"},{"daysUntil":6,"type":"monthly"}],"jstHour":10}`**
+  を確認した（UTC 01:51 → JST 10:51 なので時差の計算も正しい）
+  - ⚠️ 最初は URL が `https://<PROJECT_REF>.supabase.co/…` のままで、pg_net が黙って
+    捨てていた。`cron.job_run_details` は `succeeded` を返し続けるので気づけない。
+    経緯と読み方は `docs/traps.md` の「pg_cron → pg_net → Edge Function」に書いた
 
 ### 残っているタスク
 
@@ -144,8 +152,9 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 
 **B. プッシュ通知（サーバー側は完成。端末待ち）**
 
-- [ ] 004（pg_cron）の適用と、`net._http_response` が 200 を返すことの確認
-      ⚠️ 403 なら Vault の値と `CRON_SECRET` が食い違っている
+- [ ] **cron が自分で起きることの確認**（手撃ちは通った。`:00` を跨いだあと
+      `net._http_response` の `id` が増えているかで見る）
+      ⚠️ `cron.job_run_details.status = 'succeeded'` は HTTP の成否を表さない
 - [ ] 実機で通知を許可 → `?dryRun=1` で `wouldSend` が 1 以上になることを確認
 - [ ] dryRun を外して実際に届くことを確認
 - [ ] **未検証の経路**: メッセージ組み立てと `sendToExpo`（トークン 0 件だと手前で return するため）

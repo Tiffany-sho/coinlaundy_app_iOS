@@ -70,6 +70,40 @@
   ただし呼ぶたびに console.warn が出るので `isPushSupported()` で塞いでいる
 - **`react-native-mmkv` v4 のキー削除は `remove()`。** `delete()` は存在しない
 
+## pg_cron → pg_net → Edge Function
+
+004 を適用したあと、通知が届かないときに見る場所。**この経路は失敗しても
+どこにも赤が出ない。** 実際に URL のプレースホルダを置き換え忘れて、丸 2 日
+気づかなかった。
+
+- ⚠️ **`cron.job_run_details.status = 'succeeded'` は「HTTP が成功した」ではない。**
+  `net.http_post` は要求をキューに積んで即座に返るので、Edge Function が 403 でも
+  404 でも、URL がホスト名として不正でも、cron 側は毎時 `succeeded` を返し続ける。
+  **本当の結果は `net._http_response` にしか出ない**（`id` が増えているかで見る）
+- ⚠️ **`vault.create_secret` の値は検証されない。** `https://<PROJECT_REF>.supabase.co/…`
+  のまま入れても通り、pg_net が名前解決に失敗して黙って捨てる。応答行が増えないので
+  「撃ったのに何も起きない」に見える。長さで見分けられる（正しい URL は **70 文字**、
+  プレースホルダは 63）
+- **同名の Vault シークレットを 2 つ作らない。** cron の本文は
+  `(SELECT decrypted_secret … WHERE name = '…')` の単一行サブクエリなので、
+  004 を 2 回実行すると *more than one row returned by a subquery* で毎時失敗する
+- **`:00` を待たずに手で撃って切り分ける。** cron の本文をそのまま SQL Editor で
+  実行すれば同じ経路を通る。応答の読み方:
+
+  | | |
+  |---|---|
+  | 200 + `{"sent":0,"reason":"no_target_org"}` | 正常（集金日が前日・当日でないだけ） |
+  | 403 | Vault の値と `supabase secrets set CRON_SECRET` が食い違い |
+  | 401 | `--no-verify-jwt` 無しでデプロイした。**関数のコードに到達していない** |
+  | 404 | URL の project ref か関数名が違う |
+  | `status_code` が NULL + `error_msg` あり | pg_net が外に出られていない |
+  | 行が増えない | pg_net のワーカーが停止。`net.worker_restart()` で復帰 |
+
+- **`net._http_response` の行は数時間で消える。** 調べるのは撃った直後に
+- **`no_target_org` を失敗と読まない。** 通知が出るのは `daysUntil` が 0 か 1 の
+  ときだけ（`index.ts` の判定）。`?dryRun=1` は日付判定を飛ばして `daysUntil` を 0 に
+  上書きするので、**空撃ちと手撃ちで `reason` が変わるのは正常**
+
 ## アプリ内課金（expo-iap / StoreKit）
 
 まだ実機で通していない。以下は Apple のドキュメントと expo-iap の実装から分かっている分。
