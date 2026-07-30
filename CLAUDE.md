@@ -197,11 +197,14 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 
 契約を待たずにできる:
 
-- [ ] App Store Connect で**アプリレコードを作る**（bundle ID は EAS のビルド時に登録済み）。
-      これで**数値の Apple ID が採番される**
-- [ ] Vercel に `APPLE_APP_APPLE_ID` を設定（上で採番される数値 ID）
-      ⚠️ **Production の検証にだけ要る。** Sandbox は未設定のまま通る。
-      `APPLE_BUNDLE_ID` は既定値 `com.collecie.app` が `app.json` と一致しているので不要
+- [x] App Store Connect で**アプリレコードを作成済み**。
+      **数値の Apple ID は `6796202962`**（公開値。App Store の URL に出るので秘密ではない）
+- [ ] Vercel に `APPLE_APP_APPLE_ID=6796202962` を設定
+      ⚠️ **Production の検証にだけ要る。** Sandbox は未設定のまま通る
+      （`utils/apple/verify.js` が `Environment.PRODUCTION` のときだけ例外を投げる）。
+      `APPLE_BUNDLE_ID` は既定値 `com.collecie.app` が `app.json` と一致しているので不要。
+      ⚠️ **追加しただけでは反映されない。** Vercel は既存のデプロイに環境変数を
+      入れ直さないので、Redeploy か新しい push が必要
 - [ ] App Store Server Notifications V2 の URL 登録
       （`https://www.collecie.com/api/apple/notifications`。**本番 URL を入れる。**
       プレビュー URL を登録するとそのデプロイが消えた時点で通知が届かなくなる。
