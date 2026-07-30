@@ -153,6 +153,17 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
   - ⚠️ 当日リマインダー（`daysUntil === 0`）の検証には注意。同じ日に集金を
     登録していると `alreadyCollected` で除外されるため、前日（`daysUntil === 1`）で
     試すほうが確実
+- **Apple サインインが実機で通った**（Guideline 4.8）。Supabase の Apple プロバイダの
+  Client IDs に `com.collecie.app` を入れるだけ。⚠️ Services ID も `.p8` も要らない
+  （理由は `docs/contracts.md`）
+- **店舗画像のアップロードが実機で成功**（署名付き URL で Storage へ直接送る経路）
+- **実機で 8 件の不具合を見つけて直した。** どれもブラウザでは再現しないもの:
+  日付が全部 NaN（Hermes の `new Date`）/ 通知プライミングが出ない（`fullScreenModal` は
+  下の画面を unmount しない）/ キーボード上の余白（`keyboardVerticalOffset` の二重計上、
+  3 画面）/ キャンセル・戻るが無反応（ルートの `Modal` がモーダル画面の下）/
+  モーダル画面でトーストが見えない / 画像アップロードが失敗（Vercel の 4.5MB 上限）/
+  店舗別収益の履歴が 2 か月しか出ない（`useFundList` の罠）/ ステータスバーが白のまま残る。
+  **原因と直し方はすべて `docs/traps.md` に節を立てて書いた**
 
 ### 残っているタスク
 
@@ -179,25 +190,41 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
       「未送信の集金データが 2 件あります」）。`scheduleNotificationAsync` を呼ぶ箇所が無い。
       オフラインで登録したまま忘れるケースの保険なので、あると効く
 
-**C. アプリ内課金（App Store Connect 待ち）**
+**C. アプリ内課金**
 
-- [ ] **有料アプリ契約を Active にする**（審査中。数日〜1週間）
-      ⚠️ Active でないと `fetchProducts` は空配列を返すだけでエラーも出ない
-- [ ] サブスク商品 2 つを作成（`com.collecie.app.pro.monthly` / `.max.monthly`、グループ `collecie_plan`）
+⚠️ **有料アプリ契約を待たずに進められるものと、待つものを分けてある。** アプリレコードの
+作成は契約とは別の話で、Developer Program が Active なら今できる。
+
+契約を待たずにできる:
+
+- [ ] App Store Connect で**アプリレコードを作る**（bundle ID は EAS のビルド時に登録済み）。
+      これで**数値の Apple ID が採番される**
+- [ ] Vercel に `APPLE_APP_APPLE_ID` を設定（上で採番される数値 ID）
+      ⚠️ **Production の検証にだけ要る。** Sandbox は未設定のまま通る。
+      `APPLE_BUNDLE_ID` は既定値 `com.collecie.app` が `app.json` と一致しているので不要
 - [ ] App Store Server Notifications V2 の URL 登録
       （`https://www.collecie.com/api/apple/notifications`。**本番 URL を入れる。**
-      プレビュー URL を登録するとそのデプロイが消えた時点で通知が届かなくなる）
-- [ ] Vercel に `APPLE_APP_APPLE_ID` を設定（App Store Connect でアプリを作ると採番される数値 ID）
-      ⚠️ **Production の検証にだけ要る。** Sandbox は未設定のまま通るので、採番されてから足せばよい。
-      `APPLE_BUNDLE_ID` は既定値 `com.collecie.app` が `app.json` と一致しているので不要
+      プレビュー URL を登録するとそのデプロイが消えた時点で通知が届かなくなる。
+      受け口は本番で稼働中・偽の JWS を 400 で拒否することまで確認済み）
+
+有料アプリ契約が Active になってから:
+
+- [ ] **有料アプリ契約を Active にする**（審査中。数日〜1週間）
+      ⚠️ Active でないと `fetchProducts` は空配列を返すだけでエラーも出ない。
+      商品が出ないときの原因はほぼこれ
+- [ ] サブスク商品 2 つを作成（`com.collecie.app.pro.monthly` / `.max.monthly`、グループ `collecie_plan`）
+      ⚠️ **商品 ID は一度作ると変更も再利用もできない。** 作る前に確定させる
 - [ ] Sandbox テスターで購入・復元・アップグレードを確認
 - [ ] **未検証の経路**: 購入フロー全体（商品取得すらできていない）
 
 **D. 以前からの積み残し**
 
-- [ ] Supabase の Apple プロバイダが未有効（実機の Apple サインインが失敗する。
-      Guideline 4.8 で必須なので審査前に必ず）
+- [x] Supabase の Apple プロバイダを有効化（Guideline 4.8）。**実機で確認済み**。
+      Client IDs に `com.collecie.app` を入れるだけで、Services ID や `.p8` は要らない
+      （理由は `docs/contracts.md` の「既知の未対応」）
 - [ ] `/api/invite` が認証なしの Resend リレーになっている
+      ⚠️ `withAuth` も `getUser` も無いので**誰でも招待メールを送れる**。Resend の
+      送信枠を他人に使われ、こちらのドメインから任意の宛先へメールが出る
 
 **E. 審査提出前**
 

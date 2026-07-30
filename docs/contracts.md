@@ -130,4 +130,11 @@ stock_thresholds: stock_thresholds ?? { detergent: 1, softener: 1 },
 ## 既知の未対応
 
 - 非 admin が他人の集金データを編集すると、403 ではなく**0 行更新の 200** が返る。UI 側で `myRole` を見て出し分けている
-- Supabase の Apple プロバイダが未有効。有効化するまで実機の Apple サインインは失敗する
+- Apple サインインは**有効化済み・実機で確認済み**。Supabase の Apple プロバイダの
+  Client IDs に `com.collecie.app`（bundle ID）を入れるだけで通る。
+  ⚠️ **Services ID も `.p8` の秘密鍵も要らない。** アプリは `signInWithIdToken` の
+  native フローで、Supabase は identityToken の `aud`（= bundle ID）が Client IDs に
+  あるかを見るだけ。あれらが要るのは Web のリダイレクト OAuth（`signInWithOAuth`）の
+  ときだけで、Web 側は Google と GitHub しか使っていない
+- ⚠️ **`@privaterelay.appleid.com` のアドレスを弾かないこと。** 「メールを非公開」を
+  選んだユーザーに Apple が割り当てる実在のアドレス。弾くと Guideline 4.8 に触れる
