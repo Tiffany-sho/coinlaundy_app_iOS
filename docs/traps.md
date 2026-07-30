@@ -25,6 +25,11 @@
 ## React Native 0.86
 
 - `StyleSheet.absoluteFillObject` は**削除済み**。`StyleSheet.absoluteFill` を使う
+- ⚠️ **`overflow: "hidden"` と影を同じ View に置かない。** iOS は影をビューの**外側**に
+  描くので、同じ View でクリップすると**影が丸ごと消える。** 角丸で中身をクリップしたい
+  ときは、外側の View に影 + `borderRadius` + `backgroundColor`（透明だと影の形が決まらない）、
+  内側の View に `borderRadius` + `overflow: "hidden"` と分ける
+  （`src/components/stores/StoreImageCarousel.tsx` がこの形）
 
 ## KeyboardAvoidingView
 

@@ -9,7 +9,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -17,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useFundList, useLaundryStates, useStore } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { MachineListSheet } from "@/components/stores/MachineListSheet";
+import { StoreImageCarousel } from "@/components/stores/StoreImageCarousel";
 import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
 import { useDialog } from "@/components/common/dialog";
 import { useDeleteStoreAction } from "@/components/stores/useDeleteStoreAction";
@@ -142,40 +142,39 @@ export default function StoreDetail() {
       {/* タブバーは画面の下に「並ぶ」ので（重ならない）、下端の余白に insets.bottom は足さない。
           足すと最後の「集金する」の下に安全領域ぶんの空白が二重に入る */}
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
-        {/* 画像カルーセル。Web は 16:9 で横スワイプ */}
-        <View>
-          <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
-            {(images.length > 0 ? images : [{ url: NO_IMAGE }]).map((img, i) => (
-              <Image
-                key={`${img.url}-${i}`}
-                source={{ uri: img.url }}
-                style={{ width: SCREEN_WIDTH, aspectRatio: 16 / 9 }}
-                contentFit="cover"
-                transition={150}
-              />
-            ))}
-          </ScrollView>
-
-          <Pressable
-            onPress={() => router.back()}
-            style={[styles.floatingBack, { top: insets.top + spacing.sm }]}
-            hitSlop={12}
+        {/*
+          画像カルーセル。Web は 16:9 で横スワイプ。
+          ⚠️ 上と左右に余白を取る。画面の端まで画像を伸ばすとステータスバーの
+             真下から始まって見づらく、戻る／メニューのボタンも写真に埋もれる。
+        */}
+        <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.lg }}>
+          <StoreImageCarousel
+            images={images}
+            width={SCREEN_WIDTH - spacing.lg * 2}
+            fallbackUrl={NO_IMAGE}
           >
-            <Ionicons name="chevron-back" size={22} color={color.textMain} />
-          </Pressable>
-
-          {/* Web の MonoCard も isOwner のときだけ ActionMenu（編集 / 削除）を出す */}
-          {isAdmin && (
+            {/* 位置は画像の内側。カルーセルの上に重ねる */}
             <Pressable
-              onPress={() => void openActionMenu()}
-              style={[styles.floatingMenu, { top: insets.top + spacing.sm }]}
+              onPress={() => router.back()}
+              style={[styles.floatingBack, { top: spacing.sm }]}
               hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="店舗の操作"
             >
-              <Ionicons name="ellipsis-horizontal" size={22} color={color.textMain} />
+              <Ionicons name="chevron-back" size={22} color={color.textMain} />
             </Pressable>
-          )}
+
+            {/* Web の MonoCard も isOwner のときだけ ActionMenu（編集 / 削除）を出す */}
+            {isAdmin && (
+              <Pressable
+                onPress={() => void openActionMenu()}
+                style={[styles.floatingMenu, { top: spacing.sm }]}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="店舗の操作"
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color={color.textMain} />
+              </Pressable>
+            )}
+          </StoreImageCarousel>
         </View>
 
         <View style={{ padding: spacing.lg }}>
