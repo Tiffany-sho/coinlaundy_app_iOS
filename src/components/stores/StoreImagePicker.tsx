@@ -40,18 +40,15 @@ const EXT_TO_MIME: Record<string, string> = {
 };
 
 /**
- * アップロードできる上限。
+ * アップロードできる上限。`docs/contracts.md` に載せている 10MB に揃えてある。
  *
- * ⚠️ **BFF の 10MB ではなくこちらが実際の壁。** Vercel のサーバーレス関数は
- *    リクエストボディが 4.5MB を超えると**関数に届く前に**弾く
- *    （FUNCTION_PAYLOAD_TOO_LARGE）。アップロード途中で接続を切られるので、
- *    端末側では fetch の例外になり「通信できませんでした」しか出ず、
- *    電波のせいだと誤解する。BFF 側の 10MB チェックはここより後なので
- *    **一度も到達しない。**
- *    iPhone の写真は quality 0.8 でも 2〜5MB になるので現実的に踏む。
- *    multipart のヘッダぶんの余裕を見て 4MB にしてある。
+ * ⚠️ **実体は BFF を通らない**（`uploadStoreImage` が署名付き URL で Storage へ
+ *    直接送る）。以前は Vercel のサーバーレス関数の 4.5MB 上限に当たり、しかも
+ *    拒否がアップロード途中の接続切断として現れるため「通信できませんでした」
+ *    という無関係な文言しか出なかった。いま効いているのは Storage の
+ *    バケット設定だけなので、ここは早めに気づかせるための保険。
  */
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 /**
  * 選んだ画像の形式を決める。
@@ -130,13 +127,11 @@ export function StoreImagePicker({
       return;
     }
 
-    // ⚠️ 上限は BFF ではなくゲートウェイ側で決まる（MAX_UPLOAD_BYTES のコメント参照）。
-    //    ここで止めないと「通信できませんでした」という無関係な文言になる
     const size = asset.fileSize ?? 0;
     if (size > MAX_UPLOAD_BYTES) {
       setError(
         `画像のサイズが大きすぎます（${(size / 1024 / 1024).toFixed(1)}MB）。` +
-          `4MB 以下の画像を選んでください。`
+          `10MB 以下の画像を選んでください。`
       );
       return;
     }

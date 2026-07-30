@@ -40,13 +40,34 @@ stock_thresholds: stock_thresholds ?? { detergent: 1, softener: 1 },
 
 `laundry_store.images` の 1 要素は `{ url, path }`。`path` は Storage 上のファイル名で、削除に要る。
 
-実体の出し入れは `POST` / `DELETE /api/v1/stores/images`（`withAuth` で Web と共通の Server Action `uploadStoreImage` / `deleteStoreImage` を呼ぶだけ）。
+**アップロードは 2 段構え。** 実体は BFF を通らない。
 
+1. `POST /api/v1/stores/images/signed-url` に `{ filename, contentType }` を送る（小さな JSON）
+2. 返ってきた `signedUrl` へ**端末から直接** `PUT`（`content-type` ヘッダ + 生のバイト列）
+
+削除は `DELETE /api/v1/stores/images` に `{ path }`（実体が小さいので BFF 経由のまま）。
+
+- ⚠️ **実体を BFF に通さない。** Vercel のサーバーレス関数はリクエストボディが
+  **4.5MB を超えると関数に届く前に**弾く。iPhone の写真は `quality: 0.8` でも 2〜5MB に
+  なるので現実的に踏む。しかも拒否がアップロード途中の接続切断として現れるため、
+  端末には **413 すら返らず** `fetch` の例外（「通信できませんでした」）しか出ず、
+  電波のせいだと誤解する。実際にこれで詰まった
+- ⚠️ **`POST /api/v1/stores/images`（multipart で実体を送る旧経路）は残してあるが
+  アプリからは使わない。** 上の 4.5MB に当たる。ルート内の 10MB チェックは
+  そこまで到達しないので意味を持たない
+- ⚠️ **署名付き URL の有効期限は 2 時間。** 貰ってすぐ使う。画面を開いた時点で
+  先に取っておくような作りにしない
+- ⚠️ **生のバイト列で `PUT` する。`FormData` で送らない。** 署名付き URL は body が
+  FormData だとフィールド名の解釈が実装依存になる。native は `file://` を `fetch` して
+  `arrayBuffer()`、web は picker が返した `File` をそのまま body にする
+- ⚠️ **`x-upsert: false` のまま使う。** ファイル名が時刻 + uuid で衝突しないので
+  上書きを許す理由が無く、許すと既存の画像を差し替えられる
 - ⚠️ **Storage と DB は別操作。** この API は実体を置く／消すだけで `laundry_store.images` は触らない。DB 側は店舗の `PATCH` に配列ごと送って反映する
 - ⚠️ **削除は保存が通ってから。** 先に実体を消すと、保存をやめたときに写真だけ失う
 - ⚠️ **保存に失敗したらアップロード済みを消して巻き戻す**（本家 `useStoreSubmit.js` と同じ）
 - 受け付けるのは jpeg / png、10MB まで。ファイル名は `${Date.now()}_${uuid}.${ext}`
-- アプリからは `FormData` に `{ uri, name, type }` を append すれば送れる（base64 変換は不要）。`apiFetch` が multipart を検知して `Content-Type` を外す
+- ⚠️ **`filename` の検証は BFF の `signed-url` ルートが唯一の防波堤。** Server Action 側は
+  検証していないので、`..` や `/` を通すと `laundry/` の外へ書けてしまう
 
 ## テーブルの辿り方
 

@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { apiFetch } from "./client";
+import { ApiError, apiFetch } from "./client";
 import type {
   ActionMessage,
   Bootstrap,
@@ -94,34 +94,85 @@ export type StoreInput = {
  *    返ってきた { url, path } を images 配列に足して useUpdateStore / useCreateStore へ渡すこと。
  * ⚠️ 送るのは FormData。apiFetch が multipart を検知して Content-Type を外す。
  */
-export function uploadStoreImage(file: {
+/**
+ * 店舗画像を 1 枚アップロードする。**2 段構え**になっている。
+ *
+ *   ① BFF に署名付き URL を貰う（送るのは小さな JSON）
+ *   ② 実体は Supabase Storage へ**直接** PUT する
+ *
+ * ⚠️ **実体を BFF に通してはいけない。** Vercel のサーバーレス関数はリクエスト
+ *    ボディが 4.5MB を超えると**関数に届く前に**弾く。iPhone の写真は quality 0.8 でも
+ *    2〜5MB になるので現実的に踏むうえ、拒否がアップロード途中の接続切断として
+ *    現れるため、端末には 413 すら返らず fetch の例外（「通信できませんでした」）
+ *    しか出ない。電波のせいだと誤解する。②で関数を経由しないので上限は
+ *    Storage のバケット設定だけになる。
+ *
+ * ⚠️ **署名付き URL の有効期限は 2 時間。** 貰ってすぐ使うこと。画面を開いたときに
+ *    先に取っておくような作りにしない。
+ *
+ * ⚠️ **Storage に置いただけでは `laundry_store.images` は変わらない。**
+ *    DB への反映は店舗の PATCH に images 配列ごと送って行う（配列を省くと
+ *    空配列で上書きされる）。保存に失敗したらここで置いたものを消して巻き戻す。
+ */
+export async function uploadStoreImage(file: {
   uri: string;
   name: string;
   type: string;
   /**
-   * ⚠️ ブラウザで確認するときは必須。react-native-web の FormData は素の DOM の FormData で、
-   *    { uri, name, type } を append すると "[object Object]" という文字列になって送られる。
-   *    expo-image-picker が web で返す asset.file をそのまま渡すこと。
+   * ⚠️ ブラウザで確認するときは必須。web の uri は `blob:http://…` で、
+   *    fetch で読み直すより expo-image-picker が返す asset.file をそのまま
+   *    body にしたほうが確実。
    */
   blob?: Blob;
 }): Promise<StoreImage> {
-  const form = new FormData();
-  if (file.blob) {
-    // ⚠️ BFF は part の Content-Type を見るが、web では Blob 自身の type がそれになる。
-    //    呼び出し側が正規化した type と食い違うときは包み直す
-    const part =
-      file.blob.type === file.type ? file.blob : new Blob([file.blob], { type: file.type });
-    form.append("file", part, file.name);
-  } else {
-    // React Native の FormData はファイルを { uri, name, type } で受け取る（Blob 化は不要）
-    form.append(
-      "file",
-      { uri: file.uri, name: file.name, type: file.type } as unknown as Blob,
-      file.name
+  const { signedUrl, url, path } = await apiFetch<{
+    signedUrl: string;
+    url: string;
+    path: string;
+  }>("/stores/images/signed-url", {
+    method: "POST",
+    body: { filename: file.name, contentType: file.type },
+  });
+
+  /**
+   * ⚠️ 生のバイト列で送る。FormData で送ってはいけない。
+   *    署名付き URL は body が FormData だとフィールド名の解釈が実装依存になる。
+   *    content-type ヘッダを付けた生ボディなら storage-js の uploadToSignedUrl と
+   *    同じ経路（PUT + content-type）になる。
+   *
+   * native では file:// を fetch して ArrayBuffer にする（Supabase の Expo 向け
+   * ドキュメントと同じやり方）。web は picker が返した File をそのまま使う。
+   */
+  const body = file.blob ?? (await fetch(file.uri).then((r) => r.arrayBuffer()));
+
+  const response = await fetch(signedUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": file.type,
+      // ⚠️ 上書きを許さない。ファイル名は時刻 + uuid で衝突しないので許す理由が無い
+      "x-upsert": "false",
+      "cache-control": "max-age=3600",
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    // ⚠️ Storage のエラーは { statusCode, error, message } で返る（BFF の形とは違う）
+    let detail = "";
+    try {
+      const payload = await response.json();
+      detail = payload?.message ?? payload?.error ?? "";
+    } catch {
+      detail = "";
+    }
+    throw new ApiError(
+      detail ? `画像のアップロードに失敗しました: ${detail}` : "画像のアップロードに失敗しました",
+      response.status,
+      "BAD_REQUEST"
     );
   }
-  form.append("filename", file.name);
-  return apiFetch<StoreImage>("/stores/images", { method: "POST", body: form });
+
+  return { url, path };
 }
 
 /** Storage から 1 枚消す。DB 側の images 配列からも外して保存すること */
