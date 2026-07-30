@@ -2,10 +2,9 @@ import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { MonthRangePicker } from "@/components/revenue/MonthRangePicker";
+import { MonthField } from "@/components/revenue/MonthPicker";
 import {
   currentMonthIndex,
-  monthLabel,
   type MonthIndex,
   type MonthRange as Range,
 } from "@/components/revenue/monthIndex";
@@ -33,6 +32,11 @@ const PRESETS = [
  * ⚠️ 期間は Web の 2 つまみレンジスライダーではなく、開始月・終了月を直接選ぶ形にした。
  *    RN に 2 つまみのスライダーが標準に無く、追加パッケージを入れると Metro の
  *    再起動が要るため。選べる範囲と結果は Web と同じ（最大 5 年前まで）。
+ *
+ * ⚠️ 月の選び方は**集金画面の集金日と同じ**（たたんだ行 → タップで開くパネル）。
+ *    以前は 2 つのマス目を出しっぱなしにしていたので、シートが縦に長く
+ *    中でスクロールしないと適用ボタンに届かなかった。
+ *    ⚠️ **開くのはどちらか一方だけ。** 両方開くと同じ高さの問題に戻る。
  */
 export function FilterSheet({
   open,
@@ -55,25 +59,32 @@ export function FilterSheet({
   const [draftRange, setDraftRange] = useState<Range>(range);
   /** ドラフトでは「全店舗」も全 id を並べた状態で持つ（Web の draftStores と同じ） */
   const [draftIds, setDraftIds] = useState<string[]>([]);
+  /** 開いている月のパネル。⚠️ 同時に 1 つだけ（両方開くとシートが画面より高くなる） */
+  const [expanded, setExpanded] = useState<"start" | "end" | null>(null);
 
   // 開いた瞬間に適用中の値を写す。閉じている間に外で変わっても追従する
   useEffect(() => {
     if (!open) return;
     setDraftRange(range);
     setDraftIds(selectedIds.length > 0 ? [...selectedIds] : stores.map((s) => s.laundryId));
+    // ⚠️ たたんだ状態から始める。前回開いたパネルが残ると開いた瞬間に縦長になる
+    setExpanded(null);
   }, [open, range, selectedIds, stores]);
 
   const allSelected = draftIds.length === stores.length;
 
+  /** ⚠️ 選んだら閉じる。集金画面の集金日と同じ挙動（開いたままにしない） */
   function setStart(index: MonthIndex) {
     Haptics.selectionAsync().catch(() => {});
     // 開始が終了を追い越したら終了も一緒に動かす（範囲が反転しないように）
     setDraftRange((prev) => ({ start: index, end: Math.max(prev.end, index) }));
+    setExpanded(null);
   }
 
   function setEnd(index: MonthIndex) {
     Haptics.selectionAsync().catch(() => {});
     setDraftRange((prev) => ({ start: Math.min(prev.start, index), end: index }));
+    setExpanded(null);
   }
 
   /** 表示店舗の切り替え。最後の 1 店舗は外させない（Web の toggleStore と同じ） */
@@ -101,19 +112,6 @@ export function FilterSheet({
             <View style={sheetStyles.body}>
               <Text style={styles.filterLabel}>期間</Text>
 
-              {/* 選択中の範囲。Web の「開始日 〜 終了日」表示と同じ役割 */}
-              <View style={sheetStyles.rangeRow}>
-                <View>
-                  <Text style={sheetStyles.rangeCaption}>開始月</Text>
-                  <Text style={sheetStyles.rangeValue}>{monthLabel(draftRange.start)}</Text>
-                </View>
-                <Text style={sheetStyles.rangeTilde}>〜</Text>
-                <View>
-                  <Text style={sheetStyles.rangeCaption}>終了月</Text>
-                  <Text style={sheetStyles.rangeValue}>{monthLabel(draftRange.end)}</Text>
-                </View>
-              </View>
-
               <View style={styles.chipRow}>
                 {PRESETS.map((preset) => {
                   const start = current - (preset.months - 1);
@@ -126,26 +124,36 @@ export function FilterSheet({
                       onPress={() => {
                         Haptics.selectionAsync().catch(() => {});
                         setDraftRange({ start, end: current });
+                        // プリセットは範囲ごと決まるので、開いていたパネルは閉じる
+                        setExpanded(null);
                       }}
                     />
                   );
                 })}
               </View>
 
-              <Text style={sheetStyles.pickerLabel}>開始月</Text>
-              <MonthRangePicker
+              {/*
+                ⚠️ 開くのはどちらか一方だけ。onToggle で相手を閉じている。
+                   月のマス目は縦 3 行あるので、両方開くとシートが画面より高くなる
+              */}
+              <MonthField
+                label="開始月"
                 value={draftRange.start}
                 min={oldest}
                 max={current}
+                open={expanded === "start"}
+                onToggle={() => setExpanded((prev) => (prev === "start" ? null : "start"))}
                 onChange={setStart}
               />
 
-              <Text style={sheetStyles.pickerLabel}>終了月</Text>
               {/* 終了月は開始月より前を選べないようにする（範囲が反転しない） */}
-              <MonthRangePicker
+              <MonthField
+                label="終了月"
                 value={draftRange.end}
                 min={draftRange.start}
                 max={current}
+                open={expanded === "end"}
+                onToggle={() => setExpanded((prev) => (prev === "end" ? null : "end"))}
                 onChange={setEnd}
               />
 
@@ -283,22 +291,6 @@ const sheetStyles = StyleSheet.create({
   },
   headerTitle: { fontFamily: font.uiBold, fontSize: 15, color: color.tealDeeper },
   body: { padding: spacing.lg },
-  rangeRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "center",
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  rangeCaption: { fontFamily: font.ui, fontSize: 10, color: color.textMuted },
-  rangeValue: { fontFamily: font.uiBold, fontSize: 15, color: color.textMain },
-  rangeTilde: { fontFamily: font.ui, fontSize: 13, color: color.textMuted, paddingBottom: 2 },
-  pickerLabel: {
-    fontFamily: font.uiBold,
-    fontSize: 11,
-    color: color.textMuted,
-    marginBottom: spacing.sm,
-  },
   divider: { height: 1, backgroundColor: color.divider, marginVertical: spacing.lg },
   storeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   selectAll: { fontFamily: font.uiBold, fontSize: 12, color: color.teal },

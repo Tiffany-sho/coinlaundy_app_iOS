@@ -28,6 +28,12 @@ import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens"
  *
  * npm パッケージを足さずに済ませるため View と Text だけで組んでいる。
  * Web ビルド（スマホのブラウザ）でも動くよう、iOS 専用 API は使っていない。
+ *
+ * ⚠️ **枠・送りボタン・選択中の塗り・下段のショートカットは
+ *    `components/revenue/MonthPicker.tsx`（収益の期間絞り込み）と対にしてある。**
+ *    片方だけ変えると、同じアプリの中で日付の選び方が 2 通りに見える。
+ *    ⚠️ こちらは日単位なので、月を選ぶ用途にそのまま流用はできない
+ *    （週の並びと月の日数の計算が要る）。
  */
 
 const WEEK_DAYS = ["日", "月", "火", "水", "木", "金", "土"];
