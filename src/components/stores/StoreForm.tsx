@@ -159,10 +159,14 @@ export function StoreForm({
         </View>
       </View>
 
+      {/*
+        ⚠️ keyboardVerticalOffset を渡さないこと。上のヘッダは同じ親の中の RN の子で、
+        その高さは KeyboardAvoidingView の frame.y に既に入っている。渡すと二重に
+        数えてキーボードとの間に余白が出る。理由の詳細は app/collect/[storeId].tsx
+      */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={insets.top + 60}
       >
         <ScrollView
           contentContainerStyle={{

@@ -26,6 +26,28 @@
 
 - `StyleSheet.absoluteFillObject` は**削除済み**。`StyleSheet.absoluteFill` を使う
 
+## KeyboardAvoidingView
+
+- ⚠️ **`keyboardVerticalOffset` を安易に渡さない。** `behavior="padding"` の下パディングは
+  RN 側で `frame.y + frame.height - (keyboard.screenY - keyboardVerticalOffset)` と
+  計算される。`frame` は**親基準の座標**なので、同じ親の中に置いた RN のヘッダの高さは
+  `frame.y` に既に入っている。そこへ `insets.top + 60` のような値を渡すとヘッダ分を
+  二重に数え、**ScrollView の下端がキーボードの上端より約 119px 高い位置で止まって
+  帯状の余白が出る**（3 画面で同じ間違いをしていた）。
+  必要なのは **`KeyboardAvoidingView` の上にネイティブのナビゲーションヘッダがある**
+  （RN のレイアウトに含まれない）ときだけ
+- **キーボードの上に残したいものは `KeyboardAvoidingView` の中に置く。** 外に出すと
+  padding の外側になるのでキーボードの裏に完全に隠れる。集金画面の合計収益額と
+  登録ボタンがこれで見えなくなっていた
+- **キーボードが出ている間は `insets.bottom` を足さない。** ホームバーはキーボードに
+  覆われているので不要で、足すと隙間になる。`useKeyboardVisible()`
+  （`src/components/common/`）で出し入れを判定する。
+  ⚠️ iOS は `keyboardWillShow`、Android は `keyboardDidShow`（iOS の `did` 系は
+  アニメーション完了後に来るので一段遅れて見え、Android に `will` 系は無い）
+- **web では `Keyboard` のイベントが一度も発火しない。** react-native-web の実装は
+  `addListener()` が `{ remove: () => {} }` を返すだけの no-op で `isVisible()` も常に
+  false（`dist/exports/Keyboard/index.js`）。落ちないので分岐は要らない
+
 ## Hermes（実機の JS エンジン）
 
 ブラウザ確認では最後まで再現しない。**実機で初めて出る。**

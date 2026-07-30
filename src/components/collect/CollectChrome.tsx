@@ -95,18 +95,28 @@ export function DraftBanner({
 export function CollectFooter({
   total,
   bottomInset,
+  keyboardVisible = false,
   submitting,
   onCancel,
   onSubmit,
 }: {
   total: number;
   bottomInset: number;
+  /** キーボードが出ているか。下の余白を詰めてキーボードに密着させる */
+  keyboardVisible?: boolean;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: () => void;
 }) {
   return (
-    <View style={[styles.footer, { paddingBottom: bottomInset + spacing.xxl }]}>
+    <View
+      style={[
+        styles.footer,
+        // ⚠️ キーボードが出ているときは safe area を足さない。ホームバーはキーボードに
+        //    覆われているので不要で、足すとキーボードとの間に隙間が空く
+        { paddingBottom: keyboardVisible ? spacing.lg : bottomInset + spacing.xxl },
+      ]}
+    >
       <View style={{ flex: 1 }}>
         <Text style={styles.footerLabel}>合計収益額</Text>
         <Text style={styles.footerTotal}>¥{total.toLocaleString()}</Text>

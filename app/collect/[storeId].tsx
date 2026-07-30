@@ -19,6 +19,7 @@ import { Divider, SectionHead } from "@/components/common/section";
 import { useDialog } from "@/components/common/dialog";
 import { useToast } from "@/components/common/toast";
 import { CenterMessage, Screen } from "@/components/common/ui";
+import { useKeyboardVisible } from "@/components/common/useKeyboardVisible";
 import {
   CollectFooter,
   CollectHeader,
@@ -50,6 +51,7 @@ import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens"
 export default function CollectMoney() {
   const { storeId } = useLocalSearchParams<{ storeId: string }>();
   const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
   const router = useRouter();
   const dialog = useDialog();
   const toast = useToast();
@@ -392,15 +394,21 @@ export default function CollectMoney() {
             <TotalAmountInput value={totalInput} onChange={setTotalInput} />
           )}
         </ScrollView>
-      </KeyboardAvoidingView>
 
-      <CollectFooter
-        total={total}
-        bottomInset={insets.bottom}
-        submitting={submitting}
-        onCancel={onCancel}
-        onSubmit={onSubmit}
-      />
+        {/*
+          ⚠️ footer は KeyboardAvoidingView の**中**に置く。外に出すとキーボードの
+          裏に完全に隠れ、合計収益額が見えないうえ、いったんキーボードを閉じないと
+          登録できない。中に置くと padding の内側に入るのでキーボードの真上に乗る。
+        */}
+        <CollectFooter
+          total={total}
+          bottomInset={insets.bottom}
+          keyboardVisible={keyboardVisible}
+          submitting={submitting}
+          onCancel={onCancel}
+          onSubmit={onSubmit}
+        />
+      </KeyboardAvoidingView>
     </Screen>
   );
 }

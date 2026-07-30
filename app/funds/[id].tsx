@@ -250,10 +250,14 @@ export default function FundDetailScreen() {
         onBack={() => router.back()}
       />
 
+      {/*
+        ⚠️ keyboardVerticalOffset を渡さないこと。上の FundDetailHeader は同じ親の中の
+        RN の子で、その高さは KeyboardAvoidingView の frame.y に既に入っている。渡すと
+        二重に数えてキーボードとの間に余白が出る。理由の詳細は app/collect/[storeId].tsx
+      */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={insets.top + 60}
       >
         <ScrollView
           contentContainerStyle={{
