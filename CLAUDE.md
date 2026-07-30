@@ -118,7 +118,14 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 
 ### 済んでいること（2026-07-30 時点）
 
-- マイグレーション **002 / 003 は適用済み**（PostgREST で列の存在を確認）
+- マイグレーション **002 / 003 / 005 は適用済み**（005 は `announcements`。
+  1 行・RLS 有効・ポリシーは SELECT の 1 本だけ、を SQL で確認済み）
+  - ⚠️ **`npx supabase db query --linked -f <file>` で流せる。** SQL Editor に
+    貼らなくてよい。⚠️ ただし先に `npx supabase link --project-ref …` が要る
+    （`.temp/linked-project.json` があっても CLI は「リンクされていない」と言う）
+- **お知らせは実データで動く状態**。投稿は Supabase の Table Editor から手で行う
+  （管理画面も書き込み API も無い）。⚠️ 下書き・期限切れが漏れないことは
+  述語を SQL で突き合わせて確認済み（draft / expired = 不可視、live / 期限が未来 = 可視）
 - Edge Function `collect-reminder` は**デプロイ済み**（`--use-api --no-verify-jwt`）。
   `CRON_SECRET` も設定済み。`?dryRun=1` で送信直前まで全経路が通ることを確認した
   （`targetOrgs:2 / recipients:3 / tokens:0`）
@@ -129,6 +136,14 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
   - `/app/terms` `/app/privacy` … 200。**描画後の HTML に他ページへのリンクが 1 本も無い**
     （ナビ・フッター・戻るリンクが全て消えている。Guideline 3.1.3(a)）
   - `/terms` `/tokushoho`（公開側）は従来どおりナビと戻るリンクが出る
+- **2026-07-30 の追加ぶんも本番に反映済み**（`fix/home-recent-funds-window` を merge）。
+  未認証で 401 を確認したもの: `GET /api/v1/announcements` /
+  `POST /api/v1/profile/avatar/signed-url` / `PATCH /api/v1/profile` /
+  `GET /api/v1/funds/summary/stores`
+  - ホームの「過去1ヶ月の集金記録」の窓を JST 基準に直し、件数の頭打ちも外した
+  - **PostgREST の 1000 行上限**で集計が黙って欠けるのを直した（`fetchAllRows`）。
+    ⚠️ 詳細と守るべき条件は `docs/contracts.md` の「行数の上限」
+  - `/funds/summary/stores` が `count` / `firstDate` / `lastDate` も返すようになった
 - **004（pg_cron）は適用済み**。`pg_cron 1.6.4` / `pg_net 0.19.5`、
   `collect-reminder-hourly` が `0 * * * *` / `active=true`、Vault は 2 件とも `rows=1`。
   cron の本文を手で撃って **200 + `{"sent":0,"reason":"no_target_org","orgsWithSchedule":2,
@@ -255,5 +270,6 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 - [ ] 文言レビュー（外部購入への言及が無いこと。Guideline 3.1.3(a)）
       ⚠️ **`announcements` テーブルの公開中の行も読み返す。** アプリを更新せずに
       文面を出せるので、審査を通ったあとも違反文面を出せてしまう
-- [ ] マイグレーション **005（お知らせ）を適用する**。⚠️ 空のまま審査に出さない
+- [x] マイグレーション **005（お知らせ）を適用済み**。最初の 1 件も入っているので
+      空のまま審査に出ることはない
 - [ ] アカウント削除の動線確認（Guideline 5.1.1(v)）
