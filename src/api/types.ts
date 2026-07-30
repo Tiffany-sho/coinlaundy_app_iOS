@@ -251,11 +251,31 @@ export type Invitation = {
   token: string;
 };
 
+/**
+ * アクションログの 1 行。`GET /org/messages` が返す形。
+ *
+ * ⚠️ 以前ここは `{ id, created_at, message, [key: string]: unknown }` になっていたが
+ *    **実際のテーブルに `created_at` は使われておらず、並び順も表示も `date`**
+ *    （epoch ミリ秒）を見ている。インデックスシグネチャがあったせいで
+ *    型エラーにならず、誰も気づかないままだった。
+ *
+ * ⚠️ `date` は **epoch ミリ秒**。ISO 文字列ではない
+ *    （Hermes は ISO 以外を `Invalid Date` にする。docs/traps.md）。
+ */
 export type ActionMessage = {
-  id: string | number;
-  created_at: string;
-  message?: string | null;
-  [key: string]: unknown;
+  id: string;
+  message: string;
+  /** epoch ミリ秒。⚠️ 古い行は null のことがある */
+  date: number | null;
+  /** 自分の操作か。⚠️ サーバが判定して返す */
+  isMe: boolean;
+  /** 退会済みユーザーは null */
+  username: string | null;
+};
+
+export type ActionMessagePage = {
+  items: ActionMessage[];
+  hasMore: boolean;
 };
 
 /** アカウント削除前に提示する影響範囲 */

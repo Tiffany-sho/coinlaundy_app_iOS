@@ -8,6 +8,7 @@ import {
 import { ApiError, apiFetch } from "./client";
 import type {
   ActionMessage,
+  ActionMessagePage,
   Announcement,
   Bootstrap,
   CollectSchedule,
@@ -655,10 +656,27 @@ export function useDeleteInvitation() {
   });
 }
 
+/** アクションログの 1 ページの件数 */
+const ACTION_LOG_PAGE_SIZE = 30;
+
+/**
+ * アクションログ（操作履歴）。
+ *
+ * ⚠️ **全件を一度に取らない。** ログは操作のたびに増えるので、範囲を切らないと
+ *    PostgREST の 1000 行上限に当たって古い順から黙って欠ける
+ *    （docs/contracts.md の「行数の上限」）。サーバも limit を必須にしてある。
+ */
 export function useOrgMessages(enabled = true) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: settingsKeys.messages,
-    queryFn: () => apiFetch<ActionMessage[]>("/org/messages"),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      apiFetch<ActionMessagePage>(
+        `/org/messages?offset=${pageParam}&limit=${ACTION_LOG_PAGE_SIZE}`
+      ),
+    // ⚠️ 件数で終端を判定しない。サーバが 1 件多く引いて hasMore を返している
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.hasMore ? allPages.length * ACTION_LOG_PAGE_SIZE : undefined,
     enabled,
   });
 }
