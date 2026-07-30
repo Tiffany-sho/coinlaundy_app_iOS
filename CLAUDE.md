@@ -142,24 +142,42 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
     `Quote command returned error`。`net._http_response` には行が増えない）。
     **失敗は 2 つのテーブルに分かれて記録される。**読み方は `docs/traps.md` の
     「pg_cron → pg_net → Edge Function」に書いた
+- **プッシュ通知が実機に届いた（集金前日リマインダー）。** これで
+  `sendToExpo` まで含めて全経路が通った。EAS の development build を実機に入れ、
+  プライミング → OS 許可 → `device_tokens` に登録 → 空撃ちで `wouldSend: 1` →
+  本送信で `{"sent":1,"disabled":0}` → 端末で受信、まで確認
+  - ⚠️ **`disabled: 0` は「エラーが無かった」ではない。** `sendToExpo` は
+    `DeviceNotRegistered` 以外のチケットエラーを `console.error` に出すだけで
+    応答に含めない。APNs キーが無効（`InvalidCredentials`）でも
+    `{"sent":1,"disabled":0}` が返る。配信を疑うときは Edge Function のログを見る
+  - ⚠️ 当日リマインダー（`daysUntil === 0`）の検証には注意。同じ日に集金を
+    登録していると `alreadyCollected` で除外されるため、前日（`daysUntil === 1`）で
+    試すほうが確実
 
 ### 残っているタスク
 
-**A. 実機で動かす（ここが最大の関門。ほぼ全部がここ待ち）**
+**A. 実機で動かす（development build は動いた。以降は画面の確認）**
 
-- [ ] `eas init` — `app.json` に `extra.eas.projectId` が入る。
-      ⚠️ **これが無いと `getExpoPushTokenAsync` が落ちてトークンを取れない**
-- [ ] `eas device:create` — 実機の UDID 登録。忘れるとインストールできない
+- [x] `eas init` / `eas device:create` / `eas build --profile development --platform ios`
+      → 実機にインストールして起動できた。手順と落とし穴は `docs/traps.md` の
+      「EAS / 実機に入れるまで」
 - [ ] EAS の環境変数に `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` を登録
-      （`.env.local` は EAS に渡らない）
-- [ ] `eas build --profile development --platform ios` → 実機にインストール
-- [ ] アプリ本体の実機確認（**一度も実機で動かしていない**）
+      ⚠️ `development` では**不要**（JS をローカルの Metro から読むので `.env.local` が効く）。
+      必須になるのは `preview` / `production` から
+- [ ] 画面ひとつずつの実機確認（**まだ通しで見ていない**）。ブラウザで動いていて
+      実機で崩れやすいのは、セーフエリアの余白、ホームの `PanResponder` のスワイプ、
+      画像の選択とアップロード（HEIC）、キーボードが入力欄を隠す挙動
 
-**B. プッシュ通知（サーバー側は完成。端末待ち）**
+**B. プッシュ通知**
 
-- [ ] 実機で通知を許可 → `?dryRun=1` で `wouldSend` が 1 以上になることを確認
-- [ ] dryRun を外して実際に届くことを確認
-- [ ] **未検証の経路**: メッセージ組み立てと `sendToExpo`（トークン 0 件だと手前で return するため）
+- [x] 集金前日リマインダーが実機に届いた（上の「済んでいること」を参照）
+- [ ] 低在庫・機器故障アラートの確認
+      ⚠️ **2 つ目のアカウントが要る。** `pushToOrg` に `exceptUserId: user.id` を
+      渡しているので、自分の操作では自分に届かない。同じ組織に別ユーザーを招待し、
+      片方で在庫を減らして他方で受け取る形になる
+- [ ] **未実装**: 設計図 10.2 の 5 番目「未送信データ督促」（ローカル通知。
+      「未送信の集金データが 2 件あります」）。`scheduleNotificationAsync` を呼ぶ箇所が無い。
+      オフラインで登録したまま忘れるケースの保険なので、あると効く
 
 **C. アプリ内課金（App Store Connect 待ち）**
 
