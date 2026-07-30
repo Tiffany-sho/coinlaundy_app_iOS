@@ -199,16 +199,19 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 
 - [x] App Store Connect で**アプリレコードを作成済み**。
       **数値の Apple ID は `6796202962`**（公開値。App Store の URL に出るので秘密ではない）
-- [ ] Vercel に `APPLE_APP_APPLE_ID=6796202962` を設定
+- [x] Vercel に `APPLE_APP_APPLE_ID=6796202962` を設定済み
       ⚠️ **Production の検証にだけ要る。** Sandbox は未設定のまま通る
       （`utils/apple/verify.js` が `Environment.PRODUCTION` のときだけ例外を投げる）。
       `APPLE_BUNDLE_ID` は既定値 `com.collecie.app` が `app.json` と一致しているので不要。
       ⚠️ **追加しただけでは反映されない。** Vercel は既存のデプロイに環境変数を
-      入れ直さないので、Redeploy か新しい push が必要
-- [ ] App Store Server Notifications V2 の URL 登録
-      （`https://www.collecie.com/api/apple/notifications`。**本番 URL を入れる。**
-      プレビュー URL を登録するとそのデプロイが消えた時点で通知が届かなくなる。
-      受け口は本番で稼働中・偽の JWS を 400 で拒否することまで確認済み）
+      入れ直さないので、Redeploy か新しい push が要る
+- [x] App Store Server Notifications の URL 登録済み（Production / Sandbox とも
+      `https://www.collecie.com/api/apple/notifications`）。
+      ⚠️ **Version の選択欄は無い。** Apple が V1 を廃止したので新しいアプリレコードは
+      V2 固定。受け口も V2 の `signedPayload` 前提で書いてある
+      - ⚠️ **まだ本物の通知は 1 通も受けていない。** 初回の Sandbox 購入で
+        `SUBSCRIBED` が飛んだときに Vercel のログの `[apple/notifications]` で確認する。
+        キー名しか出さないので貼っても安全（取引情報と識別子は出さない）
 
 有料アプリ契約が Active になってから:
 
