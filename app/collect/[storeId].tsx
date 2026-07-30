@@ -312,10 +312,20 @@ export default function CollectMoney() {
       <CollectHeader storeName={store.store} topInset={insets.top} onBack={onCancel} />
       {!isOnline && <CollectOfflineNote />}
 
+      {/*
+        ⚠️ keyboardVerticalOffset を渡さないこと（0 が正しい）。
+        behavior="padding" の下パディングは
+          frame.y + frame.height - (keyboard.screenY - keyboardVerticalOffset)
+        で決まる。frame は親（Screen）基準なので、上の CollectHeader の高さは
+        frame.y に既に入っている。ここで insets.top + 60 を渡すとヘッダ分を
+        二重に数えて、ScrollView の下端がキーボードの上端より約 119px 高くなり、
+        キーボードとの間に帯状の余白が出る。
+        このオフセットが要るのは KeyboardAvoidingView の上に**ネイティブの**
+        ナビゲーションヘッダがある（RN のレイアウトに含まれない）ときだけ。
+      */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={insets.top + 60}
       >
         <ScrollView
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
