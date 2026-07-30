@@ -1,13 +1,14 @@
+import { useRef } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, type Href } from "expo-router";
+import { useRouter, useScrollToTop, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAnnouncements, useBootstrap } from "@/api/queries";
 import { useUnreadAnnouncementCount } from "@/components/settings/announcementsRead";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, ListCard, ListRow, Muted, Screen, Title } from "@/components/common/ui";
-import { color, font, spacing } from "@/theme/tokens";
+import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
 /** Web の AccountInfoCard と同じ表記に合わせる */
 const ROLE_LABEL: Record<string, string> = {
@@ -30,6 +31,9 @@ export default function Settings() {
   /** ⚠️ 既読は端末ローカル（MMKV）。機種変更やアプリの入れ直しでリセットされる */
   const announcements = useAnnouncements();
   const unreadNews = useUnreadAnnouncementCount(announcements.data);
+  /** 設定タブをもう一度押したら先頭へ戻す */
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
 
   async function onSignOut() {
     await signOut();
@@ -39,6 +43,7 @@ export default function Settings() {
   return (
     <Screen>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{
           padding: spacing.md,
           paddingTop: insets.top + spacing.lg,
@@ -47,8 +52,17 @@ export default function Settings() {
       >
         <Title style={{ marginBottom: spacing.lg, fontSize: 22 }}>設定</Title>
 
-        {/* Web の AccountInfoCard はアバターを大きく出す */}
-        <View style={styles.avatarRow}>
+        {/*
+          アカウントはこのカード 1 枚だけにする。
+          ⚠️ 以前は同じ内容を「アバター行」と「アカウントカードのマイアカウント行」の
+             2 か所に出していて役割が被っていた。増やし直さないこと。
+             氏名・メール・権限はマイアカウント（app/settings/account/index.tsx）で見る。
+        */}
+        <Pressable
+          onPress={() => router.push("/settings/account")}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.accountCard, pressed && { opacity: 0.7 }]}
+        >
           <View style={styles.avatar}>
             {data?.profile?.avatar_url ? (
               <Image
@@ -68,22 +82,8 @@ export default function Settings() {
               {data?.organization ? (ROLE_LABEL[data.organization.myRole] ?? "—") : "組織未所属"}
             </Muted>
           </View>
-        </View>
-
-        <ListCard icon="person-outline" title="アカウント">
-          <InfoRow label="氏名" value={data?.profile?.full_name ?? "—"} />
-          <InfoRow label="表示名" value={data?.profile?.username ?? "—"} />
-          <InfoRow label="メールアドレス" value={data?.user.email ?? "—"} />
-          <InfoRow
-            label="権限"
-            value={data?.organization ? (ROLE_LABEL[data.organization.myRole] ?? "—") : "—"}
-          />
-          <LinkRow
-            label="アカウント情報を編集"
-            onPress={() => router.push("/settings/account")}
-            last
-          />
-        </ListCard>
+          <Ionicons name="chevron-forward" size={18} color={color.cyan300} />
+        </Pressable>
 
         <View style={{ marginTop: spacing.lg }}>
           <ListCard icon="people-outline" title="組織">
@@ -95,6 +95,11 @@ export default function Settings() {
             <LinkRow
               label="集金スケジュール"
               onPress={() => router.push("/settings/collect-schedule")}
+            />
+            {/* 誰がいつ何をしたかの履歴。組織のメンバー全員ぶんが出る */}
+            <LinkRow
+              label="アクションログ"
+              onPress={() => router.push("/settings/action-log")}
               last
             />
           </ListCard>
@@ -136,18 +141,19 @@ export default function Settings() {
         </View>
 
         {/*
-          ⚠️ 出せるのは Web 側の `/app/*`（アプリ専用ページ）だけ。
+          規約・プライバシーは**アプリ内のテキスト**を描く（app/settings/legal.tsx）。
+          2026-07-30 まではここから Web を WebView で開いていたが、静的なテキストなのに
+          毎回サーバ生成されて 0.3〜1.0 秒かかっていたため取り込んだ。
+          ⚠️ 引き換えに正本が 2 か所になっている。src/content/legal/types.ts を読むこと。
 
-          Web の /terms は「Proプラン ¥780/月」「クレジットカードによる月次自動引き落とし」
-          「解約はマイページの『プランを管理する』から」を、/tokushoho は販売価格と決済条件を、
-          /help は「アップグレードができます」を含む。
-          これらをアプリ内 WebView で表示すると Guideline 3.1.3(a)（外部購入への誘導）に触れる。
+          ⚠️ 禁じられているのは**外部（Web・Stripe）での購入への誘導**であって、
+             アプリ内課金の条件を書くことではない（Guideline 3.1.3(a) と 3.1.2）。
+             利用規約の第5条・第6条は App Store 経由の購読を前提に入っている。
+             ⚠️ ただし**価格を数字で書かない**こと。Web の /terms にある
+             「Proプラン ¥780/月」等を持ち込まない（出してよいのは displayPrice だけ）。
 
-          /app/terms は料金・解約の条文を落としたアプリ専用版。ナビとフッターも消してあり、
-          WebView 側も許可リストで他ページへの遷移を止めている（app/settings/webview.tsx）。
-
-          ⚠️ 特商法は載せない。アプリ内課金が無い以上、アプリに掲示義務は生じない。
-             載せると販売価格と決済条件がそのままアプリ内に出ることになる。
+          ⚠️ 特商法（/tokushoho）は載せない。販売価格と決済条件を必ず書く性質の文書で、
+             Web の当該ページは Stripe 決済（当方が販売者）を前提に書かれている。
         */}
         <View style={{ marginTop: spacing.lg }}>
           <ListCard icon="document-text-outline" title="その他">
@@ -158,11 +164,11 @@ export default function Settings() {
             />
             <LinkRow
               label="利用規約"
-              onPress={() => router.push("/settings/webview?page=terms" as Href)}
+              onPress={() => router.push("/settings/legal?page=terms" as Href)}
             />
             <LinkRow
               label="プライバシーポリシー"
-              onPress={() => router.push("/settings/webview?page=privacy" as Href)}
+              onPress={() => router.push("/settings/legal?page=privacy" as Href)}
               last
             />
           </ListCard>
@@ -235,7 +241,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   badgeLabel: { fontFamily: font.uiBold, fontSize: 11, color: "#FFFFFF" },
-  avatarRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginBottom: spacing.lg },
+  /* 他のカード（ui.tsx の Card）と同じ見え方に揃える。
+     ⚠️ 影と角丸を同じ View に置いてよいのは overflow: "hidden" を付けないから。
+        付けると iOS はビューの外側に影を描くので影が丸ごと消える（docs/traps.md） */
+  accountCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.lg,
+    backgroundColor: color.cardBg,
+    borderRadius: radius.card,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: color.cyan100,
+    ...shadow.sm,
+  },
   avatar: {
     width: 64,
     height: 64,

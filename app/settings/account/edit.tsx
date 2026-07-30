@@ -21,6 +21,7 @@ import { color, font, spacing } from "@/theme/tokens";
 
 /**
  * アカウント情報の編集。Web の /settings/account/edit（AccountEditForm）に対応する。
+ * 閲覧は `./index`（マイアカウント）にあり、ここはそこからの遷移先。
  *
  * 編集できるのはアイコン・氏名・表示名の 3 つ。
  *   - メールアドレスと権限は変えられない（前者は Supabase Auth 側、後者は管理者の操作）
