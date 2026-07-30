@@ -171,14 +171,14 @@ export default function Signup() {
                 <Text style={styles.consent}>
                   <Text
                     style={styles.link}
-                    onPress={() => router.push("/settings/webview?page=terms" as Href)}
+                    onPress={() => router.push("/settings/legal?page=terms" as Href)}
                   >
                     利用規約
                   </Text>
                   および
                   <Text
                     style={styles.link}
-                    onPress={() => router.push("/settings/webview?page=privacy" as Href)}
+                    onPress={() => router.push("/settings/legal?page=privacy" as Href)}
                   >
                     プライバシーポリシー
                   </Text>

@@ -91,12 +91,12 @@ export default function PlanScreen() {
 
         {/* Guideline 3.1.2 が求める規約・プライバシーへの導線 */}
         <View style={styles.legalRow}>
-          <Pressable onPress={() => router.push("/settings/webview?page=terms" as Href)} hitSlop={8}>
+          <Pressable onPress={() => router.push("/settings/legal?page=terms" as Href)} hitSlop={8}>
             <Text style={styles.legalLink}>利用規約</Text>
           </Pressable>
           <Text style={styles.legalSep}>・</Text>
           <Pressable
-            onPress={() => router.push("/settings/webview?page=privacy" as Href)}
+            onPress={() => router.push("/settings/legal?page=privacy" as Href)}
             hitSlop={8}
           >
             <Text style={styles.legalLink}>プライバシーポリシー</Text>

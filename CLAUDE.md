@@ -172,6 +172,14 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
   Client IDs に `com.collecie.app` を入れるだけ。⚠️ Services ID も `.p8` も要らない
   （理由は `docs/contracts.md`）
 - **店舗画像のアップロードが実機で成功**（署名付き URL で Storage へ直接送る経路）
+- **利用規約・プライバシーポリシーをアプリ内のテキストにした**（2026-07-30）。
+  WebView（`app/settings/webview.tsx`）は削除。⚠️ **法務文書の正本が Web、複製がアプリ、の
+  2 か所になった。片方だけ直すとアプリが古い規約を出し続ける**（`docs/contracts.md` の
+  「法務文書」）。Web 側の 2 ファイルにも相互参照のコメントを入れてある
+  - 遅かった原因は Web の `src/middleware.js` のマッチャが `/app/*` も拾っていること。
+    静的なテキストなのに**開くたびに Supabase のセッション更新が走り
+    `Cache-Control: no-store` になる**（`X-Vercel-Cache: MISS` / TTFB 0.3〜1.0 秒）。
+    そこへ 95KB の HTML と JS 20 本が続く
 - **実機で 8 件の不具合を見つけて直した。** どれもブラウザでは再現しないもの:
   日付が全部 NaN（Hermes の `new Date`）/ 通知プライミングが出ない（`fullScreenModal` は
   下の画面を unmount しない）/ キーボード上の余白（`keyboardVerticalOffset` の二重計上、
@@ -263,6 +271,20 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
         `openAuthSessionAsync`（`ASWebAuthenticationSession`）を使う
       - 判断材料: Supabase の Authentication → Users に `google` の行が実際にあるか。
         ゼロなら急がない
+
+**F. アクションログ**
+
+- [x] アプリに画面を追加（`app/settings/action-log.tsx`。設定 → 組織 → アクションログ）
+- [x] **BFF が操作を記録するようにした。** ⚠️ **それまで `/api/v1/*` は
+      ログを 1 行も書いていなかった**ので、アプリでの操作は履歴に残っていなかった。
+      記録するのは集金データの登録・編集・削除と店舗の登録・編集・削除の 6 つ
+- [x] **マイグレーション 006 を適用済み**（`docs/ios/migrations/006_action_message_rls.sql`）。
+      適用後に `pg_policies` を引いて **2 本だけ**（`action_message_insert_self` /
+      `action_message_select_own_org`）になり、**UPDATE / DELETE の行が無い**ことを確認した
+      - ⚠️ それまでは authenticated に対して SELECT / INSERT / UPDATE / DELETE が
+        すべて `true` で開いており、**他人の名前でログを捏造できる**状態だった。
+        厳しいポリシーも 1 本あったが、**RLS は OR で結合されるので効いていなかった**
+        （対策済みに見えて無効、という形）。詳細は `docs/contracts.md` の「アクションログ」
 
 **E. 審査提出前**
 
