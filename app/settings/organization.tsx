@@ -11,6 +11,7 @@ import {
 } from "@/api/queries";
 import { CenterMessage, Muted, Screen } from "@/components/common/ui";
 import { useDialog } from "@/components/common/dialog";
+import { useToast } from "@/components/common/toast";
 import { INVITABLE_ROLES, ROLE_INFO, orgStyles } from "@/components/settings/orgShared";
 import { OrgNameSection } from "@/components/settings/OrgNameSection";
 import { MemberRow } from "@/components/settings/MemberRow";
@@ -34,6 +35,7 @@ export default function Organization() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const dialog = useDialog();
+  const toast = useToast();
 
   const bootstrap = useBootstrap();
   const members = useMembers();
@@ -74,7 +76,18 @@ export default function Organization() {
           value: r,
         })),
       });
-      if (role) updateRole.mutate({ userId: member.user_id, role });
+      if (!role) return;
+      const name = member.profiles.username ?? "メンバー";
+      // ⚠️ ミューテーションには成功・失敗どちらのトーストも付ける（CLAUDE.md）。
+      //    ここは長らく無く、押しても何も起きたように見えなかった
+      updateRole.mutate(
+        { userId: member.user_id, role },
+        {
+          onSuccess: () => toast.success(`${name} の役割を${ROLE_INFO[role].label}に変更しました`),
+          onError: (e) =>
+            toast.error(e instanceof Error ? e.message : "役割を変更できませんでした"),
+        }
+      );
     })();
   }
 
@@ -87,7 +100,12 @@ export default function Organization() {
         confirmLabel: "削除",
         destructive: true,
       });
-      if (ok) removeMember.mutate(member.user_id);
+      if (!ok) return;
+      removeMember.mutate(member.user_id, {
+        onSuccess: () => toast.success(`${name} を組織から削除しました`),
+        onError: (e) =>
+          toast.error(e instanceof Error ? e.message : "メンバーを削除できませんでした"),
+      });
     })();
   }
 
