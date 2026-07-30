@@ -59,6 +59,13 @@
 - `(tabs)` グループは URL に現れない
 - `stores.tsx` と `stores/_layout.tsx` は**共存できない**。ディレクトリ化するなら単体ファイルは消す
 - **フッター（タブバー）を残したい画面はタブ配下に Stack をネストする。** `app/(tabs)/stores/_layout.tsx` がその例。`app/` 直下に置くとタブバーが消える
+- ⚠️ **`presentation: "fullScreenModal"` は下の画面をアンマウントしない。** 画面いっぱいに
+  覆うので消えたように見えるが、Stack の上に載っているだけ。したがって
+  **モーダルから戻ってきたときに下の画面の `useEffect` は再実行されない**（deps が
+  変わらなければ）。「モーダルで何かした結果を見て動く処理」を `useEffect` に書くと
+  黙って動かず、次回起動まで気づけない。`useFocusEffect` を使う
+  （`src/push/usePushPriming.ts` がこれで壊れていた。集金を登録してもプライミングが
+  出なかった原因）
 
 ## FlashList
 
