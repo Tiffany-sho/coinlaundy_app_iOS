@@ -26,6 +26,30 @@
 
 - `StyleSheet.absoluteFillObject` は**削除済み**。`StyleSheet.absoluteFill` を使う
 
+## Hermes（実機の JS エンジン）
+
+ブラウザ確認では最後まで再現しない。**実機で初めて出る。**
+
+- ⚠️ **`new Date(<ISO でない文字列>)` は `Invalid Date` になる。** ISO 8601 以外の
+  書式のパースは仕様上実装依存で、V8（Chrome / react-native-web）は寛容に通すが
+  **Hermes は通さない。** 以後すべての getter が `NaN` を返す。
+  実際に踏んだ形:
+
+  ```js
+  // ✗ 実機で Invalid Date。"7/30/2026, 11:51:51 AM" を食わせている
+  new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
+  ```
+
+  これで `nowInJst()` が壊れ、**日付を扱う 7 画面が一斉に NaN になった。**
+  型エラーも例外も出ず、ブラウザでは正常に見える。
+  `src/shared/date.ts` の直し方（数値だけで組み立てる）を参照
+- **TZ を跨ぐ変換に文字列を経由させない。** `toLocaleString` で出して読み直す形は
+  ロケール・エンジン・OS のどれが変わっても壊れる。`Date.UTC` と `getUTC*` の
+  算術だけで書けば全エンジンで同じ結果になる
+- ⚠️ **`TZ=Asia/Tokyo node ...` は Git Bash では効かない**（値が空で渡る）。
+  タイムゾーンを変えて検証するときは PowerShell で `$env:TZ` を使う。
+  効いていないことに気づかないと「全 TZ で確認した」と誤認する
+
 ## iOS
 
 - **Modal の上に Modal を重ねると表示に失敗する。** 2 段階の選択（店舗を選んでからシートを出す等）は、1 段目を**閉じてから** `onDismiss` の後に 2 段目を開く

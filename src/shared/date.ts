@@ -19,10 +19,31 @@ export function getEpochTimeInSeconds(year: number, month: number, day: number):
   return Date.UTC(year, month - 1, day) - EPOCH_ERROR;
 }
 
-/** 端末 TZ に関係なく「JST での今」を表す Date を返す */
+/**
+ * 端末 TZ に関係なく「JST での今」を表す Date を返す。
+ * 読み出しは `getFullYear` / `getMonth` / `getDate` / `getDay` / `getHours` の
+ * **ローカル getter**（`getUTC*` ではない）。呼び出し側 7 か所がこれに合わせてある。
+ *
+ * ⚠️ **`toLocaleString()` の結果を `new Date()` に渡して作り直してはいけない。**
+ *    `toLocaleString("en-US", { timeZone: "Asia/Tokyo" })` は
+ *    "7/30/2026, 11:51:51 AM" という ISO でない文字列を返す。ISO 8601 以外の
+ *    パースは仕様上実装依存で、V8（Chrome / react-native-web）は通すが
+ *    **Hermes / JSC は Invalid Date を返す。** 実機で日付表示が全部 NaN に
+ *    なったのはこれが原因（ブラウザでは最後まで再現しない）。
+ */
 export function nowInJst(): Date {
+  // +9h した瞬間を UTC で読むと JST の壁時計になる
+  const jst = new Date(Date.now() + EPOCH_ERROR);
+  // 年月日時分秒の数値から作り直す。この引数はローカル時刻として解釈されるので、
+  // ローカル getter で読み戻すと JST の壁時計がそのまま出る
   return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" })
+    jst.getUTCFullYear(),
+    jst.getUTCMonth(),
+    jst.getUTCDate(),
+    jst.getUTCHours(),
+    jst.getUTCMinutes(),
+    jst.getUTCSeconds(),
+    jst.getUTCMilliseconds()
   );
 }
 
