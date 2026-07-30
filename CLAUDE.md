@@ -134,9 +134,14 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
   cron の本文を手で撃って **200 + `{"sent":0,"reason":"no_target_org","orgsWithSchedule":2,
   "schedules":[{"daysUntil":3,"type":"monthly"},{"daysUntil":6,"type":"monthly"}],"jstHour":10}`**
   を確認した（UTC 01:51 → JST 10:51 なので時差の計算も正しい）
-  - ⚠️ 最初は URL が `https://<PROJECT_REF>.supabase.co/…` のままで、pg_net が黙って
-    捨てていた。`cron.job_run_details` は `succeeded` を返し続けるので気づけない。
-    経緯と読み方は `docs/traps.md` の「pg_cron → pg_net → Edge Function」に書いた
+- **cron の自動起動も確認済み**。02:00 UTC に `cron`（`succeeded`）→ 0.1 秒後に
+  `http`（200、`jstHour: 11`）が並ぶことを確認した
+  - ⚠️ 最初は URL が `https://<PROJECT_REF>.supabase.co/…` のままで、
+    `net._encode_url_with_params_array` が `<` `>` を扱えず**キューに積む前に**
+    毎時例外を投げていた（`cron.job_run_details` に `failed` +
+    `Quote command returned error`。`net._http_response` には行が増えない）。
+    **失敗は 2 つのテーブルに分かれて記録される。**読み方は `docs/traps.md` の
+    「pg_cron → pg_net → Edge Function」に書いた
 
 ### 残っているタスク
 
@@ -152,9 +157,6 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 
 **B. プッシュ通知（サーバー側は完成。端末待ち）**
 
-- [ ] **cron が自分で起きることの確認**（手撃ちは通った。`:00` を跨いだあと
-      `net._http_response` の `id` が増えているかで見る）
-      ⚠️ `cron.job_run_details.status = 'succeeded'` は HTTP の成否を表さない
 - [ ] 実機で通知を許可 → `?dryRun=1` で `wouldSend` が 1 以上になることを確認
 - [ ] dryRun を外して実際に届くことを確認
 - [ ] **未検証の経路**: メッセージ組み立てと `sendToExpo`（トークン 0 件だと手前で return するため）

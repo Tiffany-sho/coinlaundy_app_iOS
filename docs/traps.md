@@ -72,23 +72,39 @@
 
 ## pg_cron → pg_net → Edge Function
 
-004 を適用したあと、通知が届かないときに見る場所。**この経路は失敗しても
-どこにも赤が出ない。** 実際に URL のプレースホルダを置き換え忘れて、丸 2 日
-気づかなかった。
+004 を適用したあと、通知が届かないときに見る場所。**失敗が 2 つのテーブルに
+分かれて記録される**ので、片方だけ見ると原因を見落とす。
 
-- ⚠️ **`cron.job_run_details.status = 'succeeded'` は「HTTP が成功した」ではない。**
-  `net.http_post` は要求をキューに積んで即座に返るので、Edge Function が 403 でも
-  404 でも、URL がホスト名として不正でも、cron 側は毎時 `succeeded` を返し続ける。
-  **本当の結果は `net._http_response` にしか出ない**（`id` が増えているかで見る）
-- ⚠️ **`vault.create_secret` の値は検証されない。** `https://<PROJECT_REF>.supabase.co/…`
-  のまま入れても通り、pg_net が名前解決に失敗して黙って捨てる。応答行が増えないので
-  「撃ったのに何も起きない」に見える。長さで見分けられる（正しい URL は **70 文字**、
-  プレースホルダは 63）
+| テーブル | 捕まえるもの |
+|---|---|
+| `cron.job_run_details` | **積む前**の失敗 — URL が不正、Vault の行が無い／2 つある |
+| `net._http_response` | **積んだ後**の結果 — 403 / 401 / 404 / タイムアウト |
+
+- ⚠️ **`status = 'succeeded'` は「HTTP が成功した」ではない。** `net.http_post` は
+  要求をキューに積んで即座に返るので、Edge Function が 403 でも 404 でも
+  タイムアウトでも `succeeded` になる。**積んだ後の結果は `net._http_response`
+  にしか出ない**（`id` が増えているかで見る）
+- **ただし `status = 'failed'` は本物で、原因が `return_message` に書かれている。**
+  最初に見るべきはこちら。URL を `https://<PROJECT_REF>.supabase.co/…` のまま
+  Vault へ入れていたときは、毎時こう記録されていた:
+
+  ```
+  ERROR:  Quote command returned error
+  CONTEXT: net._encode_url_with_params_array(url, params_array)
+  ```
+
+  `<` `>` は URL に使えないので、`net.http_post` は**キューに積む前に例外を投げる**。
+  ⚠️ この経路では `net._http_response` に行が 1 つも増えないため、応答テーブルだけ
+  見ていると「撃ったのに何も起きない」に見えて原因が分からない
+- ⚠️ **`vault.create_secret` は値を検証しない。** プレースホルダのままでも成功する。
+  長さで見分けられる（正しい URL は **70 文字**、`<PROJECT_REF>` のままだと 63）。
+  004 に番人を入れてあるので、貼り直すときもそれ経由で入れること
 - **同名の Vault シークレットを 2 つ作らない。** cron の本文は
   `(SELECT decrypted_secret … WHERE name = '…')` の単一行サブクエリなので、
   004 を 2 回実行すると *more than one row returned by a subquery* で毎時失敗する
 - **`:00` を待たずに手で撃って切り分ける。** cron の本文をそのまま SQL Editor で
-  実行すれば同じ経路を通る。応答の読み方:
+  実行すれば同じ経路を通る。**例外はその場で表示されるので、`cron.job_run_details`
+  を待つより速い。** 応答の読み方:
 
   | | |
   |---|---|
