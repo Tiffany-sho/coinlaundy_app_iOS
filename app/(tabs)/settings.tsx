@@ -162,6 +162,12 @@ export default function Settings() {
               badge={unreadNews}
               onPress={() => router.push("/settings/news")}
             />
+            {/* ⚠️ お知らせの本文が「ご意見は設定画面からお送りいただけます」と
+                   案内しているので、この行を消さないこと（アプリに無い画面への誘導になる） */}
+            <LinkRow
+              label="ご意見・ご要望"
+              onPress={() => router.push("/settings/feedback")}
+            />
             <LinkRow
               label="利用規約"
               onPress={() => router.push("/settings/legal?page=terms" as Href)}

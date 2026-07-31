@@ -528,6 +528,22 @@ export function useExportFunds() {
   });
 }
 
+/** ⚠️ Web の FeedbackForm と同じ 3 種類。BFF の TYPES と綴りを揃えること */
+export type FeedbackType = "bug" | "feature" | "other";
+
+/**
+ * フィードバックの送信。運営者宛にメールが 1 通飛ぶだけで、DB には残らない。
+ *
+ * ⚠️ **アクションログには残らない**（本人にしか関係せず、本文に要望や不満が入るため）。
+ * ⚠️ 本文の長さ・エスケープはサーバ側が持つ。アプリで整形しない。
+ */
+export function useSendFeedback() {
+  return useMutation({
+    mutationFn: (body: { type: FeedbackType; description: string }) =>
+      apiFetch<{ sent: boolean }>("/feedback", { method: "POST", body }),
+  });
+}
+
 export function useLaundryStates(enabled = true) {
   return useQuery({
     queryKey: queryKeys.states,
