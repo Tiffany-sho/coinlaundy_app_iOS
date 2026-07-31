@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { Chip } from "@/components/common/Chip";
 import { MonthField } from "@/components/revenue/MonthPicker";
 import {
   currentMonthIndex,
@@ -89,7 +90,7 @@ export function FilterSheet({
 
   /** 表示店舗の切り替え。最後の 1 店舗は外させない（Web の toggleStore と同じ） */
   function toggleStore(id: string) {
-    Haptics.selectionAsync().catch(() => {});
+    // ⚠️ 触覚は Chip 側で鳴らす。ここでも呼ぶと 2 回鳴って引っかかったように感じる
     setDraftIds((prev) => {
       if (prev.includes(id)) {
         if (prev.length <= 1) return prev;
@@ -122,7 +123,6 @@ export function FilterSheet({
                       label={preset.label}
                       selected={selected}
                       onPress={() => {
-                        Haptics.selectionAsync().catch(() => {});
                         setDraftRange({ start, end: current });
                         // プリセットは範囲ごと決まるので、開いていたパネルは閉じる
                         setExpanded(null);
@@ -214,39 +214,7 @@ export function FilterSheet({
   );
 }
 
-/** 選択チップ。Web の PeriodFilterButton 内にある丸い店舗チップと同じ見た目 */
-function Chip({
-  label,
-  selected,
-  dotColor,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  dotColor?: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      style={({ pressed }) => [
-        styles.chip,
-        selected && styles.chipSelected,
-        pressed && { opacity: 0.75 },
-      ]}
-    >
-      {dotColor && <View style={[styles.chipDot, { backgroundColor: dotColor }]} />}
-      <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]} numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-
-/** 選択チップ・見出し。もとは MonthlyRevenueCard の styles にあったもの */
+/** 見出し。もとは MonthlyRevenueCard の styles にあったもの */
 const styles = StyleSheet.create({
   filterLabel: {
     fontFamily: font.uiBold,
@@ -255,22 +223,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.md },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    minHeight: 32,
-    maxWidth: 140,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    borderWidth: 1.5,
-    borderColor: color.divider,
-    backgroundColor: color.cardBg,
-  },
-  chipSelected: { borderColor: color.cyan400, backgroundColor: color.cyan50 },
-  chipDot: { width: 8, height: 8, borderRadius: 2 },
-  chipLabel: { fontFamily: font.ui, fontSize: 12, color: color.textMuted, flexShrink: 1 },
-  chipLabelSelected: { fontFamily: font.uiBold, color: color.cyan700 },
 });
 
 const sheetStyles = StyleSheet.create({
