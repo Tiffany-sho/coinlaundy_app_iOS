@@ -328,7 +328,22 @@ function invalidateStores(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap });
 }
 
-/** 売上履歴。件数が多くなるので無限スクロールで読む */
+/**
+ * 集金一覧を offset + limit で読む。
+ *
+ * ⚠️ **現在どの画面からも使っていない。使う前にこの節を読むこと。**
+ *
+ * ⚠️ **返るのは「直近 2 か月」だけ。** BFF の `getOrgCollectFundsPaginated` /
+ *    `getStoreFundsPaginated` が `startEpoch` を 2 か月前の月初に固定しているので、
+ *    `offset` をいくら進めても**それより古い集金には絶対に届かない**。
+ *    エラーにならず「そこで終わっている」ようにしか見えない。
+ *
+ * ⚠️ **合計を出す用途に使わない。** 手元にあるのは読み込み済みのページだけで、
+ *    しかも上のとおり 2 か月ぶんしかない。**これで実際に 2 回壊れている**
+ *    （店舗別収益の履歴が 2 か月で切れる / 店舗詳細の「総売上」が最初の 30 件の合計になる）。
+ *      - 全期間の履歴  → `useFundHistory`
+ *      - 店舗ごとの総額 → `useStoreRevenue`（`/funds/summary/stores`）
+ */
 export function useFundList(storeId?: string) {
   return useInfiniteQuery({
     queryKey: queryKeys.fundList(storeId),

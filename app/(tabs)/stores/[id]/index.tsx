@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useBootstrap, useFundList, useLaundryStates, useStore } from "@/api/queries";
+import { useBootstrap, useLaundryStates, useStore, useStoreRevenue } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { MachineListSheet } from "@/components/stores/MachineListSheet";
 import { StoreImageCarousel } from "@/components/stores/StoreImageCarousel";
@@ -56,7 +56,7 @@ export default function StoreDetail() {
   const { data, isLoading, error } = useStore(id);
   const bootstrap = useBootstrap();
   const states = useLaundryStates(Boolean(id));
-  const funds = useFundList(id);
+  const revenue = useStoreRevenue();
 
   /** 編集シートで開いているタブ。null なら閉じている */
   const [editingMode, setEditingMode] = useState<StateEditMode | null>(null);
@@ -90,14 +90,29 @@ export default function StoreDetail() {
   // （laundryState/action.js の getAllLaundryStates）ので、店舗詳細の id をそのまま使える。
   const state = states.data?.find((s) => s.laundryId === id);
 
-  // 総売上。無限スクロールの読み込み済みぶんから概算する
-  const { total, count } = useMemo(() => {
-    const rows = funds.data?.pages.flat() ?? [];
-    return {
-      total: rows.reduce((sum, r) => sum + (r.totalFunds ?? 0), 0),
-      count: rows.length,
-    };
-  }, [funds.data]);
+  /**
+   * この店舗の**全期間**の売上総額と集金回数。
+   *
+   * ⚠️ **`useFundList` から出さないこと。** 2 つの理由で必ず実際より小さくなる:
+   *   1. 無限スクロールで**読み込み済みのページしか手元に無い**（初回は 30 件）
+   *   2. ⚠️ そもそも `GET /funds` の `offset` + `limit` は**直近 2 か月しか返さない**
+   *      （`getStoreFundsPaginated` が startEpoch を固定している）。
+   *      ページを最後までめくっても、それより古い集金には**絶対に届かない**
+   *
+   * 実際これで「総売上」に**最初の 30 件ぶんの合計**が出ていた。
+   * `/funds/summary/stores` は全件を店舗ごとに畳んだものなので、これが正。
+   * 収益ページ（`funds.tsx`）も同じものを使っている。
+   *
+   * ⚠️ 集金実績のある店舗しか返らないので、1 件も無い店舗では undefined になる。
+   * ⚠️ `count` は後から足した項目で、**MMKV に残る前のバージョンのキャッシュには無い**。
+   *    `?? 0` を外すと起動直後に NaN が出る（docs/traps.md の永続キャッシュの節）。
+   */
+  const summary = useMemo(
+    () => (revenue.data ?? []).find((s) => s.laundryId === id),
+    [revenue.data, id]
+  );
+  const total = summary?.total ?? 0;
+  const count = summary?.count ?? 0;
 
   if (isLoading && !data) {
     return (
@@ -201,9 +216,13 @@ export default function StoreDetail() {
                 router.push({ pathname: "/stores/[id]/funds", params: { id: data.id } })
               }
             >
-              <Text style={styles.tileMoney}>¥{total.toLocaleString()}</Text>
+              {/* ⚠️ 取得前に ¥0 を出さない。実際に 0 円なのか未取得なのか区別が付かない */}
+              <Text style={styles.tileMoney}>
+                {revenue.isLoading && !revenue.data ? "—" : `¥${total.toLocaleString()}`}
+              </Text>
               <Text style={styles.tileSub}>
-                {count > 0 ? `直近 ${count}回の集金` : "集金データがありません"}
+                {/* ⚠️「直近」と書かない。全期間の合計になった */}
+                {count > 0 ? `全 ${count}回の集金` : "集金データがありません"}
               </Text>
               <View style={styles.tileLink}>
                 <Text style={styles.tileLinkLabel}>収益レポートへ</Text>
