@@ -189,6 +189,26 @@ export type StoreRevenue = {
   lastDate: number | null;
 };
 
+/** データの書き出し形式。⚠️ BFF の FORMATS と同じ綴りにすること */
+export type ExportFormat = "csv" | "xlsx";
+
+/**
+ * POST /api/v1/funds/export の戻り。
+ *
+ * ⚠️ **中身は base64。** そのままテキストとして書き出さないこと（開けないファイルになる）。
+ *    `saveAndShareBase64` が `encoding: "base64"` を付けて書いている。
+ * ⚠️ **返るファイルは必ず 1 つ。** iOS には共有シートしか出口が無く、
+ *    複数ファイルだと数だけシートが開くため BFF 側でまとめてある。
+ */
+export type ExportFile = {
+  format: ExportFormat;
+  /** 保存時のファイル名。拡張子込み */
+  name: string;
+  base64: string;
+  /** 書き出した集金レコードの件数。完了トーストに出す */
+  recordCount: number;
+};
+
 /** laundry_state.machines の 1 要素 */
 export type MachineState = {
   id: string;

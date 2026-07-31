@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -10,8 +11,17 @@ import {
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useScrollToTop } from "expo-router";
-import { useFundHistory, useMonthlySummary, useStoreRevenue } from "@/api/queries";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  useBootstrap,
+  useFundHistory,
+  useMonthlySummary,
+  useStoreRevenue,
+} from "@/api/queries";
 import { useOutbox } from "@/offline/OutboxProvider";
+import { EXPORT_MIME_TYPE, saveAndShareBase64 } from "@/export/saveFile";
+import { errorMessage } from "@/components/funds/fundCache";
+import { ExportSheet } from "@/components/revenue/ExportSheet";
 import { StoreRankBars } from "@/components/revenue/charts";
 import { MonthlyRevenueCard } from "@/components/revenue/MonthlyRevenueCard";
 import { MonthlySummaryTable } from "@/components/revenue/MonthlySummaryTable";
@@ -35,6 +45,7 @@ import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { useToast } from "@/components/common/toast";
 import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
 import { color, font, radius, spacing } from "@/theme/tokens";
+import type { ExportFile } from "@/api/types";
 
 /** グラフカードの切り替えタブ。既定は「月別」（Web も月別売上カードが主役） */
 type ChartTab = "store" | "monthly" | "summary";
@@ -74,6 +85,13 @@ export default function Revenue() {
    * ⚠️ これは**表示量**であって取得範囲ではない。並び替えは常に全データが対象。
    */
   const [limit, setLimit] = useState(() => initialLimit(true));
+  const [exportOpen, setExportOpen] = useState(false);
+  /**
+   * 書き出せたファイル。⚠️ **シートが閉じきってから共有する**ために一旦ここに置く。
+   *    Modal が出ている間に共有シートを開くと、iOS は「すでに別の画面を出している」
+   *    として何も表示せずに失敗する（docs/traps.md の Modal 二重表示）。
+   */
+  const [pendingFile, setPendingFile] = useState<ExportFile | null>(null);
 
   /**
    * ⚠️ 全期間ぶんを、サーバに並べさせて受け取る。
@@ -85,6 +103,15 @@ export default function Revenue() {
   });
   const monthly = useMonthlySummary();
   const byStore = useStoreRevenue();
+  const bootstrap = useBootstrap();
+
+  /**
+   * 書き出せるプランか。
+   * ⚠️ **これは表示の出し分けだけ。** 実際の可否は BFF が organizations.plan で
+   *    判定して 403 を返す（アプリ側の判定を信じない）。
+   */
+  const plan = bootstrap.data?.plan?.plan;
+  const canExport = plan === "pro" || plan === "max";
 
   const rows = list.data ?? [];
   const stores = byStore.data ?? [];
@@ -183,6 +210,26 @@ export default function Revenue() {
     listRef.current?.scrollToOffset({ offset: historyOffset.current, animated: false });
   }, [sortField, sortDirection, collecter, isGrouped]);
 
+  /**
+   * 書き出したファイルを端末に置いて共有シートへ渡す。
+   * ⚠️ **必ずシートを閉じたあとに呼ぶこと**（pendingFile のコメントを参照）。
+   */
+  async function shareFile(file: ExportFile) {
+    try {
+      const result = await saveAndShareBase64(
+        file.name,
+        file.base64,
+        EXPORT_MIME_TYPE[file.format]
+      );
+      // 共有をやめただけなら失敗ではないので、何も出さない
+      if (result === "shared") {
+        toast.success(`${file.recordCount}件の集金データを書き出しました`);
+      }
+    } catch (e) {
+      toast.error(errorMessage(e, "ファイルを保存できませんでした"));
+    }
+  }
+
   async function refreshAll() {
     const results = await Promise.all([list.refetch(), monthly.refetch(), byStore.refetch()]);
     // 引っ張って更新したのに古い数字のままだと気づけないので、失敗だけ知らせる
@@ -228,7 +275,20 @@ export default function Revenue() {
         }
         ListHeaderComponent={
           <View>
-            <Title style={{ marginBottom: spacing.md, fontSize: 22 }}>収益</Title>
+            <View style={styles.titleRow}>
+              <Title style={{ fontSize: 22 }}>収益</Title>
+              {/* Web の ExportPanel と同じ入口。⚠️ プラン外でも押せるようにして、
+                  理由はシートの中で説明する（押せないボタンだけが並ぶと理由が分からない） */}
+              <Pressable
+                onPress={() => setExportOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="集金データを書き出す"
+                style={({ pressed }) => [styles.exportButton, pressed && { opacity: 0.75 }]}
+              >
+                <Ionicons name="download-outline" size={15} color={color.tealDeeper} />
+                <Text style={styles.exportButtonLabel}>書き出し</Text>
+              </Pressable>
+            </View>
 
             {pendingCount > 0 && (
               <Pressable onPress={() => router.push("/")} style={styles.badge}>
@@ -344,6 +404,26 @@ export default function Revenue() {
           );
         }}
       />
+
+      <ExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        stores={stores}
+        canExport={canExport}
+        onDone={(file) => {
+          setExportOpen(false);
+          /* ⚠️ onDismiss は iOS 専用。それ以外では発火しないので、
+                待たずにそのまま処理する（web のブラウザ確認がここで止まらないように） */
+          if (Platform.OS === "ios") setPendingFile(file);
+          else void shareFile(file);
+        }}
+        onDismiss={() => {
+          if (!pendingFile) return;
+          const file = pendingFile;
+          setPendingFile(null);
+          void shareFile(file);
+        }}
+      />
     </Screen>
   );
 }
@@ -374,6 +454,25 @@ function maxDate(dates: (number | null)[]): number | null {
 }
 
 const styles = StyleSheet.create({
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  /* 月別売上カードの「絞り込み」と同じ形。並べたときに浮かないよう合わせてある */
+  exportButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    minHeight: 34,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.cyan100,
+    backgroundColor: color.cardBg,
+  },
+  exportButtonLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
   cardTitle: {
     fontFamily: font.uiBold,
     fontSize: 14,

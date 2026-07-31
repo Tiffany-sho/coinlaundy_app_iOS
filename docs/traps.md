@@ -92,6 +92,17 @@
 ## iOS
 
 - **Modal の上に Modal を重ねると表示に失敗する。** 2 段階の選択（店舗を選んでからシートを出す等）は、1 段目を**閉じてから** `onDismiss` の後に 2 段目を開く
+- ⚠️ **共有シート（`Share.share`）も同じ扱い。** RN の `Modal` を開いたまま呼ぶと、
+  すでにモーダルを出している VC からさらに出すことになる。書き出しシートは
+  **閉じてから `onDismiss` で共有する**（`app/(tabs)/revenue.tsx` の `pendingFile` がこれ）。
+  ⚠️ `onDismiss` は **iOS 専用で web / Android では発火しない**ので、
+  そちらは待たずに処理する分岐が要る（入れないとブラウザ確認で何も起きない）
+- **ファイルの共有に `expo-sharing` は要らない。** RN 標準の `Share.share({ url })` が
+  そのまま `UIActivityViewController` を出す。`RCTPresentedViewController()` が
+  最前面の VC を辿るので、通常の画面からなら確実に出る。
+  ⚠️ `message` を一緒に渡さないこと。受け取り側がテキストだけ拾ってファイルを落とす
+- ⚠️ **iOS に「ダウンロードフォルダ」は無い。** 書き出したら必ず共有シートまで出すこと。
+  保存先は `Paths.cache`（`document` に置くと iCloud バックアップに残り続ける）
 
 ## expo-router v4
 
@@ -268,6 +279,20 @@
 - **`developmentClient: true` のビルドは JS を埋め込まない。** 起動には
   `npx expo start --dev-client` が要り、`EXPO_PUBLIC_*` は**ローカルの `.env.local`**
   が効く（EAS 側の環境変数が必須になるのは `preview` / `production` から）
+- ⚠️ **パッケージを足しても再ビルドが要らない場合がある。** ネイティブモジュールでも、
+  それが**すでに依存ツリーの中にあって autolink 済み**なら、直接依存に上げるだけでは
+  ネイティブの構成が変わらない。`expo-file-system` がこれ（`expo` 本体が依存している）。
+  ⚠️ ただし**バージョンを変えると話が別**なので、`npx expo install` で
+  SDK に合ったものを入れること。「added 1 / removed 1」＝巻き上げただけ、が目印
+
+## Node / 検証環境
+
+- ⚠️ **Git Bash に `$TMPDIR` は無い。** 展開に失敗して `/` 直下を触りにいき
+  *Permission denied* になる。一時ファイルはスクラッチパッドの絶対パスを使う
+- **`node --experimental-strip-types` で `.ts` をそのまま実行できる**（Node 22 以降）。
+  依存の無い純関数（`src/components/stores/prefecture.ts` など）の確認に使える。
+  ⚠️ Windows では import 先を **`file:///c:/…` の URL** で書くこと。
+  `c:/…` のままだと *ERR_UNSUPPORTED_ESM_URL_SCHEME* で落ちる
 
 ## pg_cron → pg_net → Edge Function
 

@@ -13,6 +13,8 @@ import type {
   Bootstrap,
   CollectSchedule,
   DeletionSummary,
+  ExportFile,
+  ExportFormat,
   FundDetail,
   FundEntry,
   FundListItem,
@@ -478,6 +480,36 @@ export function useStoreRevenue(enabled = true) {
     queryKey: queryKeys.revenueByStore,
     queryFn: () => apiFetch<StoreRevenue[]>("/funds/summary/stores"),
     enabled,
+  });
+}
+
+export type ExportInput = {
+  format: ExportFormat;
+  /** 期間の下限。JST 深夜 0 時の epoch（ミリ秒） */
+  startEpoch: number;
+  /**
+   * 期間の上限。
+   * ⚠️ **含む側（inclusive）。** BFF が `lte` で引くので、
+   *    「その月まで」を出したいときは翌月 1 日ではなくその 1 ミリ秒前を渡すこと
+   *    （/funds/chart の `to` は逆に排他。取り違えると 1 か月ずれる）。
+   */
+  endEpoch: number;
+  /** 空 = 全店舗 */
+  storeIds?: string[];
+  /** ⚠️ Excel のシート分割にだけ効く。CSV は常に 1 ファイル */
+  splitMethod?: "period" | "store";
+};
+
+/**
+ * 集金データの書き出し。⚠️ Pro プラン以上でないとサーバが 403 を返す。
+ *
+ * ⚠️ **キャッシュしない（useQuery ではなく useMutation）。** 押したときだけ動けばよく、
+ *    応答は base64 のファイル 1 本ぶんあるので、残すと MMKV の永続キャッシュが太る。
+ */
+export function useExportFunds() {
+  return useMutation({
+    mutationFn: (body: ExportInput) =>
+      apiFetch<ExportFile>("/funds/export", { method: "POST", body }),
   });
 }
 
