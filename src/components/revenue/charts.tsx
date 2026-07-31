@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { color, font, radius, spacing, STORE_COLORS, numeric } from "@/theme/tokens";
 
@@ -119,6 +120,11 @@ export type StackedPoint = {
  *    下に置けば店舗が何店あっても縦に伸ばせるし、指の下に入らない。
  *    凡例は内訳一覧が色見本を兼ねるので別に置かない（同じ行が 2 回並ぶだけ）。
  *
+ * ⚠️ **内訳は既定でたたんでおく。** 店舗数ぶん行が伸びるので、開きっぱなしだと
+ *    カードが縦に長くなって下の売上履歴が遠ざかる。開く操作は 2 つある
+ *    （棒を押す / 見出しの開閉ボタン）が、閉じる操作も必ず残すこと。
+ *    棒しか押せないと、開いたあと閉じる手段が無くなる。
+ *
  * MonthlyBarChart（単色）は店舗別の内訳が取れないときの退避先として残してある。
  */
 export function MonthlyStackedBarChart({
@@ -137,6 +143,8 @@ export function MonthlyStackedBarChart({
 }) {
   /** 内訳を出している月。null = まだ押していない（＝最新月） */
   const [selected, setSelected] = useState<string | null>(null);
+  /** 内訳を開いているか。⚠️ 既定は閉じる（カードを短く保つため） */
+  const [expanded, setExpanded] = useState(false);
 
   if (data.length === 0 || series.length === 0) {
     return <Text style={styles.empty}>表示できるデータがありません</Text>;
@@ -196,7 +204,15 @@ export function MonthlyStackedBarChart({
                   accessibilityState={{ selected: isActive }}
                   onPress={() => {
                     Haptics.selectionAsync().catch(() => {});
+                    /* 開いている月をもう一度押したら閉じる。
+                       ⚠️ 指を動かさずに閉じられる経路を残しておくこと。
+                          棒が「開く専用」だと、閉じるのに見出しまで戻る必要が出る */
+                    if (showBreakdown && expanded && point.month === active.month) {
+                      setExpanded(false);
+                      return;
+                    }
                     setSelected(point.month);
+                    if (showBreakdown) setExpanded(true);
                   }}
                 >
                   {/* 高さは % なので親（barSlot）に確定した高さが要る。
@@ -247,40 +263,66 @@ export function MonthlyStackedBarChart({
 
         ⚠️ **ここに月の合計を出さない。** すぐ上の readout が同じ月の同じ金額を
            出しているので、同じ数字が縦に 2 回並ぶ。見出しは月と「店舗別」だけ。
+
+        ⚠️ 見出しの行は**たたんでいるときも必ず出す。** これが唯一の
+           「棒を押さずに開く」入口で、消すと閉じた状態から開けなくなる。
       */}
       {showBreakdown && (
         <View style={styles.breakdown}>
-          <Text style={styles.breakdownTitle}>{formatMonthLabel(active.month)}の店舗別</Text>
+          <Pressable
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              setExpanded((prev) => !prev);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${formatMonthLabel(active.month)}の店舗別内訳を${expanded ? "閉じる" : "開く"}`}
+            accessibilityState={{ expanded }}
+            hitSlop={6}
+            style={({ pressed }) => [styles.breakdownHead, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={styles.breakdownTitle} numberOfLines={1}>
+              {formatMonthLabel(active.month)}の店舗別
+            </Text>
+            <Text style={styles.breakdownToggle}>{expanded ? "閉じる" : "内訳を見る"}</Text>
+            <Ionicons
+              name={expanded ? "chevron-up" : "chevron-down"}
+              size={15}
+              color={color.teal}
+            />
+          </Pressable>
 
-          {active.total === 0 ? (
-            <Text style={styles.breakdownEmpty}>この月の集金記録はありません</Text>
-          ) : (
-            rows.map((item) => {
-              const share = Math.round((item.value / active.total) * 100);
-              return (
-                <View key={item.key} style={styles.breakdownRow}>
-                  <View
-                    style={[
-                      styles.swatch,
-                      { backgroundColor: item.color, opacity: item.value > 0 ? 1 : 0.35 },
-                    ]}
-                  />
-                  <Text
-                    style={[styles.breakdownName, item.value === 0 && styles.breakdownDim]}
-                    numberOfLines={1}
-                  >
-                    {item.name}店
-                  </Text>
-                  <Text style={styles.breakdownShare}>{item.value > 0 ? `${share}%` : ""}</Text>
-                  <Text style={[styles.breakdownValue, item.value === 0 && styles.breakdownDim]}>
-                    ¥{item.value.toLocaleString()}
-                  </Text>
-                </View>
-              );
-            })
-          )}
+          {expanded &&
+            (active.total === 0 ? (
+              <Text style={styles.breakdownEmpty}>この月の集金記録はありません</Text>
+            ) : (
+              rows.map((item) => {
+                const share = Math.round((item.value / active.total) * 100);
+                return (
+                  <View key={item.key} style={styles.breakdownRow}>
+                    <View
+                      style={[
+                        styles.swatch,
+                        { backgroundColor: item.color, opacity: item.value > 0 ? 1 : 0.35 },
+                      ]}
+                    />
+                    <Text
+                      style={[styles.breakdownName, item.value === 0 && styles.breakdownDim]}
+                      numberOfLines={1}
+                    >
+                      {item.name}店
+                    </Text>
+                    <Text style={styles.breakdownShare}>{item.value > 0 ? `${share}%` : ""}</Text>
+                    <Text style={[styles.breakdownValue, item.value === 0 && styles.breakdownDim]}>
+                      ¥{item.value.toLocaleString()}
+                    </Text>
+                  </View>
+                );
+              })
+            ))}
 
-          {data.length > 1 && (
+          {/* ⚠️ たたんでいる間は出さない。短くするために折りたたんでいるのに、
+                 案内で 1 行増やしては意味が無い（開き方は「内訳を見る」が示している） */}
+          {expanded && data.length > 1 && (
             <Text style={styles.breakdownHint}>棒を押すと、その月の内訳に切り替わります</Text>
           )}
         </View>
@@ -366,12 +408,21 @@ const styles = StyleSheet.create({
     borderTopColor: color.divider,
     gap: 2,
   },
+  /* 開閉ボタンを兼ねる見出し。⚠️ minHeight + hitSlop で 44pt 以上の当たりを確保する
+     （文字だけだと 15px しかなく、指では押せない） */
+  breakdownHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    minHeight: 36,
+  },
   breakdownTitle: {
+    flex: 1,
     fontFamily: font.uiBold,
     fontSize: 12,
     color: color.tealDeeper,
-    marginBottom: spacing.xs,
   },
+  breakdownToggle: { fontFamily: font.uiBold, fontSize: 11, color: color.teal },
   breakdownRow: {
     flexDirection: "row",
     alignItems: "center",
