@@ -397,6 +397,48 @@
   文字列・数値のフィールドを個別に並べるなら参照ではないのでそのままでよい
   （`[profile?.username, profile?.full_name]`）
 
+## Metro / dev server
+
+- ⚠️ **8081 が埋まっていると、`expo start` は黙って 8082 に落ちる。** 開発ビルドは
+  記憶している 8081 を見にいくので、**別のサーバーに当たって繋がらない**。
+  ポートがずれたこともモードが違うことも端末の画面には出ない。
+  実際に「昨日の `expo start --port 8081`（**`--dev-client` 無し**＝Expo Go 用）が
+  居座り、今日の `--dev-client` が 8082 に落ちていた」形で踏んだ。
+  ⚠️ **繋がらないときはまず二重起動を疑う**:
+
+  ```powershell
+  Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+    ForEach-Object { "{0} | {1}" -f $_.ProcessId, $_.CommandLine }
+  ```
+
+  `expo` のものだけ落として `npx expo start --dev-client --clear` で 1 本に戻す。
+  ⚠️ 同じ PC で別プロジェクトの dev server も動いているので**全部殺さないこと**
+- ⚠️ **`npm install` を挟んだら Metro を必ず再起動する。** 起動中のサーバーは
+  ファイル一覧を起動時の状態で持っているので、あとから巻き上げられた
+  パッケージを解決できず *Unable to resolve module* になる。
+  ⚠️ **エラーの文面はパッケージ内部のファイル（`./url` など）を指すので、
+  自分のコードのせいに見えない**。実際に `expo-file-system` を足した直後に踏んだ
+- **切り分けは Metro のログが早い。** 端末に赤い画面が出ていても、サーバー側の
+  ログに `Unable to resolve` が無ければ**それは別のサーバーが返したもの**
+
+## BFF のルートを足したとき
+
+- ⚠️ **新しい静的ルートを本番に出す前にアプリから叩くと、404 ではなく 405 が返る。**
+  `/api/v1/funds/export` が無いと、パスが**動的セグメントの `funds/[id]` に吸われる**
+  （`id = "export"`）。あちらは POST を公開していないので **405 Method Not Allowed**。
+  ⚠️ **405 の body は空**なので `apiFetch` の `response.json()` が失敗し、
+  画面には既定の「**エラーが発生しました**」しか出ない。**未デプロイだと気づけない。**
+  形式や条件を変えても同じ文言になるのが目印（実際に CSV / Excel の両方で同じ症状が出た）。
+  疑ったら本番を直接叩く:
+
+  ```bash
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST https://www.collecie.com/api/v1/<新ルート>
+  # 405 → 未デプロイ（[id] に吸われている） / 401 → デプロイ済み
+  ```
+
+- ⚠️ **デプロイ後は静的ルートが動的ルートより優先される**ので、`[id]` 側は壊れない
+  （`funds/chart` が先例）。ただし **`id` がその名前になり得ないこと**は確かめること
+
 ## 検証
 
 - 型チェックは `npx tsc --noEmit`
