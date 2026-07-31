@@ -225,17 +225,39 @@ export function Select<T extends string | number>({
         animationType="fade"
         onRequestClose={() => setOpen(false)}
       >
-        <Pressable style={styles.selectBackdrop} onPress={() => setOpen(false)}>
-          {/* 中身のタップが背景に抜けないように空の onPress で止める */}
-          <Pressable style={styles.selectSheet} onPress={() => {}}>
+        {/*
+          ⚠️ **背景と本体は兄弟にする。入れ子にしない。**
+             `<Pressable 背景><Pressable 本体><ScrollView>` と重ねると、
+             指を降ろした時点で外側の Pressable が responder を取ってしまい、
+             **1 回目のスクロールが空振りして 2 回目でやっと動く。**
+             選択肢が多いとき（通知時刻の 24 件など）に必ず出る。
+             ⚠️ 兄弟なので、本体をタップしても背景には届かない（＝閉じない）。
+                入れ子の Pressable は元々そのためだけに置いていた。
+        */}
+        <View style={styles.selectRoot}>
+          <Pressable
+            style={styles.selectBackdrop}
+            onPress={() => setOpen(false)}
+            accessibilityLabel="閉じる"
+          />
+          <View style={styles.selectSheet}>
             <Text style={styles.selectTitle}>{title}</Text>
 
-            <ScrollView
-              ref={scrollRef}
-              onLayout={onListLayout}
-              style={styles.selectList}
-              contentContainerStyle={{ paddingVertical: spacing.xs }}
-            >
+            {/*
+              ⚠️ **高さの上限は外側の View で持ち、ScrollView 自身に maxHeight を付けない。**
+                 `maxHeight` だけだと ScrollView の高さが中身から決まるので、
+                 モーダルが出るときの 1 回目のレイアウトで「中身 = 枠」＝
+                 スクロール不要の状態になり、**1 回目の指が空振りする。**
+                 選択肢が多いほど目立つ（通知時刻は 24 件）。
+                 docs/traps.md の「シート（Modal + 背景タップで閉じる）」を参照。
+            */}
+            <View style={styles.selectListBox}>
+              <ScrollView
+                ref={scrollRef}
+                onLayout={onListLayout}
+                style={{ flexShrink: 1 }}
+                contentContainerStyle={{ paddingVertical: spacing.xs }}
+              >
               {options.map((option) => {
                 const isSelected = option.value === value;
                 return (
@@ -262,7 +284,8 @@ export function Select<T extends string | number>({
                   </Pressable>
                 );
               })}
-            </ScrollView>
+              </ScrollView>
+            </View>
 
             <Pressable
               onPress={() => setOpen(false)}
@@ -270,8 +293,8 @@ export function Select<T extends string | number>({
             >
               <Text style={styles.selectCancelLabel}>キャンセル</Text>
             </Pressable>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -362,13 +385,13 @@ const styles = StyleSheet.create({
     borderColor: color.divider,
   },
   selectValue: { fontFamily: font.ui, fontSize: 16, color: color.textMain, flexShrink: 1 },
-  selectBackdrop: {
+  selectRoot: {
     flex: 1,
-    backgroundColor: "rgba(15,23,42,0.45)",
     alignItems: "center",
     justifyContent: "center",
     padding: spacing.xl,
   },
+  selectBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(15,23,42,0.45)" },
   selectSheet: {
     width: "100%",
     maxWidth: 400,
@@ -385,7 +408,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   /* ⚠️ 高さを縛らないと選択肢の数だけ伸びて画面外へはみ出す */
-  selectList: { maxHeight: SELECT_ROW_HEIGHT * 6 },
+  /** 一覧の高さの上限。⚠️ ScrollView ではなくこの箱に持たせる（理由は該当箇所のコメント） */
+  selectListBox: { maxHeight: SELECT_ROW_HEIGHT * 6 },
   selectRow: {
     height: SELECT_ROW_HEIGHT,
     flexDirection: "row",

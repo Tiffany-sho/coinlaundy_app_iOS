@@ -102,14 +102,25 @@ export function FilterSheet({
 
   return (
     <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={sheetStyles.backdrop} onPress={onClose}>
-        <Pressable style={sheetStyles.sheet} onPress={() => {}}>
+      {/*
+        ⚠️ **背景と本体は兄弟にする。入れ子にしない。**
+           入れ子にすると指を降ろした時点で外側の Pressable が responder を取り、
+           **1 回目のスクロールが空振りして 2 回目でやっと動く。**
+           StateEditSheet / MachineListSheet と同じ形に揃えてある。
+      */}
+      <View style={sheetStyles.root}>
+        <Pressable style={sheetStyles.backdrop} onPress={onClose} accessibilityLabel="閉じる" />
+        <View style={sheetStyles.sheet}>
           <View style={sheetStyles.header}>
             <Ionicons name="options-outline" size={18} color={color.tealDeeper} />
             <Text style={sheetStyles.headerTitle}>絞り込み</Text>
           </View>
 
-          <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
+          {/* ⚠️ 高さの上限は sheet 側に持たせる。ScrollView に maxHeight を付けると
+                 高さが中身から決まり、モーダルのスライド中の 1 回目のレイアウトでは
+                 「中身 = 枠」＝スクロール不要の状態になり、**1 回目の指が空振りする。**
+                 詳細は ExportSheet の同じ箇所のコメント */}
+          <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
             <View style={sheetStyles.body}>
               <Text style={styles.filterLabel}>期間</Text>
 
@@ -208,8 +219,8 @@ export function FilterSheet({
               <Text style={sheetStyles.applyLabel}>適用</Text>
             </Pressable>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -226,12 +237,15 @@ const styles = StyleSheet.create({
 });
 
 const sheetStyles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.45)", justifyContent: "flex-end" },
+  root: { flex: 1, justifyContent: "flex-end" },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(15,23,42,0.45)" },
   sheet: {
     backgroundColor: color.cardBg,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     overflow: "hidden",
+    // ⚠️ 高さの上限はここで持つ（中の ScrollView ではなく）
+    maxHeight: "88%",
   },
   header: {
     flexDirection: "row",

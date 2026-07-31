@@ -143,14 +143,40 @@ export function ExportSheet({
       onRequestClose={onClose}
       onDismiss={onDismiss}
     >
-      <Pressable style={styles.backdrop} onPress={busy ? undefined : onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+      {/*
+        ⚠️ **背景と本体は兄弟にする。入れ子にしない。**
+           `<Pressable backdrop><Pressable sheet><ScrollView>` と重ねると、
+           指を降ろした時点で外側の Pressable が responder を取ってしまい、
+           **1 回目のスクロールが空振りして 2 回目でやっと動く。**
+           背景を absoluteFill の兄弟にすれば ScrollView が Pressable の中に
+           入らないので、1 回目から素直にスクロールする。
+           ⚠️ 兄弟なので、シートの上をタップしても背景には届かない
+           （＝閉じない）。入れ子の Pressable は元々そのためだけに置いていた。
+      */}
+      <View style={styles.root}>
+        <Pressable
+          style={styles.backdrop}
+          onPress={busy ? undefined : onClose}
+          accessibilityLabel="閉じる"
+        />
+        <View style={styles.sheet}>
           <View style={styles.header}>
             <Ionicons name="download-outline" size={18} color={color.tealDeeper} />
             <Text style={styles.headerTitle}>データの書き出し</Text>
           </View>
 
-          <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
+          {/*
+            ⚠️ **高さは親（sheet）で決め、ScrollView 自身に maxHeight を持たせない。**
+               `maxHeight` だけだと ScrollView の高さが**中身から決まる**ので、
+               モーダルのスライド中に「中身 = 枠」の状態で 1 回レイアウトが走り、
+               **その瞬間はスクロールの必要が無い＝指を降ろしても動かない。**
+               次のレイアウトで 460 に収まって初めてスクロールできるようになる。
+               これが「1 回目が空振りして 2 回目で動く」の正体。
+               sheet 側を画面比で止めて ScrollView は flexShrink に任せると、
+               最初のレイアウトで高さが確定するので 1 回目から動く
+               （`StateEditSheet` が最初からこの形）。
+          */}
+          <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
             <View style={styles.body}>
               <Text style={styles.label}>期間</Text>
               <View style={styles.chipRow}>
@@ -280,19 +306,22 @@ export function ExportSheet({
               )}
             </Pressable>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.45)", justifyContent: "flex-end" },
+  root: { flex: 1, justifyContent: "flex-end" },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(15,23,42,0.45)" },
   sheet: {
     backgroundColor: color.cardBg,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     overflow: "hidden",
+    // ⚠️ 高さの上限はここで持つ（中の ScrollView ではなく）。理由は ScrollView のコメント
+    maxHeight: "88%",
   },
   header: {
     flexDirection: "row",

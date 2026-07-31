@@ -48,8 +48,15 @@ export function StorePickerSheet<T extends string>({
       onRequestClose={onClose}
       onDismiss={onDismiss}
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+      {/*
+        ⚠️ **背景と本体は兄弟にする。入れ子にしない。**
+           入れ子にすると指を降ろした時点で外側の Pressable が responder を取り、
+           中の一覧の**1 回目のスクロールが空振りして 2 回目でやっと動く。**
+           StateEditSheet / MachineListSheet と同じ形。
+      */}
+      <View style={styles.root}>
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="閉じる" />
+        <View style={styles.sheet}>
           <Text style={styles.sheetTitle}>{title}</Text>
 
           {isLoading ? (
@@ -103,20 +110,20 @@ export function StorePickerSheet<T extends string>({
           >
             <Text style={styles.cancelLabel}>キャンセル</Text>
           </Pressable>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  root: {
     flex: 1,
-    backgroundColor: "rgba(15,23,42,0.45)",
     alignItems: "center",
     justifyContent: "center",
     padding: spacing.xl,
   },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(15,23,42,0.45)" },
   sheet: {
     width: "100%",
     maxWidth: 400,
