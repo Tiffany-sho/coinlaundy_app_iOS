@@ -89,6 +89,46 @@
   タイムゾーンを変えて検証するときは PowerShell で `$env:TZ` を使う。
   効いていないことに気づかないと「全 TZ で確認した」と誤認する
 
+## シート（Modal の中のスクロール）
+
+- ⚠️ **`ScrollView` 自身に `maxHeight` を付けない。1 回目のスクロールが空振りする。**
+
+  ```tsx
+  // ✗ 1 回目の指が空振りして、2 回目でようやく動く
+  <View style={sheet}>
+    <ScrollView style={{ maxHeight: 460 }}>…</ScrollView>
+  ```
+
+  `maxHeight` だけだと **ScrollView の高さが「中身」から決まる。** モーダルが
+  スライドしてくる最中に「中身 = 枠」の状態で 1 回レイアウトが走り、
+  **その瞬間はスクロールする必要が無い**ので指を降ろしても何も起きない。
+  次のレイアウトで上限に収まって初めてスクロールできるようになる。
+
+  **上限は親（シート本体）に持たせ、`ScrollView` は残りを埋めるだけにする**:
+
+  ```tsx
+  // ✓ 最初のレイアウトで高さが確定するので 1 回目から動く
+  <View style={[sheet, { maxHeight: "88%" }]}>
+    <ScrollView style={{ flexShrink: 1 }}>…</ScrollView>
+  ```
+
+  ⚠️ **エラーも警告も出ない。「なんとなく反応が悪い」としか感じない**ので、
+  実機で触らないと見つからない。`StateEditSheet` が最初からこの形だった。
+  行数の上限を保ちたいとき（`form.tsx` の `Select` は 6 行）は、
+  **ScrollView を `maxHeight` を持つ `View` で包む**（上限を親に置くのは同じ）
+- ⚠️ **`Pressable` の入れ子は原因ではない。** 一度そう見立てて
+  `<Pressable 背景><Pressable 本体><ScrollView>` を組み替えたが、症状は変わらなかった。
+  ただし**背景と本体は兄弟にするほうが素直**なので、その形には揃えてある:
+
+  ```tsx
+  <View style={{ flex: 1, justifyContent: "flex-end" }}>
+    <Pressable style={{ ...StyleSheet.absoluteFill, backgroundColor: "…" }} onPress={onClose} />
+    <View style={sheet}>…</View>
+  ```
+
+  ⚠️ 兄弟にしても「本体のタップで閉じてしまう」ことはない（背景は祖先ではないので
+  タッチが伝わらない）。入れ子の `Pressable` は元々それを止めるためだけのものだった
+
 ## iOS
 
 - **Modal の上に Modal を重ねると表示に失敗する。** 2 段階の選択（店舗を選んでからシートを出す等）は、1 段目を**閉じてから** `onDismiss` の後に 2 段目を開く
