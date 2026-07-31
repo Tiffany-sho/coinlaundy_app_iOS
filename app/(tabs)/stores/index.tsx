@@ -14,6 +14,12 @@ import {
   type SortDirection,
 } from "@/components/common/SortControls";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
+import { RegionFilter } from "@/components/stores/RegionFilter";
+import {
+  buildRegionOptions,
+  prefectureOf,
+  UNKNOWN_REGION,
+} from "@/components/stores/prefecture";
 import { needsAttention } from "@/components/manage/laundryState";
 import { CenterMessage, Card, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
 import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
@@ -91,6 +97,8 @@ export default function Stores() {
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StoreFilter>("all");
+  /** 都道府県での絞り込み。null = すべての地域 */
+  const [region, setRegion] = useState<string | null>(null);
   const [sort, setSort] = useState<StoreSort>("name");
   const [direction, setDirection] = useState<SortDirection>("asc");
 
@@ -113,12 +121,19 @@ export default function Stores() {
     return ids;
   }, [states.data]);
 
+  /** 地域タブの選択肢。店舗数の多い順に並ぶ（先頭 3 つがタブに出る） */
+  const regionOptions = useMemo(() => buildRegionOptions(data ?? []), [data]);
+
   const visibleStores = useMemo(() => {
     const keyword = query.trim().toLowerCase();
 
     // 検索の当たり判定は Web の SearchBox と同じ：店舗名か住所の部分一致（大文字小文字は無視）
     const filtered = (data ?? []).filter((store) => {
       if (filter === "alert" && !alertIds.has(store.id)) return false;
+      // 住所から判定できなかった店舗は UNKNOWN_REGION（＝「その他」）に入る
+      if (region !== null && (prefectureOf(store.location) ?? UNKNOWN_REGION) !== region) {
+        return false;
+      }
       if (!keyword) return true;
       return (
         store.store.toLowerCase().includes(keyword) ||
@@ -148,7 +163,7 @@ export default function Stores() {
       }
       return direction === "asc" ? byName(a, b) : byName(b, a);
     });
-  }, [data, query, filter, sort, direction, alertIds]);
+  }, [data, query, filter, region, sort, direction, alertIds]);
 
   /**
    * 登録日で並べられるか。1 店舗でも日付が取れれば並べる意味がある。
@@ -160,13 +175,21 @@ export default function Stores() {
     [data]
   );
 
+  /** 選択中の地域の表示名。「その他」も含めてここから取る */
+  const regionLabel = useMemo(
+    () => regionOptions.find((option) => option.value === region)?.label ?? null,
+    [regionOptions, region]
+  );
+
   /** 件数の出し方は Web の countText と同じ */
   const countText = useMemo(() => {
     const total = data?.length ?? 0;
     if (total === 0) return "店舗を追加してください";
-    if (query.trim() || filter === "alert") return `${visibleStores.length}件 / 全${total}店舗`;
+    if (query.trim() || filter === "alert" || region !== null) {
+      return `${visibleStores.length}件 / 全${total}店舗`;
+    }
     return `全${total}店舗`;
-  }, [data?.length, visibleStores.length, query, filter]);
+  }, [data?.length, visibleStores.length, query, filter, region]);
 
   if (isLoading && !data) {
     return (
@@ -233,6 +256,13 @@ export default function Stores() {
               style={{ marginBottom: spacing.sm }}
             />
 
+            {/* 地域（都道府県）での絞り込み。
+                ⚠️ 1 地域しか無いときは出さない。押しても結果が変わらないうえ、
+                   全店舗が同じ県にある組織のほうが多いので常設すると邪魔になる */}
+            {regionOptions.length > 1 && (
+              <RegionFilter options={regionOptions} value={region} onChange={setRegion} />
+            )}
+
             <View style={styles.metaRow}>
               <Muted style={{ flex: 1, fontSize: 13 }}>{countText}</Muted>
               {/* 軸ごとにボタンを置く。効いている方を押すと逆順になる */}
@@ -283,8 +313,19 @@ export default function Stores() {
                   別のキーワードで検索してみてください
                 </Muted>
               </>
-            ) : (
+            ) : filter === "alert" ? (
               <Muted>要対応の店舗はありません</Muted>
+            ) : region !== null ? (
+              /* 絞り込んだ地域の店舗が消えた（他の条件と重なった / 住所を直した）とき。
+                 何で 0 件になっているのかを出さないと、店舗ごと消えたように見える */
+              <>
+                <Muted>{regionLabel ?? "この地域"}の店舗がありません</Muted>
+                <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
+                  上のタブから別の地域を選んでください
+                </Muted>
+              </>
+            ) : (
+              <Muted>該当する店舗がありません</Muted>
             )}
           </Card>
         }
