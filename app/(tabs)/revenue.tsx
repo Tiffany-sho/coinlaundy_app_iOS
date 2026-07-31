@@ -44,7 +44,7 @@ import {
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { useToast } from "@/components/common/toast";
 import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
-import { color, font, radius, spacing } from "@/theme/tokens";
+import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 import type { ExportFile } from "@/api/types";
 
 /** グラフカードの切り替えタブ。既定は「月別」（Web も月別売上カードが主役） */
@@ -55,6 +55,16 @@ const CHART_TABS: { value: ChartTab; label: string }[] = [
   { value: "monthly", label: "月別" },
   { value: "summary", label: "月次サマリー" },
 ];
+
+/** 右下に固定する書き出しボタンの直径。店舗一覧の「追加」と同じ */
+const FAB_SIZE = 62;
+
+/**
+ * リストの下に空ける余白。
+ * ⚠️ **ボタンの高さぶん確保すること。** 足りないと最終行（合計や「さらに表示」）が
+ *    ボタンの下に潜り、一番読みたい行が指で隠れる。
+ */
+const FAB_CLEARANCE = FAB_SIZE + spacing.lg + spacing.md;
 
 /**
  * 収益。Web の CoinDataList.jsx と同じ内容を 1 画面に収める。
@@ -261,7 +271,8 @@ export default function Revenue() {
           padding: spacing.lg,
           // ⚠️ onHistoryLayout もこの値を使う。片方だけ変えると着地点がずれる
           paddingTop: contentPaddingTop,
-          paddingBottom: spacing.xxl,
+          // ⚠️ 右下の書き出しボタンに最終行が潜らないよう、ボタンの高さぶん空ける
+          paddingBottom: FAB_CLEARANCE,
         }}
         /* 月でまとめているので、末尾到達では取りに行かない。
            「さらに表示」だけが読み込みの起点（末尾でも取ると 3 か月しか出していないのに
@@ -275,20 +286,7 @@ export default function Revenue() {
         }
         ListHeaderComponent={
           <View>
-            <View style={styles.titleRow}>
-              <Title style={{ fontSize: 22 }}>収益</Title>
-              {/* Web の ExportPanel と同じ入口。⚠️ プラン外でも押せるようにして、
-                  理由はシートの中で説明する（押せないボタンだけが並ぶと理由が分からない） */}
-              <Pressable
-                onPress={() => setExportOpen(true)}
-                accessibilityRole="button"
-                accessibilityLabel="集金データを書き出す"
-                style={({ pressed }) => [styles.exportButton, pressed && { opacity: 0.75 }]}
-              >
-                <Ionicons name="download-outline" size={15} color={color.tealDeeper} />
-                <Text style={styles.exportButtonLabel}>書き出し</Text>
-              </Pressable>
-            </View>
+            <Title style={{ marginBottom: spacing.md, fontSize: 22 }}>収益</Title>
 
             {pendingCount > 0 && (
               <Pressable onPress={() => router.push("/")} style={styles.badge}>
@@ -405,6 +403,21 @@ export default function Revenue() {
         }}
       />
 
+      {/* 書き出しの入口。⚠️ **スクロールしても消えないよう固定にしてある。**
+          見出しの横に置いていたときは、履歴を見ている間ずっと画面の外にあった。
+          形は店舗一覧の「追加」と揃える（アプリの中で「常に押せる主操作」の語彙を 1 つにする）。
+          ⚠️ プラン外でも押せるようにして、理由はシートの中で説明する
+             （押せないボタンだけが置いてあると、なぜ駄目なのか分からない） */}
+      <Pressable
+        onPress={() => setExportOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel="集金データを書き出す"
+        style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
+      >
+        <Ionicons name="download-outline" size={24} color="#FFFFFF" />
+        <Text style={styles.fabLabel}>書き出し</Text>
+      </Pressable>
+
       <ExportSheet
         open={exportOpen}
         onClose={() => setExportOpen(false)}
@@ -454,25 +467,23 @@ function maxDate(dates: (number | null)[]): number | null {
 }
 
 const styles = StyleSheet.create({
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: spacing.md,
-  },
-  /* 月別売上カードの「絞り込み」と同じ形。並べたときに浮かないよう合わせてある */
-  exportButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    minHeight: 34,
-    paddingHorizontal: spacing.md,
+  /* 右下に固定する書き出しボタン。店舗一覧の「追加」と同じ寸法・同じ影。
+     ⚠️ タブバーは重ならず下に並ぶので insets.bottom は足さない（contentContainerStyle と同じ理由） */
+  fab: {
+    position: "absolute",
+    right: spacing.lg,
+    bottom: spacing.lg,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.cyan100,
-    backgroundColor: color.cardBg,
+    backgroundColor: color.teal,
+    borderWidth: 2,
+    borderColor: color.tealDark,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.hero,
   },
-  exportButtonLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
+  fabLabel: { fontFamily: font.uiBold, fontSize: 9, color: "#FFFFFF", letterSpacing: 0.3 },
   cardTitle: {
     fontFamily: font.uiBold,
     fontSize: 14,
