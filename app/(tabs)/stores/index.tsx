@@ -13,7 +13,6 @@ import {
   type SortAxis,
   type SortDirection,
 } from "@/components/common/SortControls";
-import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { RegionFilter } from "@/components/stores/RegionFilter";
 import {
   buildRegionOptions,
@@ -30,27 +29,16 @@ const NO_IMAGE =
   "https://hhdipgftsrsmmuqyifgt.supabase.co/storage/v1/object/public/Laundry-Images/public/no-image.png";
 
 /**
- * 絞り込みの軸。
- *   すべて   … Web の一覧と同じ（Web には状態での絞り込みがない）
- *   要対応   … 在庫不足か故障機のある店舗だけ。巡回先を決めるための軸で、
- *              判定は Web の getStockStates / getMachinesStates と同じ条件を使う
- *              （src/components/manage/laundryState.ts）
- */
-type StoreFilter = "all" | "alert";
-
-/**
  * 並び替えの軸。Web の一覧は DB の返り順のままで並び替えを持たないので、ここで決めている。
  *
- * ⚠️ かつてあった「要対応が先」は廃止した。上の「すべて / 要対応」タブと役割が重複していて、
- *    しかも 3 択だとダイアログを開かないと今どの軸で並んでいるか分からなかった。
- *    要対応だけ見たいならタブで絞る。
+ * ⚠️ **「店舗名順」は廃止した**（2026-07-31）。店名にフリガナが無く、漢字を
+ *    `localeCompare` で並べてもコードポイント順にしかならないので、利用者からは
+ *    「押しても意味のない順番になる」としか見えなかった。地域で絞るほうが実務に合う
+ *    （`RegionFilter`）。⚠️ 内部の同点処理では今も店名を使っている（並びを安定させるため）。
+ *
+ * ⚠️ かつてあった「要対応が先」も廃止済み。
  */
-type StoreSort = "name" | "created";
-
-const FILTERS = [
-  { value: "all", label: "すべて" },
-  { value: "alert", label: "要対応" },
-] as const satisfies readonly { value: StoreFilter; label: string }[];
+type StoreSort = "created";
 
 /**
  * 店舗の登録日時（epoch ミリ秒）。取れなければ null。
@@ -68,17 +56,15 @@ function createdAtOf(store: Store): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/**
+ * ⚠️ 軸が 1 つなので、実質「新しい順 ↔ 古い順」のトグルとして働く
+ *    （`SortControls` は軸が 1 つなら常に効いている状態で描く）。
+ */
 const SORT_AXES = [
-  {
-    value: "name",
-    label: "店舗名",
-    // 「昇順」では中身が伝わらないので、実際の並びで書く
-    hint: { asc: "あ→わ", desc: "わ→あ" },
-    defaultDirection: "asc",
-  },
   {
     value: "created",
     label: "登録日",
+    // 「降順」では中身が伝わらないので、実際の並びで書く
     hint: { desc: "新しい順", asc: "古い順" },
     defaultDirection: "desc",
   },
@@ -96,11 +82,10 @@ export default function Stores() {
   const bootstrap = useBootstrap();
 
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<StoreFilter>("all");
   /** 都道府県での絞り込み。null = すべての地域 */
   const [region, setRegion] = useState<string | null>(null);
-  const [sort, setSort] = useState<StoreSort>("name");
-  const [direction, setDirection] = useState<SortDirection>("asc");
+  /** ⚠️ 軸は登録日だけなので、持つのは向きだけでよい */
+  const [direction, setDirection] = useState<SortDirection>("desc");
 
   const isOffline = error instanceof ApiError && error.code === "OFFLINE";
   // 店舗の作成は admin だけ（Web の createStore も myRole !== "admin" を弾く）
@@ -113,14 +98,6 @@ export default function Stores() {
     return map;
   }, [states.data]);
 
-  const alertIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const state of states.data ?? []) {
-      if (needsAttention(state)) ids.add(state.laundryId);
-    }
-    return ids;
-  }, [states.data]);
-
   /** 地域タブの選択肢。店舗数の多い順に並ぶ（先頭 3 つがタブに出る） */
   const regionOptions = useMemo(() => buildRegionOptions(data ?? []), [data]);
 
@@ -129,7 +106,6 @@ export default function Stores() {
 
     // 検索の当たり判定は Web の SearchBox と同じ：店舗名か住所の部分一致（大文字小文字は無視）
     const filtered = (data ?? []).filter((store) => {
-      if (filter === "alert" && !alertIds.has(store.id)) return false;
       // 住所から判定できなかった店舗は UNKNOWN_REGION（＝「その他」）に入る
       if (region !== null && (prefectureOf(store.location) ?? UNKNOWN_REGION) !== region) {
         return false;
@@ -141,29 +117,29 @@ export default function Stores() {
       );
     });
 
-    /** 日本語の店名を辞書順で並べる。同点時のよりどころにも使う */
+    /**
+     * 同点のときのよりどころ。
+     * ⚠️ **これは並びを安定させるためだけのもので、利用者向けの「店舗名順」ではない**
+     *    （漢字は読み順にならないので、軸としては廃止した）。
+     */
     const byName = (a: Store, b: Store) => a.store.localeCompare(b.store, "ja");
 
     return [...filtered].sort((a, b) => {
-      if (sort === "created") {
-        /**
-         * ⚠️ 欠けている店舗は**向きに関係なく末尾**へ回すこと。
-         *    -Infinity を入れて差で比べると、古い順にしたとたん先頭に固まる。
-         */
-        const at = createdAtOf(a);
-        const bt = createdAtOf(b);
-        if (at === null || bt === null) {
-          if (at !== bt) return at === null ? 1 : -1;
-        } else if (at !== bt) {
-          // ⚠️ 日付は desc が「新しい順」。店舗名の asc/desc とは向きの意味が逆なので
-          //    共通の係数で反転させないこと（一度これで古い順と新しい順が入れ替わった）
-          return direction === "desc" ? bt - at : at - bt;
-        }
-        return byName(a, b);
+      /**
+       * ⚠️ 登録日が欠けている店舗は**向きに関係なく末尾**へ回すこと。
+       *    -Infinity を入れて差で比べると、古い順にしたとたん先頭に固まる。
+       */
+      const at = createdAtOf(a);
+      const bt = createdAtOf(b);
+      if (at === null || bt === null) {
+        if (at !== bt) return at === null ? 1 : -1;
+      } else if (at !== bt) {
+        // ⚠️ 日付は desc が「新しい順」。向きの意味が数値の大小と逆になる
+        return direction === "desc" ? bt - at : at - bt;
       }
-      return direction === "asc" ? byName(a, b) : byName(b, a);
+      return byName(a, b);
     });
-  }, [data, query, filter, region, sort, direction, alertIds]);
+  }, [data, query, region, direction]);
 
   /**
    * 登録日で並べられるか。1 店舗でも日付が取れれば並べる意味がある。
@@ -185,11 +161,11 @@ export default function Stores() {
   const countText = useMemo(() => {
     const total = data?.length ?? 0;
     if (total === 0) return "店舗を追加してください";
-    if (query.trim() || filter === "alert" || region !== null) {
+    if (query.trim() || region !== null) {
       return `${visibleStores.length}件 / 全${total}店舗`;
     }
     return `全${total}店舗`;
-  }, [data?.length, visibleStores.length, query, filter, region]);
+  }, [data?.length, visibleStores.length, query, region]);
 
   if (isLoading && !data) {
     return (
@@ -249,13 +225,6 @@ export default function Stores() {
               )}
             </View>
 
-            <SegmentedTabs
-              options={FILTERS}
-              value={filter}
-              onChange={setFilter}
-              style={{ marginBottom: spacing.sm }}
-            />
-
             {/* 地域（都道府県）での絞り込み。
                 ⚠️ 1 地域しか無いときは出さない。押しても結果が変わらないうえ、
                    全店舗が同じ県にある組織のほうが多いので常設すると邪魔になる */}
@@ -265,24 +234,21 @@ export default function Stores() {
 
             <View style={styles.metaRow}>
               <Muted style={{ flex: 1, fontSize: 13 }}>{countText}</Muted>
-              {/* 軸ごとにボタンを置く。効いている方を押すと逆順になる */}
+              {/* 軸は登録日だけ。押すたびに新しい順 ↔ 古い順が入れ替わる */}
               <SortControls
                 axes={SORT_AXES}
-                field={sort}
+                field="created"
                 direction={direction}
-                onChange={(nextField, nextDirection) => {
-                  setSort(nextField);
-                  setDirection(nextDirection);
-                }}
+                onChange={(_field, nextDirection) => setDirection(nextDirection)}
               />
             </View>
 
-            {/* 押しても並びが変わらない理由を出す。黙って店舗名順に落ちると故障に見える */}
-            {sort === "created" && !canSortByCreated && (
+            {/* 押しても並びが変わらない理由を出す。黙って別の順に落ちると故障に見える */}
+            {!canSortByCreated && (
               <View style={styles.sortNote}>
                 <Ionicons name="information-circle-outline" size={14} color={color.orange500} />
                 <Text style={styles.sortNoteLabel}>
-                  登録日が記録されていないため、店舗名順で表示しています
+                  登録日が記録されていないため、並び替えは反映されません
                 </Text>
               </View>
             )}
@@ -313,8 +279,6 @@ export default function Stores() {
                   別のキーワードで検索してみてください
                 </Muted>
               </>
-            ) : filter === "alert" ? (
-              <Muted>要対応の店舗はありません</Muted>
             ) : region !== null ? (
               /* 絞り込んだ地域の店舗が消えた（他の条件と重なった / 住所を直した）とき。
                  何で 0 件になっているのかを出さないと、店舗ごと消えたように見える */
