@@ -295,7 +295,19 @@ export default function Revenue() {
         ListHeaderComponent={
           <View>
             <Appear index={0}>
-              <Title style={{ marginBottom: spacing.md, fontSize: 22 }}>収益</Title>
+              <View style={styles.titleRow}>
+                <Title style={{ fontSize: 22 }}>収益</Title>
+                {/* ⚠️ 経費は「設定」ではなく日常の記録なので、収益と同じタブに置く */}
+                <Pressable
+                  onPress={() => router.push("/revenue/expenses")}
+                  accessibilityRole="button"
+                  accessibilityLabel="経費を見る"
+                  style={({ pressed }) => [styles.expensesButton, pressed && { opacity: 0.75 }]}
+                >
+                  <Ionicons name="receipt-outline" size={15} color={color.tealDeeper} />
+                  <Text style={styles.expensesLabel}>経費</Text>
+                </Pressable>
+              </View>
             </Appear>
 
             {pendingCount > 0 && (
@@ -494,6 +506,24 @@ function maxDate(dates: (number | null)[]): number | null {
 }
 
 const styles = StyleSheet.create({
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  expensesButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minHeight: 34,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.cyan100,
+    backgroundColor: color.cyan50,
+  },
+  expensesLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
   /* 右下に固定する書き出しボタン。店舗一覧の「追加」と同じ寸法・同じ影。
      ⚠️ タブバーは重ならず下に並ぶので insets.bottom は足さない（contentContainerStyle と同じ理由） */
   fab: {

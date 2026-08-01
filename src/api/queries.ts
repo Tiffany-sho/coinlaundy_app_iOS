@@ -13,6 +13,7 @@ import type {
   Bootstrap,
   CollectSchedule,
   DeletionSummary,
+  Expense,
   ExportFile,
   ExportFormat,
   FundDetail,
@@ -26,6 +27,7 @@ import type {
   MonthlyChartPoint,
   MonthlyPoint,
   PaymentMethod,
+  RecurringExpense,
   Role,
   Store,
   StoreImage,
@@ -528,6 +530,112 @@ export function useMachineBreakdown(
           `&from=${fromEpoch}&to=${toEpoch}`
       ),
     enabled: enabled && Boolean(storeId) && toEpoch > fromEpoch,
+  });
+}
+
+export const expenseKeys = {
+  all: ["expenses"] as const,
+  list: (from: number, to: number, storeId?: string) =>
+    ["expenses", "list", from, to, storeId ?? "org"] as const,
+  recurring: ["expenses", "recurring"] as const,
+};
+
+/**
+ * 期間の経費。**毎月の固定費を展開したものも混ざって返る。**
+ *
+ * ⚠️ **`toEpoch` は「含む」。** `/funds/chart` の `to` は排他なので**向きが逆**。
+ *    「その月まで」を出したいときは翌月 1 日ではなく**その 1 ミリ秒前**を渡すこと。
+ * ⚠️ **期間は必須。** 経費は増え続けるので、切らないとサーバ側で 1000 行の
+ *    上限に当たって古い順から黙って欠ける。
+ */
+export function useExpenses(fromEpoch: number, toEpoch: number, storeId?: string) {
+  return useQuery({
+    queryKey: expenseKeys.list(fromEpoch, toEpoch, storeId),
+    queryFn: () =>
+      apiFetch<Expense[]>(
+        `/expenses?from=${fromEpoch}&to=${toEpoch}` +
+          (storeId ? `&storeId=${encodeURIComponent(storeId)}` : "")
+      ),
+    enabled: toEpoch >= fromEpoch,
+  });
+}
+
+export type ExpenseInput = {
+  storeId: string | null;
+  date: number;
+  amount: number;
+  category: string;
+  note: string | null;
+};
+
+export function useCreateExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ExpenseInput) =>
+      apiFetch<Expense>("/expenses", { method: "POST", body: input }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
+  });
+}
+
+export function useUpdateExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: ExpenseInput & { id: string }) =>
+      apiFetch<Expense>(`/expenses/${id}`, { method: "PATCH", body: input }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
+  });
+}
+
+export function useDeleteExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch(`/expenses/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
+  });
+}
+
+export function useRecurringExpenses(enabled = true) {
+  return useQuery({
+    queryKey: expenseKeys.recurring,
+    queryFn: () => apiFetch<RecurringExpense[]>("/expenses/recurring"),
+    enabled,
+  });
+}
+
+export type RecurringInput = {
+  storeId: string | null;
+  name: string;
+  amount: number;
+  category: string;
+  dayOfMonth: number;
+  startMonth: string;
+  endMonth: string | null;
+};
+
+export function useCreateRecurringExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RecurringInput) =>
+      apiFetch<RecurringExpense>("/expenses/recurring", { method: "POST", body: input }),
+    // ⚠️ 定義を変えると展開結果も変わるので、一覧のキャッシュごと落とす
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
+  });
+}
+
+export function useUpdateRecurringExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: RecurringInput & { id: string }) =>
+      apiFetch<RecurringExpense>(`/expenses/recurring/${id}`, { method: "PATCH", body: input }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
+  });
+}
+
+export function useDeleteRecurringExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch(`/expenses/recurring/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
   });
 }
 

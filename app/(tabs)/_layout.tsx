@@ -128,8 +128,11 @@ export default function TabsLayout() {
           ),
         }}
       />
+      {/* revenue も stores / manage と同じく中に Stack を持つ（経費の画面がある）ので、
+          「今いるタブをもう一度押したら先頭へ」の対策が要る */}
       <Tabs.Screen
         name="revenue"
+        listeners={backToTabRoot("/revenue")}
         options={{
           title: "収益",
           href: hasOrg ? undefined : null,

@@ -215,6 +215,56 @@ export type MachineBreakdown = {
   total: number;
 };
 
+/**
+ * 経費の 1 件（`GET /expenses`）。
+ *
+ * ⚠️ **`amount` の単位は「円」。** 集金の `fundsArray[].funds` は**硬貨の枚数**
+ *    （金額は × 100）。同じアプリの中に単位の違う金額があるので取り違えないこと。
+ * ⚠️ **`date` は JST 深夜 0 時の epoch（ミリ秒）。** 集金と同じ規約。
+ * ⚠️ **`laundryId` が null なら「組織全体の経費」**（店舗に紐づかない支出）。
+ */
+export type Expense = {
+  /**
+   * ⚠️ **`recurring` が true のとき、この id は実在しない**
+   *    （`recurring:<定義id>:<YYYY-MM>` 形式）。編集・削除に使わないこと。
+   */
+  id: string;
+  laundryId: string | null;
+  date: number;
+  amount: number;
+  category: string;
+  note: string | null;
+  /**
+   * 毎月の固定費を展開したものか。
+   * ⚠️ **true の項目に編集・削除の導線を出さない。** 実体が無く、サーバも 400 で弾く。
+   * ⚠️ 古い応答が永続キャッシュから復元されると `undefined`。真偽で見ること。
+   */
+  recurring?: boolean;
+  /** `recurring` が true のときだけ入る、元の定義の id */
+  recurringId?: string;
+};
+
+/**
+ * 毎月の固定費の**定義**（`GET /expenses/recurring`）。
+ *
+ * ⚠️ **実体の経費レコードは無い。** 一覧を読むときに各月へ展開される。したがって
+ *    **金額を変えると過去の月まで遡って変わる。**「今月から上がった」を表すには
+ *    `endMonth` を入れて終わらせ、新しい定義を作ること。
+ */
+export type RecurringExpense = {
+  id: string;
+  laundryId: string | null;
+  name: string;
+  amount: number;
+  category: string;
+  /** 1〜28。⚠️ 29 以上は不可（その日が無い月で計上が飛ぶ） */
+  dayOfMonth: number;
+  /** "YYYY-MM" */
+  startMonth: string;
+  /** "YYYY-MM"。null = 継続中 */
+  endMonth: string | null;
+};
+
 /** データの書き出し形式。⚠️ BFF の FORMATS と同じ綴りにすること */
 export type ExportFormat = "csv" | "xlsx";
 
