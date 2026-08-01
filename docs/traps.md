@@ -509,10 +509,26 @@
   `app/_layout.tsx` に `animation` を書いても、`app/(tabs)/stores/_layout.tsx` と
   `manage/_layout.tsx` の中の遷移は**無アニメーションのまま**になる。
   各 `_layout.tsx` に同じものを書くこと。エラーも警告も出ない
-- ⚠️ **`Tabs` の `animation` に `"slide_from_right"` は渡せない。** 受け付けるのは
-  **`"none" | "fade" | "shift"` の 3 つだけ**（`TabAnimationName`）。
-  **既定は `"none"`** なので、明示するまでタブは瞬間で入れ替わる。
-  左右に滑らせたいなら `"shift"` が唯一の選択肢
+- ⚠️ **`Tabs` に `animation` を指定しない。`"shift"` も `"fade"` も画面が真っ白になる。**
+  2026-08-01 に `"shift"` を入れて**10 回に 1 回ほど中身が出なくなる**不具合を出した。
+  ライブラリの `forShift` / `forFade` が scene に
+
+  ```js
+  opacity: progress.interpolate({ inputRange: [-1, 0, 1], outputRange: [0, 1, 0] })
+  ```
+
+  を掛けるので、**表示中のタブが見えるかどうかが Animated の値が 0 に届くかに懸かる。**
+  値を動かす effect は `descriptors`（毎レンダー新しいオブジェクト）を依存に持つため
+  頻繁に張り直され、`Animated.parallel` は既定で `stopTogether: true`。
+  **途中で止まると 0 に届かず、表示中のタブが opacity 0 のまま残る**
+  ＝**タブバーだけ見えて中身が真っ白**。`useNativeDriver` は web 以外で true。
+  - ⚠️ **`"none"` は `sceneStyleInterpolator: undefined` でスタイルを一切当てない**ので、
+    この壊れ方が原理的に起きない。既定のままにしておくこと
+  - どうしても動かしたいなら `sceneStyleInterpolator` を自前で渡し、**opacity を触らず
+    `translateX` だけ**にする（止まっても「50px ずれる」で済み、消えない）。
+    表示中の scene の `activityState` は `STATE_ON_TOP` 固定なので剥がれる心配はない
+  - ⚠️ **Stack 側（`slide_from_right`）にこの問題は無い。** あちらは
+    react-native-screens のネイティブ遷移で、JS の Animated 値に依存しない
 - ⚠️ **iOS の native-stack は既定でもスライドするので「効いている」ように見える。**
   Android と web は既定が別物なので、明示しないと**同じ操作の見え方が端末で変わる**。
   ブラウザ確認だけでは気づけない

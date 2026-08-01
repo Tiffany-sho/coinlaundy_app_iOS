@@ -62,13 +62,30 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         /*
-          タブの切り替えを左右へ滑らせる。
-          ⚠️ **既定は "none"（瞬間で入れ替わる）。** 明示しないと動かない。
-          ⚠️ 使える値は "none" | "fade" | "shift" の 3 つだけで、
-             Stack のような "slide_from_right" は**受け付けない**（型エラーになる）。
-             左右に滑らせたいなら "shift" が唯一の選択肢。
+          ⚠️ **`animation` を指定しないこと（既定の "none" のまま）。**
+
+          2026-08-01 に `"shift"` を入れて**10 回に 1 回ほど画面が真っ白になる**不具合を
+          出した。原因はライブラリの実装:
+
+            forShift / forFade は scene に
+              opacity: progress.interpolate({ inputRange: [-1,0,1], outputRange: [0,1,0] })
+            を掛ける。**表示中のタブが見えるかどうかが Animated の値が 0 に到達するかに
+            懸かっている。**（`useNativeDriver` は web 以外で true）
+
+          値を動かす effect は `descriptors`（毎レンダー新しいオブジェクト）を依存に
+          持つので頻繁に再実行され、そのたびに `Animated.parallel` を張り直す。
+          `parallel` は既定で `stopTogether: true` なので**途中で止まると 0 に届かず、
+          表示中のタブが opacity 0 のまま残る**＝タブバーだけ見えて中身が真っ白。
+
+          ⚠️ `"fade"` も同じ式を使うので**代わりにならない。**
+          ⚠️ `"none"` は `sceneStyleInterpolator: undefined` で**スタイルを一切当てない**
+             ので、この壊れ方が原理的に起きない。
+
+          どうしても動かしたいなら `sceneStyleInterpolator` を自前で渡し、
+          **opacity を触らず translateX だけにする**こと（値が止まっても
+          「50px ずれる」で済み、消えない）。表示中の scene の activityState は
+          `STATE_ON_TOP` 固定なので、剥がれる心配はない。
         */
-        animation: "shift",
         tabBarActiveTintColor: color.teal,
         tabBarInactiveTintColor: color.textFaint,
         /* ⚠️ ラベルは必ず出す。アイコンだけだと「水滴＝店舗」「箱＝管理」が伝わらない。
