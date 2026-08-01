@@ -189,6 +189,32 @@ export type StoreRevenue = {
   lastDate: number | null;
 };
 
+/**
+ * 機器ごとの売上内訳（`GET /funds/summary/machines`）。金額はすべて**円**。
+ *
+ * ⚠️ **`machines` の和だけでは店舗の総額に届かない。**
+ *    合計入力モードで登録された集金は `fundsArray` が空配列なので機器に
+ *    割り振れず、`unattributed` に入る。**必ず両方を足して `total` と突き合わせること。**
+ */
+export type MachineBreakdown = {
+  /** 売上の多い順。⚠️ 現在ある設備は 0 円でも並ぶ（故障中の台に気づけるように） */
+  machines: { id: string; name: string; total: number }[];
+  unattributed: {
+    /** 合計入力モードで登録されたぶん */
+    totalMode: number;
+    /**
+     * 機器にも合計入力にも紐づかないぶん（キャッシュレス・過去データのずれ）。
+     * ⚠️ **負になり得る。** `fundsArray` の和が `totalFunds` を上回る古い行があると
+     *    マイナスで出る。`Math.max(0, …)` で潰さないこと（ずれに気づけなくなる）。
+     * ⚠️ **古い応答が react-query の永続キャッシュから復元されると `undefined`。**
+     *    数値として使う前に `?? 0` を通すこと。
+     */
+    other: number;
+  };
+  /** ⚠️ machines の和 + unattributed の和 と一致する */
+  total: number;
+};
+
 /** データの書き出し形式。⚠️ BFF の FORMATS と同じ綴りにすること */
 export type ExportFormat = "csv" | "xlsx";
 

@@ -21,6 +21,7 @@ import type {
   HomeSummary,
   Invitation,
   LaundryState,
+  MachineBreakdown,
   MembersResponse,
   MonthlyChartPoint,
   MonthlyPoint,
@@ -501,6 +502,31 @@ export function useMonthlyChart(
           (storeId ? `&storeId=${encodeURIComponent(storeId)}` : "")
       ),
     enabled: enabled && toEpoch > fromEpoch,
+  });
+}
+
+/**
+ * 機器ごとの売上内訳。**店舗別ページ専用。**
+ *
+ * ⚠️ **`storeId` は必須。** 組織全体では出さない。店舗をまたぐと同じ名前
+ *    （「洗濯機1」）の別の台が合算されて意味の無い数字になる。
+ * ⚠️ `toEpoch` は**排他**。`useMonthlyChart` と同じ規約なので、
+ *    `usePeriodPager` が渡す `monthStartEpoch(range.end + 1)` をそのまま使える。
+ */
+export function useMachineBreakdown(
+  storeId: string,
+  fromEpoch: number,
+  toEpoch: number,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: ["funds", "summary", "machines", storeId, fromEpoch, toEpoch] as const,
+    queryFn: () =>
+      apiFetch<MachineBreakdown>(
+        `/funds/summary/machines?storeId=${encodeURIComponent(storeId)}` +
+          `&from=${fromEpoch}&to=${toEpoch}`
+      ),
+    enabled: enabled && Boolean(storeId) && toEpoch > fromEpoch,
   });
 }
 

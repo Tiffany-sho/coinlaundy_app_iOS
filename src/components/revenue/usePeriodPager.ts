@@ -26,6 +26,7 @@ const DEFAULT_MONTHS = 12;
 export function usePeriodPager({
   stores,
   storeId,
+  fetchCharts = true,
 }: {
   /** 遡れる下限を決めるのに使う（最初の集金がある月まで） */
   stores: StoreRevenue[];
@@ -34,6 +35,16 @@ export function usePeriodPager({
    * ⚠️ **店舗別ページでは必ず渡すこと。** 省くと `count` が組織全体の回数になる。
    */
   storeId?: string;
+  /**
+   * 月別売上のデータを取るか。
+   *
+   * ⚠️ **期間の操作だけ借りたいカードは `false` にすること。**
+   *    このフックは前後を先読みするので `useMonthlyChart` を 3 本張る。
+   *    自前で別のデータを取るカード（機器別）では 3 本とも無駄になる。
+   *    ⚠️ `false` のときは `chart` / `prevChart` / `nextChart` の `data` が
+   *    常に undefined。**中身を読むカードで false にしないこと。**
+   */
+  fetchCharts?: boolean;
 }) {
   const current = currentMonthIndex();
   const [range, setRange] = useState<Range>({
@@ -58,19 +69,19 @@ export function usePeriodPager({
   const chart = useMonthlyChart(
     monthStartEpoch(range.start),
     monthStartEpoch(range.end + 1),
-    true,
+    fetchCharts,
     storeId
   );
   const prevChart = useMonthlyChart(
     monthStartEpoch(prevRange.start),
     monthStartEpoch(prevRange.end + 1),
-    canPrev,
+    fetchCharts && canPrev,
     storeId
   );
   const nextChart = useMonthlyChart(
     monthStartEpoch(nextRange.start),
     monthStartEpoch(nextRange.end + 1),
-    canNext,
+    fetchCharts && canNext,
     storeId
   );
 

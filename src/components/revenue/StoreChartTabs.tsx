@@ -3,18 +3,20 @@ import { StyleSheet, Text } from "react-native";
 import { MonthlyRevenueCard } from "@/components/revenue/MonthlyRevenueCard";
 import { MonthlySummaryTable } from "@/components/revenue/MonthlySummaryTable";
 import { AveragePerCollectCard } from "@/components/revenue/AveragePerCollectCard";
+import { MachineBreakdownCard } from "@/components/revenue/MachineBreakdownCard";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { Card, Muted } from "@/components/common/ui";
 import type { MonthlyPoint, StoreRevenue } from "@/api/types";
 import { color, font, spacing } from "@/theme/tokens";
 
 /** グラフカードの切り替えタブ。⚠️ 既定は「月別」 */
-type ChartTab = "monthly" | "average" | "summary";
+type ChartTab = "monthly" | "average" | "machines" | "summary";
 
 const CHART_TABS: { value: ChartTab; label: string }[] = [
   { value: "monthly", label: "月別" },
   { value: "average", label: "1回あたり" },
-  { value: "summary", label: "月次サマリー" },
+  { value: "machines", label: "機器別" },
+  { value: "summary", label: "サマリー" },
 ];
 
 /**
@@ -62,6 +64,10 @@ export function StoreChartTabs({
           storeId={storeId}
           isLoading={revenueLoading}
         />
+      )}
+
+      {tab === "machines" && (
+        <MachineBreakdownCard stores={storeRevenue} storeId={storeId} isLoading={revenueLoading} />
       )}
 
       {/* ⚠️ 月次サマリーはデータが無いと何も描かない（カードごと消える）ので代わりを出す */}
