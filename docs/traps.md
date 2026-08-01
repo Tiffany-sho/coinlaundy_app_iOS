@@ -132,6 +132,23 @@
 ## iOS
 
 - **Modal の上に Modal を重ねると表示に失敗する。** 2 段階の選択（店舗を選んでからシートを出す等）は、1 段目を**閉じてから** `onDismiss` の後に 2 段目を開く
+- ⚠️ **同じことが「モーダルから画面遷移する」ときにも要る。** モーダルを開いたまま
+  `router.push` しないこと。**症状はその画面ではなく後から出る**:
+  遷移そのものは動いたように見えるのに、**以降タブを切り替えても何も表示されなくなる**
+  （画面の階層が壊れる）。閉じるアニメーションとの競合なので**毎回は起きない。**
+  ⚠️ 行き先が `presentation: "fullScreenModal"`（集金画面）だと VC の多重表示にもなる。
+
+  ```tsx
+  // ✗ 閉じ「始める」だけで、push は閉じ切る前に走る
+  onPress={() => { onClose(); router.push(href); }}
+  // ✓ 閉じ切ってから遷移する（onDismiss は iOS 専用なので他は次のフレーム）
+  onPress={() => { pending.current = href; onClose(); }}
+  <Modal onDismiss={() => { const h = pending.current; pending.current = null; if (h) router.push(h); }}>
+  ```
+
+  ⚠️ **「モーダル → モーダル」だけ待たせて「モーダル → 遷移」を素通しにしない。**
+  2026-08-01 まで `QuickActions` と `StateEditSheet` がその形で、
+  同じ関数の中で編集シートは待っているのに `router.push` だけ待っていなかった
 - ⚠️ **共有シート（`Share.share`）も同じ扱い。** RN の `Modal` を開いたまま呼ぶと、
   すでにモーダルを出している VC からさらに出すことになる。書き出しシートは
   **閉じてから `onDismiss` で共有する**（`app/(tabs)/revenue.tsx` の `pendingFile` がこれ）。

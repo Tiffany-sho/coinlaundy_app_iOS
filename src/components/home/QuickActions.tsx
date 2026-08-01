@@ -80,11 +80,25 @@ const ACTIONS: QuickActionDef[] = [
 
 type SheetTarget = { laundryId: string; mode: StateEditMode };
 
+/**
+ * 店舗選択シートが閉じ切ってから行う動作。
+ *
+ * ⚠️ **遷移も「待つ」側に入れること。** 2026-08-01 まで編集シートだけが待っていて、
+ *    `router.push` は**シートが閉じ切る前に走っていた。** iOS ではモーダルを出したまま
+ *    画面を積むことになり、
+ *      - 行き先が `/collect/[storeId]`（`fullScreenModal`）だと VC の多重表示になる
+ *      - そうでなくても画面の階層が壊れ、**以降タブを切り替えても何も表示されない**
+ *    という形で出る。閉じるアニメーションとの競合なので**毎回は起きない。**
+ */
+type PendingAction =
+  | { kind: "sheet"; target: SheetTarget }
+  | { kind: "navigate"; href: Href };
+
 export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
   const router = useRouter();
   const [picker, setPicker] = useState<QuickActionDef | null>(null);
-  /** 店舗選択シートが閉じ切るのを待っている編集シート */
-  const [pending, setPending] = useState<SheetTarget | null>(null);
+  /** 店舗選択シートが閉じ切るのを待っている動作 */
+  const [pending, setPending] = useState<PendingAction | null>(null);
   const [sheet, setSheet] = useState<SheetTarget | null>(null);
 
   /**
@@ -99,20 +113,21 @@ export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
   const actions = ACTIONS.filter((action) => !(isViewer && action.hideForViewer));
 
   /**
-   * ⚠️ iOS は Modal の上に Modal を重ねると表示に失敗する。
-   *    店舗選択シートが閉じ切ってから編集シートを開く。
-   *    onDismiss は iOS だけなので、他プラットフォームは閉じた次のフレームで開く。
+   * ⚠️ **iOS はモーダルを出したまま次のモーダルも画面遷移も行えない。**
+   *    店舗選択シートが閉じ切ってから、編集シートを開く／遷移する。
+   *    `onDismiss` は iOS だけなので、他プラットフォームは閉じた次のフレームで走らせる。
    */
-  function openPending() {
-    setPending((target) => {
-      if (target) setSheet(target);
-      return null;
-    });
+  function runPending() {
+    if (!pending) return;
+    const next = pending;
+    setPending(null);
+    if (next.kind === "sheet") setSheet(next.target);
+    else router.push(next.href);
   }
 
   useEffect(() => {
     if (Platform.OS === "ios" || pending === null || picker !== null) return;
-    const id = requestAnimationFrame(openPending);
+    const id = requestAnimationFrame(runPending);
     return () => cancelAnimationFrame(id);
   }, [pending, picker]);
 
@@ -127,10 +142,11 @@ export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
     if (!target) return;
 
     if (target.opensStateSheet) {
-      if (mode) setPending({ laundryId: storeId, mode });
+      if (mode) setPending({ kind: "sheet", target: { laundryId: storeId, mode } });
       return;
     }
-    if (target.href) router.push(target.href(storeId));
+    /* ⚠️ ここで直接 router.push しないこと。シートが閉じ切るのを待つ（PendingAction 参照） */
+    if (target.href) setPending({ kind: "navigate", href: target.href(storeId) });
   }
 
   const editing = sheet
@@ -162,7 +178,7 @@ export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
         modes={picker?.opensStateSheet ? STATE_MODES : undefined}
         onPick={pick}
         onClose={() => setPicker(null)}
-        onDismiss={openPending}
+        onDismiss={runPending}
       />
 
       {/* 管理タブ・店舗詳細と同じシート。在庫の保存は 4 項目まとめて送る必要があるので

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -64,8 +64,39 @@ export function StateEditSheet({
   /** 在庫の設定ページへ。省略するとリンク自体を出さない */
   onOpenSettings?: () => void;
 }) {
+  /**
+   * 「在庫の設定」を押したことを覚えておき、**シートが閉じ切ってから**遷移する。
+   *
+   * ⚠️ **iOS はモーダルを出したまま画面遷移できない。** 2026-08-01 まで
+   *    `onClose(); onOpenSettings();` と同じ tick で呼んでいて、閉じるアニメーションの
+   *    最中に `router.push` が走っていた。画面の階層が壊れ、**以降タブを切り替えても
+   *    何も表示されない**という形で出る（競合なので毎回は起きない）。
+   * ⚠️ ここで直すと呼び出し 3 か所（ホーム / 管理 / 店舗詳細）が一度に直る。
+   *    **呼び出し側で `router.push` を待たせ直さないこと。**
+   */
+  const pendingSettings = useRef(false);
+
+  function runPendingSettings() {
+    if (!pendingSettings.current) return;
+    pendingSettings.current = false;
+    onOpenSettings?.();
+  }
+
+  function requestSettings() {
+    pendingSettings.current = true;
+    onClose();
+    /* ⚠️ onDismiss は iOS 専用。他プラットフォームは閉じた次のフレームで走らせる */
+    if (Platform.OS !== "ios") requestAnimationFrame(runPendingSettings);
+  }
+
   return (
-    <Modal visible={Boolean(state)} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={Boolean(state)}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+      onDismiss={runPendingSettings}
+    >
       {state && (
         // key を付けて店舗やモードが変わったら作り直す。
         // 中の下書き（洗剤の数など）は useState の初期値で持っているので、
@@ -76,7 +107,7 @@ export function StateEditSheet({
           mode={mode}
           canEdit={canEdit}
           onClose={onClose}
-          onOpenSettings={onOpenSettings}
+          onOpenSettings={onOpenSettings && requestSettings}
         />
       )}
     </Modal>
@@ -242,7 +273,8 @@ function SheetBody({
               {canEdit && onOpenSettings && (
                 <Pressable
                   onPress={() => {
-                    onClose();
+                    /* ⚠️ ここで onClose と遷移を並べないこと。
+                          onOpenSettings は「閉じ切ってから遷移する」に差し替えてある */
                     onOpenSettings();
                   }}
                   style={({ pressed }) => [styles.settingsLink, pressed && { opacity: 0.8 }]}
