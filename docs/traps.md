@@ -522,6 +522,21 @@
 - **切り分けは Metro のログが早い。** 端末に赤い画面が出ていても、サーバー側の
   ログに `Unable to resolve` が無ければ**それは別のサーバーが返したもの**
 
+## Server Actions（`"use server"`）のモジュール
+
+- ⚠️ **async 関数しか export できない。** 定数を 1 つ export しただけで
+  **Vercel のビルドが落ちる**（`Failed to collect page data for /api/v1/…`）。
+  実際に `expenses/action.js` に `export const EXPENSE_CATEGORIES = [...]` を
+  置いて踏んだ。共有したい定数は `src/functions/` の**普通のモジュール**へ置く
+  （`plans.js` / `applePlans.js` / `expenseCategories.js` がそう）
+- ⚠️ **ローカルの構文チェックでも vitest でも捕まらない。** `node --check` は
+  通り、テストも全部緑のまま通る。**Next のビルドでしか出ない。**
+- ⚠️ **エラーが原因を指さない。**「ページデータを収集できない」としか言わず、
+  どの export が悪いのかも、そもそも export の問題だとも書かれていない。
+  ルート側を疑って時間を溶かしやすい
+- **Server Actions のモジュールを触ったら `npm run build` まで通すこと。**
+  型チェックとテストだけでは足りない
+
 ## BFF のルートを足したとき
 
 - ⚠️ **新しい静的ルートを本番に出す前にアプリから叩くと、404 ではなく 405 が返る。**
