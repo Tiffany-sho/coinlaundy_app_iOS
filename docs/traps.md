@@ -184,6 +184,29 @@
   ファイルができたか確認すること。⚠️ Git Bash に `pkill` は無いので、
   後片付けは PowerShell の `Get-NetTCPConnection -LocalPort … | Stop-Process`
 
+  ⚠️ **再生成は「ルートのファイルを全部いじり終えたあと」に 1 回だけ行う。**
+  生成用に上げた dev server も**動いている間は差分生成を続ける**ので、
+  そのまま編集を続けると**きれいに作り直したはずのファイルがまた壊れる。**
+  2026-08-02 に実際に踏んだ（1 度目の生成は正しかったのに、そのあとの編集で
+  `/revenue/expenses` が `/revenue/expenses/index` に化け、
+  `/../src/components/revenue/…` も混入し直した）。
+
+  ⚠️ **`npx expo customize tsconfig.json` では生成されない。** 中身の無い雛形が
+  できるだけで、ルートは 1 つも入らない（`grep` して 0 件なのに
+  ファイルは存在する、という紛らわしい状態になる）。**dev server が唯一の生成元。**
+
+  ⚠️ **生成できたかは「ファイルの有無」ではなく中身で確かめる。** 3 点見る:
+
+  ```bash
+  sed -n '11p' .expo/types/router.d.ts | grep -c "/\.\./src/components"   # → 0（混入なし）
+  sed -n '11p' .expo/types/router.d.ts | grep -c "/revenue/expenses/index" # → 0（index が付いていない）
+  sed -n '11p' .expo/types/router.d.ts | tr '|' '\n' | grep '`/revenue'    # → 期待するパスが並ぶ
+  ```
+
+  ⚠️ **`as Href` で握り潰さない。** 通るようになるが、**壊れた型定義のまま
+  存在しないパスへ push しても気づけなくなる。** キャストを外した状態で
+  `tsc` が通ることまで確かめること
+
 - ⚠️ **タブバーは「今いるタブ」を押しても何もしない。** react-navigation の
   `BottomTabBar` が `if (!isFocused)` で囲っているため。タブの中に Stack を
   入れている画面（`stores/` `manage/`）ではこれが行き止まりになる。
