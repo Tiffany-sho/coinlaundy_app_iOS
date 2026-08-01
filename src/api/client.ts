@@ -116,9 +116,20 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (response.status === 204) return null as T;
 
+  /*
+    ⚠️ **text() で読んでから JSON.parse する。** json() だけだと失敗の理由が
+       捨てられ、下の「{ data } が無い」を報告するときに中身を添えられない。
+  */
+  let raw = "";
+  try {
+    raw = await response.text();
+  } catch {
+    raw = "";
+  }
+
   let payload: any = null;
   try {
-    payload = await response.json();
+    payload = raw ? JSON.parse(raw) : null;
   } catch {
     payload = null;
   }
@@ -131,5 +142,31 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     );
   }
 
-  return payload?.data as T;
+  /**
+   * ⚠️ **成功したのに `{ data }` が無い ＝ そのルートがサーバに存在しない。**
+   *
+   * Vercel は **`Authorization` ヘッダが付いた未知のパス**に対して
+   * **404 ではなく 200 + HTML（`X-Matched-Path: /_not-found`）** を返す。
+   * ヘッダ無しの curl だと 404 なので、**手元で確かめると再現しない。**
+   *
+   * ```
+   * curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer x" \
+   *   https://www.collecie.com/api/v1/<新ルート>     # 200 → 未デプロイ
+   * ```
+   *
+   * ここで弾かないと `payload?.data` が `undefined` のまま返り、react-query が
+   * **"Query data cannot be undefined"** としか言わない。**BFF を先にデプロイ
+   * し忘れたことに気づけない**（実際に `/funds/summary/machines` で踏んだ）。
+   */
+  if (payload === null || typeof payload !== "object" || !("data" in payload)) {
+    const head = raw.slice(0, 80).replace(/\s+/g, " ");
+    console.warn(
+      `[api] ${options.method ?? "GET"} ${path} が ${response.status} で ` +
+        `{ data } を返さなかった（${response.headers.get("content-type") ?? "?"}）: ${head}`
+    );
+    // ⚠️ 404 にする。200 のままだと isPermanent が false になり、Outbox が永久に再送する
+    throw new ApiError("サーバーがこの機能に対応していません", 404, "NOT_FOUND", head);
+  }
+
+  return payload.data as T;
 }

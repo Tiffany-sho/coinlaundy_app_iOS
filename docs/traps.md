@@ -552,6 +552,32 @@
   # 405 → 未デプロイ（[id] に吸われている） / 401 → デプロイ済み
   ```
 
+- ⚠️ **どの `[id]` にも吸われないパスは、アプリから叩くと 404 ではなく 200 + HTML が返る。**
+  Vercel は **`Authorization` ヘッダの付いた**未知のパスに対して
+  **`X-Matched-Path: /_not-found` のまま `HTTP 200`** を返す（`X-Vercel-Cache: BYPASS`）。
+  ⚠️ **ヘッダを付けずに curl すると 404 なので、上の確認コマンドでは再現しない。**
+
+  ```bash
+  U=https://www.collecie.com/api/v1/funds/summary/machines
+  curl -s -o /dev/null -w "%{http_code}\n" "$U"                              # 404
+  curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer x" "$U" # 200 ←アプリが見るのはこちら
+  ```
+
+  つまり **`response.ok` が true になる。** 本文は HTML なので `response.json()` が
+  失敗し、`payload?.data` が **`undefined`** のまま返る。react-query は理由を言わず
+
+  ```
+  Query data cannot be undefined. … Affected query key: ["funds","summary","machines",…]
+  ```
+
+  としか出さない。**画面は空、手掛かりはこの 1 行だけ。**
+  2026-08-02 に `/funds/summary/machines` で実際に踏んだ。
+  **`apiFetch` が `{ data }` の無い 2xx を 404 として弾くようにしてある**ので、
+  今後は「サーバーがこの機能に対応していません」と表示され、
+  `console.warn` に**実際のステータス・Content-Type・本文の先頭 80 文字**が残る。
+  - ⚠️ **投げるのは 404 で、200 のままにしない。** `ApiError.isPermanent` が
+    ステータスを見ているので、200 だと Outbox が**永久に再送し続ける**
+
 - ⚠️ **デプロイ後は静的ルートが動的ルートより優先される**ので、`[id]` 側は壊れない
   （`funds/chart` が先例）。ただし **`id` がその名前になり得ないこと**は確かめること
 
