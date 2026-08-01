@@ -13,7 +13,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useBootstrap, useSetCollectMethod, useStore } from "@/api/queries";
+import {
+  useBootstrap,
+  usePaymentMethods,
+  useSetCollectMethod,
+  useStore,
+} from "@/api/queries";
 import { CalendarPicker, formatJstDateLong } from "@/components/common/CalendarPicker";
 import { Divider, SectionHead } from "@/components/common/section";
 import { DialogProvider, useDialog } from "@/components/common/dialog";
@@ -36,6 +41,11 @@ import { clearDraft, createDebouncedSave, loadDraft, saveDraft } from "@/offline
 import { enqueue, isOutboxFull } from "@/offline/outbox";
 import { markCollectRegistered } from "@/push/pushToken";
 import { useOutbox } from "@/offline/OutboxProvider";
+import {
+  CashlessInputs,
+  cashlessTotal,
+  toCashlessEntries,
+} from "@/components/collect/CashlessInputs";
 import type { Draft } from "@/offline/types";
 import { COIN_VALUE, weightToCoins } from "@/shared/collectMoney";
 import { nowInJst, toJstMidnightEpoch } from "@/shared/date";
@@ -96,6 +106,9 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
   const { data: store, isLoading } = useStore(storeId);
   const bootstrap = useBootstrap();
   const setCollectMethod = useSetCollectMethod();
+  /* ⚠️ 使用停止中のものは新しく選ばせない（過去の記録は残っている） */
+  const paymentMethods = usePaymentMethods();
+  const activeMethods = (paymentMethods.data ?? []).filter((m) => m.isActive);
   const { flush, isOnline } = useOutbox();
 
   const [epoch, setEpoch] = useState(() => toJstMidnightEpoch(nowInJst()));
@@ -106,6 +119,11 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
   const [methodReady, setMethodReady] = useState(false);
   const [rows, setRows] = useState<MachineRow[]>([]);
   const [totalInput, setTotalInput] = useState("");
+  /**
+   * キャッシュレスの入力。methodId → 数字だけの文字列。
+   * ⚠️ **単位は「円」。** 機種別入力（枚数）と混ぜないこと。
+   */
+  const [cashless, setCashless] = useState<Record<string, string>>({});
   const [requestId, setRequestId] = useState(() => makeUuid());
   const [pendingDraft, setPendingDraft] = useState<Draft | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -151,7 +169,12 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
     setMethodReady(true);
   }, [bootstrap.data, methodReady]);
 
-  const total = useMemo(() => {
+  /**
+   * 現金ぶんの金額。
+   * ⚠️ **サーバへ送るのはこの値。** DB の totalFunds は現金 + キャッシュレスの
+   *    総額だが、**組み立てるのはサーバ（createData）**。ここで足して送ると二重計上になる。
+   */
+  const cashTotal = useMemo(() => {
     if (!byMachine) {
       const n = Number(totalInput);
       return Number.isFinite(n) ? n : 0;
@@ -159,9 +182,15 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
     return rows.reduce((sum, r) => sum + (r.funds ?? 0), 0) * COIN_VALUE;
   }, [byMachine, totalInput, rows]);
 
-  const hasInput = byMachine
-    ? rows.some((r) => r.funds !== null || r.weight !== null)
-    : totalInput.trim() !== "";
+  const cashlessSum = useMemo(() => cashlessTotal(cashless), [cashless]);
+
+  /** 画面に出す総額。⚠️ こちらは足す（利用者が見るのは受け取った合計） */
+  const total = cashTotal + cashlessSum;
+
+  const hasInput =
+    (byMachine
+      ? rows.some((r) => r.funds !== null || r.weight !== null)
+      : totalInput.trim() !== "") || cashlessSum > 0;
 
   // 入力が変わるたびに自動保存する（アプリが落ちても失わない）
   useEffect(() => {
@@ -169,7 +198,7 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
     debounced.schedule(buildDraft());
     return () => debounced.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, totalInput, epoch, byMachine, initialized, hasInput]);
+  }, [rows, totalInput, cashless, epoch, byMachine, initialized, hasInput]);
 
   function buildDraft(): Draft {
     return {
@@ -179,6 +208,7 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
       method: byMachine ? "byMachine" : "total",
       fundsArray: rows.map((r) => ({ id: r.id, name: r.name, funds: r.funds ?? 0 })),
       totalInput: Number(totalInput) || 0,
+      cashless: toCashlessEntries(activeMethods, cashless),
       clientRequestId: requestId,
       updatedAt: Date.now(),
     };
@@ -283,6 +313,20 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
     setEpoch(pendingDraft.date);
     setTotalInput(pendingDraft.totalInput ? String(pendingDraft.totalInput) : "");
     setRequestId(pendingDraft.clientRequestId);
+    /*
+      ⚠️ **`?? []` を必ず通す。** この項目を足す前に保存された下書きが
+         MMKV に残っている端末では `cashless` が undefined。型は必須に見えても
+         実体が無く、TypeScript は何も言わない。
+      ⚠️ 使用停止になった支払方法が下書きに残っていることがあるので、
+         **今も使えるものだけ**戻す（送っても弾かれる）。
+    */
+    const restored: Record<string, string> = {};
+    for (const entry of pendingDraft.cashless ?? []) {
+      if (activeMethods.some((m) => m.id === entry.methodId)) {
+        restored[entry.methodId] = String(entry.amount);
+      }
+    }
+    setCashless(restored);
     setRows((prev) =>
       prev.map((r) => {
         const saved = pendingDraft.fundsArray.find((f) => f.id === r.id);
@@ -320,7 +364,16 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
           fundsArray: byMachine
             ? rows.map((r) => ({ id: r.id, name: r.name, funds: r.funds ?? 0 }))
             : [],
-          totalFunds: total,
+          /*
+            ⚠️ **現金ぶんだけを送る。** DB の totalFunds は現金 + キャッシュレスの
+               総額だが、組み立てるのはサーバ（createData）。画面に出している
+               `total` を送ると**キャッシュレスが二重に計上される。**
+          */
+          totalFunds: cashTotal,
+          cashless: toCashlessEntries(activeMethods, cashless).map((e) => ({
+            methodId: e.methodId,
+            amount: e.amount,
+          })),
         },
         requestId
       );
@@ -432,6 +485,25 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
             <MachineAmountRows rows={rows} onChange={updateRow} onToggle={toggleRow} />
           ) : (
             <TotalAmountInput value={totalInput} onChange={setTotalInput} />
+          )}
+
+          {/*
+            ⚠️ **支払方法が 1 件も無い組織では節ごと出さない。** 案内だけの空欄が
+               毎回挟まると、現金しか扱わない組織の入力が 1 画面ぶん長くなる。
+            ⚠️ 単位は「円」。すぐ上の機種別入力は**枚数**なので混ぜないこと。
+          */}
+          {activeMethods.length > 0 && (
+            <>
+              <Divider />
+              <SectionHead icon="card-outline" label="キャッシュレス" />
+              <CashlessInputs
+                methods={activeMethods}
+                amounts={cashless}
+                onChange={(methodId, value) =>
+                  setCashless((prev) => ({ ...prev, [methodId]: value }))
+                }
+              />
+            </>
           )}
         </ScrollView>
 

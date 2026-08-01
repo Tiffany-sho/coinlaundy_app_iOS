@@ -49,6 +49,42 @@ export function buildStackedPoints(
 }
 
 /**
+ * 支払方法 1 つに絞った棒を組み立てる。
+ *
+ * ⚠️ **店舗別の内訳とは両立しない。** 応答の `byStore`（金額）と `byMethod` は
+ *    それぞれ独立した畳み方で、「この店舗の PayPay」は**データとして存在しない。**
+ *    したがって方法で絞るときは店舗の積み上げを捨て、1 色の棒にする。
+ *    呼び出し側は**店舗の選択を必ず解除する**こと（黙って無視すると、
+ *    絞っているつもりの店舗が数字に反映されない）。
+ *
+ * ⚠️ **`count` は常に 0（＝「—」表示）にする。** `count` は「その月の集金回数」で、
+ *    支払方法ごとには分かれていない。入れると「PayPay で 8 回」と読めてしまう。
+ *
+ * ⚠️ **`byMethod` は古い応答だと `undefined`。** react-query の永続キャッシュが
+ *    最大 7 日ぶん前のバージョンの応答を返すため、`?? {}` を通すこと。
+ */
+export function buildMethodPoints(
+  rows: MonthlyChartPoint[] | undefined,
+  range: MonthRange,
+  methodKey: string
+): StackedPoint[] {
+  const byMonth = new Map((rows ?? []).map((point) => [point.month, point]));
+  const out: StackedPoint[] = [];
+
+  for (let i = range.start; i <= range.end; i += 1) {
+    const key = monthKey(i);
+    const amount = byMonth.get(key)?.byMethod?.[methodKey] ?? 0;
+    out.push({
+      month: key,
+      total: amount,
+      count: 0,
+      parts: amount === 0 ? {} : { [methodKey]: amount },
+    });
+  }
+  return out;
+}
+
+/**
  * 組織で最初に集金があった月。1 件も無ければ null。
  *
  * ⚠️ グラフを過去へ送れる下限に使う。無いと空のグラフを無限にめくれてしまう。

@@ -360,4 +360,32 @@ export type MonthlyPoint = {
 export type MonthlyChartPoint = MonthlyPoint & {
   /** laundryId → その月の合計。storeId 指定で取ると空になる */
   byStore: Record<string, number>;
+  /**
+   * 支払方法 → その月の合計。**現金は `"cash"` の固定キー**（支払方法テーブルに
+   * 現金の行は無く、総額からキャッシュレスを引いて出している）。
+   *
+   * ⚠️ **値の和は `total` と一致する。**
+   * ⚠️ **古い応答が react-query の永続キャッシュから復元されると `undefined`。**
+   *    `?? {}` を通してから読むこと（`Object.values(undefined)` は例外になる）。
+   */
+  byMethod?: Record<string, number>;
+};
+
+/** 現金を表す `byMethod` のキー。⚠️ uuid と衝突しない名前なのでそのまま使える */
+export const CASH_METHOD_KEY = "cash";
+
+/**
+ * 組織の支払方法（PayPay・クレジットカードなど）。
+ *
+ * ⚠️ **現金は含まれない。** 常に存在する暗黙の方法なので、一覧に出すときは
+ *    アプリ側が先頭に足すこと。サーバから行として返すと集金画面で
+ *    現金を 2 回入力できてしまう。
+ * ⚠️ 「削除」は物理削除ではなく `isActive: false`。**集金画面は必ず
+ *    `isActive` で絞る**（設定画面は戻せるように無効なものも出す）。
+ */
+export type PaymentMethod = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
 };

@@ -25,6 +25,7 @@ import type {
   MembersResponse,
   MonthlyChartPoint,
   MonthlyPoint,
+  PaymentMethod,
   Role,
   Store,
   StoreImage,
@@ -647,8 +648,46 @@ export const settingsKeys = {
   schedule: ["org", "collect-schedule"] as const,
   joinPassword: ["org", "join-password"] as const,
   messages: ["org", "messages"] as const,
+  paymentMethods: ["org", "payment-methods"] as const,
   deletionSummary: ["account", "deletion-summary"] as const,
 };
+
+/**
+ * 組織の支払方法。
+ *
+ * ⚠️ **現金は含まれない。** 常に存在する暗黙の方法なので、一覧に出すときは
+ *    呼び出し側が先頭に足すこと。
+ * ⚠️ **無効にしたものも返る。** 集金画面は `isActive` で絞ること
+ *    （設定画面は戻せるように全部出す）。
+ */
+export function usePaymentMethods(enabled = true) {
+  return useQuery({
+    queryKey: settingsKeys.paymentMethods,
+    queryFn: () => apiFetch<PaymentMethod[]>("/org/payment-methods"),
+    enabled,
+  });
+}
+
+export function useCreatePaymentMethod() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      apiFetch<PaymentMethod>("/org/payment-methods", { method: "POST", body: { name } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKeys.paymentMethods }),
+  });
+}
+
+export function useUpdatePaymentMethod() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name, isActive }: { id: string; name?: string; isActive?: boolean }) =>
+      apiFetch<PaymentMethod>(`/org/payment-methods/${id}`, {
+        method: "PATCH",
+        body: { name, isActive },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKeys.paymentMethods }),
+  });
+}
 
 export function useMembers(enabled = true) {
   return useQuery({

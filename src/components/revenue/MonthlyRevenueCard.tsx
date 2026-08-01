@@ -4,7 +4,10 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { MonthlyStackedBarChart, type StackSeries } from "@/components/revenue/charts";
 import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
-import { buildStackedPoints } from "@/components/revenue/monthlySeries";
+import { buildMethodPoints, buildStackedPoints } from "@/components/revenue/monthlySeries";
+import { ALL_METHODS, MethodChips } from "@/components/revenue/MethodChips";
+import { usePaymentMethods } from "@/api/queries";
+import { CASH_METHOD_KEY } from "@/api/types";
 import { usePeriodPager } from "@/components/revenue/usePeriodPager";
 import { FilterSheet } from "@/components/revenue/PeriodFilterSheet";
 import { monthLabel } from "@/components/revenue/monthIndex";
@@ -58,25 +61,53 @@ export function MonthlyRevenueCard({
   /** 空配列 = 全店舗（Web の selectedStores と同じ意味づけ） */
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
+  /** 支払方法の絞り込み。ALL_METHODS = 絞らない */
+  const [method, setMethod] = useState<string>(ALL_METHODS);
+
+  const paymentMethods = usePaymentMethods();
+  const activeMethods = (paymentMethods.data ?? []).filter((m) => m.isActive);
+  const byMethodActive = method !== ALL_METHODS;
+
+  const methodName =
+    method === CASH_METHOD_KEY
+      ? "現金"
+      : (paymentMethods.data ?? []).find((m) => m.id === method)?.name ?? "支払方法";
 
   const visible = stores
     // 色は stores の並び（＝売上の多い順）で決める。店舗別タブのグラフと同じ色になる
     .map((store, i) => ({ store, color: STORE_COLORS[i % STORE_COLORS.length] }))
     .filter(({ store }) => selectedIds.length === 0 || selectedIds.includes(store.laundryId));
 
-  const series: StackSeries[] = visible.map(({ store, color: dot }) => ({
-    key: store.laundryId,
-    name: store.laundryName,
-    color: dot,
-  }));
+  /*
+    ⚠️ **支払方法で絞ると店舗別の内訳は出せない。** 応答の byStore（金額）と
+       byMethod はそれぞれ独立した畳み方で、「この店舗の PayPay」は
+       データとして存在しない。方法を選んだら 1 色の棒に切り替える。
+  */
+  const series: StackSeries[] = byMethodActive
+    ? [{ key: method, name: methodName, color: STORE_COLORS[0] }]
+    : visible.map(({ store, color: dot }) => ({
+        key: store.laundryId,
+        name: store.laundryName,
+        color: dot,
+      }));
 
-  const withCount = selectedIds.length === 0;
-  const stacked = buildStackedPoints(chart.data, range, visible, withCount);
+  /*
+    ⚠️ **方法で絞るときは回数を出さない。** count は「その月の集金回数」で
+       支払方法ごとには分かれていない。出すと「PayPay で 8 回」と読めてしまう。
+  */
+  const withCount = selectedIds.length === 0 && !byMethodActive;
+
+  const buildPoints = (rows: typeof chart.data, r: typeof range) =>
+    byMethodActive
+      ? buildMethodPoints(rows, r, method)
+      : buildStackedPoints(rows, r, visible, withCount);
+
+  const stacked = buildPoints(chart.data, range);
   const total = stacked.reduce((sum, point) => sum + point.total, 0);
 
   const storeLabel = selectedIds.length > 0 ? `・${selectedIds.length}店舗` : "";
   // 既定（直近12か月・全店舗）から外れているときだけボタンに点を出す
-  const isFilterActive = selectedIds.length > 0 || !isDefaultRange;
+  const isFilterActive = selectedIds.length > 0 || !isDefaultRange || byMethodActive;
 
   const busy = isLoading || (chart.isLoading && !chart.data);
 
@@ -102,6 +133,21 @@ export function MonthlyRevenueCard({
       </View>
 
       {/*
+        ⚠️ **支払方法を選んだら店舗の絞り込みを必ず解除する。** 「この店舗の PayPay」は
+           データとして存在しないので、残しておくと**絞っているつもりの店舗が
+           数字に反映されない**（黙って無視される）。
+        ⚠️ 支払方法が 1 件も無い組織ではこの行ごと出ない（MethodChips が null を返す）。
+      */}
+      <MethodChips
+        methods={activeMethods}
+        value={method}
+        onChange={(next) => {
+          setMethod(next);
+          if (next !== ALL_METHODS) setSelectedIds([]);
+        }}
+      />
+
+      {/*
         期間の送り。グラフを横に払っても送れるが、**矢印も必ず出す。**
         ⚠️ ジェスチャだけにすると気づかれないうえ、**VoiceOver から操作できない。**
       */}
@@ -111,7 +157,7 @@ export function MonthlyRevenueCard({
         <View style={styles.periodBody}>
           <Muted style={styles.totalLabel}>
             集金総額（{monthLabel(range.start)} 〜 {monthLabel(range.end)}
-            {storeLabel}）
+            {storeLabel}）{byMethodActive ? ` ・${methodName}` : ""}
           </Muted>
           <MoneyText value={total} size={26} tone="deeper" />
         </View>
@@ -151,9 +197,9 @@ export function MonthlyRevenueCard({
           prev={
             canPrev ? (
               <MonthlyStackedBarChart
-                data={buildStackedPoints(prevChart.data, prevRange, visible, withCount)}
+                data={buildPoints(prevChart.data, prevRange)}
                 series={series}
-                showBreakdown={stores.length > 1}
+                showBreakdown={!byMethodActive && stores.length > 1}
               />
             ) : null
           }
@@ -161,15 +207,15 @@ export function MonthlyRevenueCard({
             <MonthlyStackedBarChart
               data={stacked}
               series={series}
-              showBreakdown={stores.length > 1}
+              showBreakdown={!byMethodActive && stores.length > 1}
             />
           }
           next={
             canNext ? (
               <MonthlyStackedBarChart
-                data={buildStackedPoints(nextChart.data, nextRange, visible, withCount)}
+                data={buildPoints(nextChart.data, nextRange)}
                 series={series}
-                showBreakdown={stores.length > 1}
+                showBreakdown={!byMethodActive && stores.length > 1}
               />
             ) : null
           }

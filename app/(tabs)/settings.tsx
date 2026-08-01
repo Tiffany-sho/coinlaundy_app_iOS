@@ -102,6 +102,11 @@ export default function Settings() {
               label="集金スケジュール"
               onPress={() => router.push("/settings/collect-schedule")}
             />
+            {/* 集金画面のキャッシュレス入力欄がここで決まる。⚠️ 現金は設定不要（常に記録される） */}
+            <LinkRow
+              label="支払方法"
+              onPress={() => router.push("/settings/payment-methods")}
+            />
             {/* 誰がいつ何をしたかの履歴。組織のメンバー全員ぶんが出る */}
             <LinkRow
               label="アクションログ"
