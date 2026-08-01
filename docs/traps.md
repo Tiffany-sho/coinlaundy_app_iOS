@@ -613,6 +613,28 @@
   （ログイン直後に払うと戻ってしまう問題への対策）。**偶然の防波堤なので、
   あちらを外すときはこちらも一緒に見直すこと**
 
+## 横ページャ（前後の期間を覗かせる）
+
+`src/components/revenue/ChartPager.tsx`。3 面（前 / 今 / 次）を横に並べて指で送る。
+⚠️ `ScrollView` で作れない理由は「react-native-web」の節を参照。
+
+- ⚠️ **中身の入れ替えと位置の戻しは同じ tick で反映させる。** 送りきったあとに
+  親が期間をずらすと、3 面の中身が 1 つずれる。位置を戻すのが遅れると
+  **隣の期間が 1 フレーム見える。** 対策は 2 つとも要る:
+  - 位置の戻しは **`useLayoutEffect`**（`useEffect` は描画のあと）
+  - 送りの Animated は **`useNativeDriver: false`**。指で引く間は
+    PanResponder → `setValue` の JS 経路なので速度差はほぼ無く、JS 側に留めると
+    React の commit と同じ tick で反映される
+- ⚠️ **定位置のずらしを `Animated.add` で合成しない。** `Animated.add(v, -width)` は
+  毎レンダー新しいノードを作るので繋がらない。**定位置は `marginLeft`（レイアウト）、
+  指の追従は `transform`** と分ける
+- ⚠️ **端では隣を描かない。** 存在しない期間の空グラフが覗いて「まだ先がある」ように
+  見える。`canPrev` / `canNext` で `null` を渡し、引く手応えだけ摩擦付きで返す
+- ⚠️ **`onStartShouldSetPanResponder` は false にする。** true にすると棒のタップ
+  （内訳を開く）を奪う
+- ⚠️ **払う操作だけにしない。** 気づかれないうえ **VoiceOver から操作できない。**
+  矢印（`PagerArrow`）を必ず併設する
+
 ## 検証
 
 - 型チェックは `npx tsc --noEmit`

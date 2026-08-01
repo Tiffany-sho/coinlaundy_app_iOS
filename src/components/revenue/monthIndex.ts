@@ -28,6 +28,18 @@ export function monthStartEpoch(index: MonthIndex): number {
   return getEpochTimeInSeconds(year, month, 1);
 }
 
+/**
+ * JST 深夜 0 時の epoch（`collect_funds.date` と同じ形）が属する月。
+ *
+ * ⚠️ **数値だけで組み立てる。** `toLocaleString` を経由すると Hermes で
+ *    Invalid Date になる（docs/traps.md の Hermes）。
+ * ⚠️ epoch は `Date.UTC(y, m, d) - 9h` なので、9 時間足してから UTC で読む。
+ */
+export function monthIndexFromEpoch(epoch: number): MonthIndex {
+  const d = new Date(epoch + 32_400_000);
+  return d.getUTCFullYear() * 12 + d.getUTCMonth();
+}
+
 /** "YYYY-MM"。BFF が返す month と突き合わせるキー */
 export function monthKey(index: MonthIndex): string {
   const { year, month } = fromMonthIndex(index);

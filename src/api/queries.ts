@@ -479,12 +479,26 @@ export function useMonthlySummary(storeId?: string, enabled = true) {
  * 店舗ごとの内訳（byStore）も一緒に返るので、積み上げグラフのために
  * 店舗数ぶんリクエストを投げる必要はない。
  */
-export function useMonthlyChart(fromEpoch: number, toEpoch: number, enabled = true) {
+/**
+ * 月ごとに畳んだグラフ用データ。
+ *
+ * ⚠️ **1 店舗を見るときは `storeId` を渡すこと。** 省くと組織全体を集計するので、
+ *    `byStore` から金額は取り出せても **`count`（集金回数）は組織全体の回数**になる。
+ *    店舗別ページで「◯回」や「1 回あたり」を出すと数字がずれる。
+ */
+export function useMonthlyChart(
+  fromEpoch: number,
+  toEpoch: number,
+  enabled = true,
+  storeId?: string
+) {
   return useQuery({
-    queryKey: ["funds", "chart", "month", fromEpoch, toEpoch] as const,
+    // ⚠️ storeId もキーに入れる。入れないと全体と店舗別が同じキャッシュを共有する
+    queryKey: ["funds", "chart", "month", fromEpoch, toEpoch, storeId ?? null] as const,
     queryFn: () =>
       apiFetch<MonthlyChartPoint[]>(
-        `/funds/chart?from=${fromEpoch}&to=${toEpoch}&groupBy=month`
+        `/funds/chart?from=${fromEpoch}&to=${toEpoch}&groupBy=month` +
+          (storeId ? `&storeId=${encodeURIComponent(storeId)}` : "")
       ),
     enabled: enabled && toEpoch > fromEpoch,
   });

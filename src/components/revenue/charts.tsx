@@ -158,18 +158,8 @@ export function MonthlyStackedBarChart({
     .map((s) => ({ ...s, value: active.parts[s.key] ?? 0 }))
     .sort((a, b) => b.value - a.value);
 
-  // 棒が細くなると全ての月にラベルを置けない。12 本を超えたら間引く
-  const labelStep = Math.ceil(data.length / 12);
-  // 年が変わる最初の月にだけ「YYYY年」を添える（Web の CustomXTick と同じ）
-  const yearHeads = new Set<string>();
-  let lastYear = "";
-  for (const point of data) {
-    const year = point.month.slice(0, 4);
-    if (year !== lastYear) {
-      yearHeads.add(point.month);
-      lastYear = year;
-    }
-  }
+  /* ⚠️ 棒と x 軸で同じ値を使う。MonthAxis も barGap() を呼ぶので必ず一致する */
+  const gap = barGap(data.length);
 
   return (
     <View>
@@ -191,7 +181,7 @@ export function MonthlyStackedBarChart({
           <View style={[styles.gridLine, { top: "50%" }]} />
           <View style={[styles.gridLine, { bottom: 0 }]} />
 
-          <View style={styles.bars}>
+          <View style={[styles.bars, { gap }]}>
             {data.map((point) => {
               const isActive = point.month === active.month;
               const heightPct = Math.max((point.total / max) * 100, point.total > 0 ? 2 : 0);
@@ -242,20 +232,7 @@ export function MonthlyStackedBarChart({
         </View>
       </View>
 
-      <View style={styles.xAxis}>
-        {data.map((point, i) => (
-          <View key={point.month} style={styles.xSlot}>
-            {/* 年の行は常に出す。年頭の列だけ 2 行になると月の数字の高さが揃わない */}
-            <Text style={styles.xYear} numberOfLines={1}>
-              {yearHeads.has(point.month) ? `${point.month.slice(2, 4)}年` : " "}
-            </Text>
-            <Text style={styles.xMonth} numberOfLines={1}>
-              {i % labelStep === 0 ? Number(point.month.slice(5)) : " "}
-            </Text>
-          </View>
-        ))}
-      </View>
-      <Text style={styles.axisCaption}>月</Text>
+      <MonthAxis months={data.map((p) => p.month)} />
 
       {/*
         店舗別の内訳。押した棒に追従する（既定は一番右＝最新月）。
@@ -371,12 +348,125 @@ export function StoreRankBars({ data }: { data: StorePoint[] }) {
   );
 }
 
+/**
+ * 月の x 軸。**棒グラフと必ずこれを組で使う**（間隔が `barGap()` で揃うため）。
+ *
+ * ⚠️ **スロットの中に普通に置かない。** 5 年ぶん（60 本）だとスロットの幅が数 px しかなく、
+ *    `numberOfLines={1}` の Text がその幅に切り詰められて「25年」も月の数字も読めなくなる。
+ *    絶対配置で左右へはみ出させ、間引いた隣の列の上へ文字を逃がす。
+ */
+export function MonthAxis({ months }: { months: string[] }) {
+  // 年が変わる最初の月にだけ「YYYY年」を添える（Web の CustomXTick と同じ）
+  const yearHeads = new Set<string>();
+  let lastYear = "";
+  for (const month of months) {
+    const year = month.slice(0, 4);
+    if (year !== lastYear) {
+      yearHeads.add(month);
+      lastYear = year;
+    }
+  }
+  const labels = pickMonthLabels(months, yearHeads);
+
+  return (
+    <>
+      <View style={[styles.xAxis, { gap: barGap(months.length) }]}>
+        {months.map((month) => (
+          <View key={month} style={styles.xSlot}>
+            {labels.has(month) && (
+              <View style={styles.xLabelBox} pointerEvents="none">
+                {/* 年頭以外も空行を置く。省くと月の数字の高さが列ごとに揃わない */}
+                <Text style={styles.xYear} numberOfLines={1}>
+                  {yearHeads.has(month) ? `${month.slice(2, 4)}年` : " "}
+                </Text>
+                <Text style={styles.xMonth} numberOfLines={1}>
+                  {Number(month.slice(5))}
+                </Text>
+              </View>
+            )}
+          </View>
+        ))}
+      </View>
+      <Text style={styles.axisCaption}>月</Text>
+    </>
+  );
+}
+
+/**
+ * x 軸に月を出す間隔（1 = 毎月）。**1 月を必ず含む刻み**にしてあるので、
+ * 年頭とラベルの位置が揃う。
+ *
+ * ⚠️ 期間は最大 5 年（60 か月）まで選べる。刻まずに全部出すと、棒が 2px まで
+ *    細くなった上に隣のラベルと重なって読めない。
+ * ⚠️ 画面幅ではなく本数で決めている。カードの幅は端末幅でほぼ決まるので、
+ *    onLayout で測るより挙動が予測しやすい。**幅を大きく変えたらここも見直すこと。**
+ * ⚠️ どの刻みでもラベルは 13 個までに収まる。増やすと隣とぶつかる。
+ */
+function monthLabelStep(count: number): number {
+  if (count <= 12) return 1; // 毎月
+  if (count <= 24) return 2; // 2 か月おき
+  if (count <= 36) return 3; // 四半期（1 / 4 / 7 / 10 月）
+  if (count <= 72) return 6; // 半年（1 / 7 月）
+  return 12; // 年 1 回（1 月だけ）
+}
+
+/**
+ * 棒どうしの間隔。**本数に追従させないと長い期間で棒が消える。**
+ *
+ * ⚠️ 使える幅は iPhone で **295px しかない**（画面 393 − 一覧の余白 32 −
+ *    カードの余白 32 − y 軸 34）。10 年 = 120 本を `gap: 3` のまま並べると
+ *    **隙間だけで 357px 必要になり、棒の幅が 0 になる。**
+ * ⚠️ **x 軸のラベルの gap と必ず同じ値にすること。** 片方だけ変えると
+ *    ラベルが棒の真下からじわじわずれる（本数が多いほど開く）。
+ */
+export function barGap(count: number): number {
+  if (count <= 24) return 3;
+  if (count <= 48) return 2;
+  if (count <= 72) return 1;
+  return 0;
+}
+
+/**
+ * x 軸に月を出す列を決める。
+ *
+ * ⚠️ **年頭（その年の最初の月）は必ず入れる。** 年の行と月の行が別の列に出ると、
+ *    どの月から新しい年なのかが読めなくなる。
+ * ⚠️ **同時に隣り合わないことも保証する。** 年頭は刻みに乗っているとは限らないので、
+ *    素直に足すと「24年8」と「9」が 1 列違いで並んで文字がぶつかる
+ *    （期間の先頭が 1 月以外のときに必ず起きる）。近すぎるときは**年頭を優先して
+ *    直前のほうを落とす。**
+ */
+function pickMonthLabels(months: string[], yearHeads: Set<string>): Set<string> {
+  const step = monthLabelStep(months.length);
+  const picked: number[] = [];
+
+  months.forEach((month, i) => {
+    const isHead = yearHeads.has(month);
+    if (!isHead && (Number(month.slice(5)) - 1) % step !== 0) return;
+
+    const prev = picked[picked.length - 1];
+    if (prev !== undefined && i - prev < step) {
+      if (!isHead) return; // 年頭でないほうを捨てる
+      picked.pop(); // 年頭を残すため直前を落とす
+    }
+    picked.push(i);
+  });
+
+  return new Set(picked.map((i) => months[i]!));
+}
+
 function formatMonthLabel(month: string): string {
   const [year, m] = month.split("-");
   return `${year}年${Number(m)}月`;
 }
 
 const CHART_HEIGHT = 160;
+
+/** x 軸のラベル 2 行分（年 10 + 月 12）。⚠️ lineHeight を変えたら合わせること */
+const X_LABEL_HEIGHT = 22;
+
+/** ラベルが左右へはみ出してよい幅。「25年」が切れない程度に取る */
+const X_LABEL_BLEED = 14;
 
 const styles = StyleSheet.create({
   empty: { fontFamily: font.ui, fontSize: 13, color: color.textMuted, textAlign: "center", paddingVertical: spacing.xl },
@@ -389,6 +479,7 @@ const styles = StyleSheet.create({
   axisLabel: { fontFamily: font.ui, fontSize: 9, color: color.textFaint, textAlign: "right" },
   plot: { flex: 1, position: "relative" },
   gridLine: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: color.divider },
+  /* ⚠️ gap は barGap() で上書きする。ここの 3 は 24 本以下のときの値 */
   bars: { flex: 1, flexDirection: "row", alignItems: "flex-end", gap: 3 },
   barSlot: { flex: 1, height: "100%", justifyContent: "flex-end" },
   bar: { width: "100%", borderTopLeftRadius: 3, borderTopRightRadius: 3, minHeight: 2 },
@@ -397,7 +488,17 @@ const styles = StyleSheet.create({
   axisCaption: { fontFamily: font.ui, fontSize: 9, color: color.textFaint, textAlign: "right", marginTop: 2 },
   // ── 積み上げ棒 ──
   stack: { width: "100%", borderTopLeftRadius: 3, borderTopRightRadius: 3, overflow: "hidden", minHeight: 2 },
-  xSlot: { flex: 1, alignItems: "center" },
+  /* ⚠️ ラベルを絶対配置にしたので、行の高さはここで確保する（中身が無い列があるため） */
+  xSlot: { flex: 1, height: X_LABEL_HEIGHT },
+  /* ⚠️ 左右へはみ出させて切り詰めを防ぐ。間引いてあるので隣の文字とはぶつからない。
+        ⚠️ 上の xLabel（折れ線グラフ用）とは別物。名前を寄せないこと */
+  xLabelBox: {
+    position: "absolute",
+    top: 0,
+    left: -X_LABEL_BLEED,
+    right: -X_LABEL_BLEED,
+    alignItems: "center",
+  },
   xYear: { fontFamily: font.ui, fontSize: 8, color: color.textFaint, lineHeight: 10 },
   xMonth: { fontFamily: font.ui, fontSize: 9, color: color.textFaint, lineHeight: 12 },
   /* グラフの下に置く店舗別の内訳。凡例も兼ねる */

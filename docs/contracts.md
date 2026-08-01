@@ -342,6 +342,14 @@ Web 側でこれを除外すれば WebView に戻す選択肢も復活する。
 ## エンドポイントの癖
 
 - `GET /funds/chart` の `to` は**排他**（`lt`）。その月を含めたいなら翌月 1 日を渡す
+- ⚠️ **`GET /funds/chart` の `count` は「組織全体の集金回数」。`byStore` で分かれない。**
+  1 か月の応答は `{ month, total, count, storeCount, byStore: { [id]: 金額 } }` で、
+  **店舗ごとに分かれているのは金額だけ**。`byStore` から金額を取り出して店舗別の
+  グラフを描くことはできるが、**その隣に出す「◯回」は全店舗の回数**になる。
+  - **1 店舗を見る画面では `?storeId=` を付ける**（`getStoreFundsForChart` に切り替わり、
+    `count` がその店舗のものになる）。⚠️ 実際に店舗別ページの「◯回」がずれていた
+  - ⚠️ **「1 回あたり」= `total / count` は特に効く。** 回数が全店舗ぶんになると
+    **実際より小さい数字**が出る。型エラーにならず、桁も自然なので気づけない
 - `GET /funds/summary/monthly` は前年同月比のため**過去 2 年固定**。任意期間は `/funds/chart?groupBy=month`（`byStore` 付き）を使う
 - ⚠️ **`GET /funds` の `offset` + `limit` は「直近 2 か月」しか返さない。** `getOrgCollectFundsPaginated` が `startEpoch = changeEpocFromNowYearMonth(-2)` を固定しているため、`offset` をいくら進めてもそれより古いデータには**絶対に届かない**。全件を見せる画面では使わないこと（`useFundList` がこれ）
 - 売上履歴は `GET /funds?from=0&order=&asc=`（`to` は省略＝全期間）を使う。`getOrgCollectFundsInPeriod` は期間の下限が無く、**`ORDER BY` もサーバで効く**。`useFundHistory` がこれ

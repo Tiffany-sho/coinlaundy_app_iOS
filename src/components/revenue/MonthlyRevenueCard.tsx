@@ -2,20 +2,12 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useMonthlyChart } from "@/api/queries";
-import {
-  MonthlyStackedBarChart,
-  type StackedPoint,
-  type StackSeries,
-} from "@/components/revenue/charts";
+import { MonthlyStackedBarChart, type StackSeries } from "@/components/revenue/charts";
+import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
+import { buildStackedPoints } from "@/components/revenue/monthlySeries";
+import { usePeriodPager } from "@/components/revenue/usePeriodPager";
 import { FilterSheet } from "@/components/revenue/PeriodFilterSheet";
-import {
-  currentMonthIndex,
-  monthKey,
-  monthLabel,
-  monthStartEpoch,
-  type MonthRange as Range,
-} from "@/components/revenue/monthIndex";
+import { monthLabel } from "@/components/revenue/monthIndex";
 import { Card, MoneyText, Muted } from "@/components/common/ui";
 import { color, font, radius, spacing, STORE_COLORS } from "@/theme/tokens";
 import type { StoreRevenue } from "@/api/types";
@@ -34,31 +26,38 @@ import type { StoreRevenue } from "@/api/types";
  *    店舗数ぶんリクエストを投げる必要もない。
  */
 
-/** 既定は直近 12 か月 */
-const DEFAULT_MONTHS = 12;
-
 export function MonthlyRevenueCard({
   stores,
   isLoading,
+  storeId,
 }: {
   /** useStoreRevenue() の結果。色の割り当ても店舗別グラフと同じこの並び順に合わせる */
   stores: StoreRevenue[];
   isLoading: boolean;
+  /**
+   * 1 店舗だけを見るときの店舗 ID（店舗別の収益ページ）。
+   * ⚠️ **渡さないと「◯回」が組織全体の集金回数になる。** 金額は byStore から
+   *    取り出せるが、回数は店舗ごとに分かれていないため。
+   */
+  storeId?: string;
 }) {
-  const current = currentMonthIndex();
-  const [range, setRange] = useState<Range>({
-    start: current - (DEFAULT_MONTHS - 1),
-    end: current,
-  });
+  const {
+    range,
+    setRange,
+    prevRange,
+    nextRange,
+    canPrev,
+    canNext,
+    onPage,
+    pageKey,
+    chart,
+    prevChart,
+    nextChart,
+    isDefaultRange,
+  } = usePeriodPager({ stores, storeId });
   /** 空配列 = 全店舗（Web の selectedStores と同じ意味づけ） */
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
-
-  // ⚠️ to は排他。終了月を含めたいので翌月 1 日を渡す
-  const chart = useMonthlyChart(monthStartEpoch(range.start), monthStartEpoch(range.end + 1));
-
-  /** 月キー → その月の実績。取得できなかった月は 0 で埋める */
-  const byMonth = new Map((chart.data ?? []).map((point) => [point.month, point]));
 
   const visible = stores
     // 色は stores の並び（＝売上の多い順）で決める。店舗別タブのグラフと同じ色になる
@@ -71,35 +70,13 @@ export function MonthlyRevenueCard({
     color: dot,
   }));
 
-  // 選んだ期間ぶんの月を必ず並べる。データのある月だけ並べると歯抜けになる
-  const stacked: StackedPoint[] = [];
-  for (let i = range.start; i <= range.end; i += 1) {
-    const key = monthKey(i);
-    const point = byMonth.get(key);
-    const parts: Record<string, number> = {};
-    let total = 0;
-
-    for (const { store } of visible) {
-      const amount = point?.byStore?.[store.laundryId] ?? 0;
-      if (amount === 0) continue;
-      parts[store.laundryId] = amount;
-      total += amount;
-    }
-
-    // 回数は店舗を絞ると内訳から出せない（byStore は金額しか持たない）。
-    // 全店舗のときだけ実数を出し、絞り込み中は 0 にして「—」扱いにする
-    const count = selectedIds.length === 0 ? (point?.count ?? 0) : 0;
-    stacked.push({ month: key, total, count, parts });
-  }
-
+  const withCount = selectedIds.length === 0;
+  const stacked = buildStackedPoints(chart.data, range, visible, withCount);
   const total = stacked.reduce((sum, point) => sum + point.total, 0);
 
   const storeLabel = selectedIds.length > 0 ? `・${selectedIds.length}店舗` : "";
   // 既定（直近12か月・全店舗）から外れているときだけボタンに点を出す
-  const isFilterActive =
-    selectedIds.length > 0 ||
-    range.end !== current ||
-    range.start !== current - (DEFAULT_MONTHS - 1);
+  const isFilterActive = selectedIds.length > 0 || !isDefaultRange;
 
   const busy = isLoading || (chart.isLoading && !chart.data);
 
@@ -124,13 +101,21 @@ export function MonthlyRevenueCard({
         </Pressable>
       </View>
 
-      {/* ラベルと金額は隣り合わせにする。離すとどの数字の説明か分からなくなる */}
-      <Muted style={styles.totalLabel}>
-        集金総額（{monthLabel(range.start)} 〜 {monthLabel(range.end)}
-        {storeLabel}）
-      </Muted>
-      <View style={{ marginTop: 2, marginBottom: spacing.md }}>
-        <MoneyText value={total} size={26} tone="deeper" />
+      {/*
+        期間の送り。グラフを横に払っても送れるが、**矢印も必ず出す。**
+        ⚠️ ジェスチャだけにすると気づかれないうえ、**VoiceOver から操作できない。**
+      */}
+      <View style={styles.periodRow}>
+        <PagerArrow direction={-1} disabled={!canPrev} onPress={() => onPage(-1)} />
+        {/* ラベルと金額は隣り合わせにする。離すとどの数字の説明か分からなくなる */}
+        <View style={styles.periodBody}>
+          <Muted style={styles.totalLabel}>
+            集金総額（{monthLabel(range.start)} 〜 {monthLabel(range.end)}
+            {storeLabel}）
+          </Muted>
+          <MoneyText value={total} size={26} tone="deeper" />
+        </View>
+        <PagerArrow direction={1} disabled={!canNext} onPress={() => onPage(1)} />
       </View>
 
       <FilterSheet
@@ -153,10 +138,41 @@ export function MonthlyRevenueCard({
       ) : (
         /* ⚠️ 店舗が 1 軒だけのときは内訳を出さない（店舗別の収益ページがこれ）。
               棒の合計と内訳の金額が同じになり、同じ数字が縦に 2 回並ぶだけになる */
-        <MonthlyStackedBarChart
-          data={stacked}
-          series={series}
-          showBreakdown={stores.length > 1}
+        /*
+          ⚠️ 3 面まとめて描く。指で引いている最中に隣の期間が見えるようにするため。
+             ⚠️ **端では隣を描かない**（`canPrev` / `canNext`）。描くと存在しない期間の
+                空グラフが覗いて「まだ先がある」ように見える。
+        */
+        <ChartPager
+          pageKey={pageKey}
+          canPrev={canPrev}
+          canNext={canNext}
+          onPage={onPage}
+          prev={
+            canPrev ? (
+              <MonthlyStackedBarChart
+                data={buildStackedPoints(prevChart.data, prevRange, visible, withCount)}
+                series={series}
+                showBreakdown={stores.length > 1}
+              />
+            ) : null
+          }
+          current={
+            <MonthlyStackedBarChart
+              data={stacked}
+              series={series}
+              showBreakdown={stores.length > 1}
+            />
+          }
+          next={
+            canNext ? (
+              <MonthlyStackedBarChart
+                data={buildStackedPoints(nextChart.data, nextRange, visible, withCount)}
+                series={series}
+                showBreakdown={stores.length > 1}
+              />
+            ) : null
+          }
         />
       )}
     </Card>
@@ -164,6 +180,13 @@ export function MonthlyRevenueCard({
 }
 
 const styles = StyleSheet.create({
+  periodRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  periodBody: { flex: 1 },
   headRow: {
     flexDirection: "row",
     alignItems: "center",

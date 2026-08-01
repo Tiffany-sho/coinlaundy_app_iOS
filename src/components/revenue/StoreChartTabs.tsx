@@ -2,7 +2,7 @@ import { useState } from "react";
 import { StyleSheet, Text } from "react-native";
 import { MonthlyRevenueCard } from "@/components/revenue/MonthlyRevenueCard";
 import { MonthlySummaryTable } from "@/components/revenue/MonthlySummaryTable";
-import { AveragePerCollectChart } from "@/components/revenue/StoreAnalysisCharts";
+import { AveragePerCollectCard } from "@/components/revenue/AveragePerCollectCard";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { Card, Muted } from "@/components/common/ui";
 import type { MonthlyPoint, StoreRevenue } from "@/api/types";
@@ -29,10 +29,18 @@ export function StoreChartTabs({
   storeRevenue,
   revenueLoading,
   points,
+  storeId,
 }: {
   storeRevenue: StoreRevenue[];
   revenueLoading: boolean;
+  /** 月次サマリー用。⚠️ こちらは過去 2 年固定（/funds/summary/monthly） */
   points: MonthlyPoint[];
+  /**
+   * この画面が見ている店舗。
+   * ⚠️ **グラフに必ず渡すこと。** 省くと「◯回」と「1 回あたり」が
+   *    組織全体の集金回数で計算される（金額は byStore から取れるが回数は取れない）。
+   */
+  storeId: string;
 }) {
   const [tab, setTab] = useState<ChartTab>("monthly");
 
@@ -41,17 +49,19 @@ export function StoreChartTabs({
       <SegmentedTabs options={CHART_TABS} value={tab} onChange={setTab} />
 
       {tab === "monthly" && (
-        <MonthlyRevenueCard stores={storeRevenue} isLoading={revenueLoading} />
+        <MonthlyRevenueCard
+          stores={storeRevenue}
+          isLoading={revenueLoading}
+          storeId={storeId}
+        />
       )}
 
       {tab === "average" && (
-        <Card style={{ marginBottom: spacing.lg }}>
-          <Text style={styles.cardTitle}>1回あたりの集金額</Text>
-          <Muted style={styles.cardNote}>
-            回数で補っているのか、台の稼ぎ自体が伸びているのかを見る
-          </Muted>
-          <AveragePerCollectChart data={points} />
-        </Card>
+        <AveragePerCollectCard
+          stores={storeRevenue}
+          storeId={storeId}
+          isLoading={revenueLoading}
+        />
       )}
 
       {/* ⚠️ 月次サマリーはデータが無いと何も描かない（カードごと消える）ので代わりを出す */}
@@ -75,5 +85,4 @@ const styles = StyleSheet.create({
     color: color.tealDeeper,
     marginBottom: spacing.xs,
   },
-  cardNote: { fontSize: 11, marginBottom: spacing.md },
 });

@@ -12,8 +12,22 @@ import {
 import { color, font, radius, spacing, STORE_COLORS } from "@/theme/tokens";
 import type { StoreRevenue } from "@/api/types";
 
-/** 遡れる上限。Web の SegmentedPeriod.jsx の MAX_MONTHS と同じ 60 か月（5 年） */
-const MAX_MONTHS_BACK = 60;
+/**
+ * 直接選べる範囲の下限（今月から何か月前まで）。
+ * ⚠️ これより古い期間は**グラフを横に払って**遡る（`ChartPager`）。ここを延ばすのは
+ *    「一発で飛べる範囲」を広げるだけで、遡れる限界とは別。
+ */
+const MAX_MONTHS_BACK = 120;
+
+/**
+ * 一度に表示できる長さの上限。**5 年**。
+ *
+ * ⚠️ これを超えると棒が細くなりすぎて読めない（10 年 = 120 本だと隙間だけで
+ *    357px 必要で、使える幅 295px に収まらない）。長い期間はページを送って見る。
+ * ⚠️ **BFF 側に期間の上限は無い。** ここを緩めれば長い期間も取れてしまうので、
+ *    緩めるなら `charts.tsx` の `barGap` / `monthLabelStep` も一緒に見直すこと。
+ */
+const MAX_WINDOW_MONTHS = 60;
 
 /** すぐ押せる定型。Web のスライダーを一発で動かす代わり */
 const PRESETS = [
@@ -32,7 +46,11 @@ const PRESETS = [
  *
  * ⚠️ 期間は Web の 2 つまみレンジスライダーではなく、開始月・終了月を直接選ぶ形にした。
  *    RN に 2 つまみのスライダーが標準に無く、追加パッケージを入れると Metro の
- *    再起動が要るため。選べる範囲と結果は Web と同じ（最大 5 年前まで）。
+ *    再起動が要るため。
+ *
+ * ⚠️ **一度に選べるのは 5 年まで**（`MAX_WINDOW_MONTHS`）。それより過去は
+ *    グラフを横に払って遡る。開始・終了のどちらを動かしても、5 年を超えたら
+ *    もう一方を引き寄せて幅を保つ。
  *
  * ⚠️ 月の選び方は**集金画面の集金日と同じ**（たたんだ行 → タップで開くパネル）。
  *    以前は 2 つのマス目を出しっぱなしにしていたので、シートが縦に長く
@@ -77,14 +95,21 @@ export function FilterSheet({
   /** ⚠️ 選んだら閉じる。集金画面の集金日と同じ挙動（開いたままにしない） */
   function setStart(index: MonthIndex) {
     Haptics.selectionAsync().catch(() => {});
-    // 開始が終了を追い越したら終了も一緒に動かす（範囲が反転しないように）
-    setDraftRange((prev) => ({ start: index, end: Math.max(prev.end, index) }));
+    setDraftRange((prev) => {
+      // 開始が終了を追い越したら終了も一緒に動かす（範囲が反転しないように）
+      const end = Math.max(prev.end, index);
+      // ⚠️ 5 年を超えたら終了を引き寄せる。上限を無視すると棒が潰れる
+      return { start: index, end: Math.min(end, index + MAX_WINDOW_MONTHS - 1) };
+    });
     setExpanded(null);
   }
 
   function setEnd(index: MonthIndex) {
     Haptics.selectionAsync().catch(() => {});
-    setDraftRange((prev) => ({ start: Math.min(prev.start, index), end: index }));
+    setDraftRange((prev) => {
+      const start = Math.min(prev.start, index);
+      return { start: Math.max(start, index - MAX_WINDOW_MONTHS + 1), end: index };
+    });
     setExpanded(null);
   }
 

@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
-import { formatAxisValue } from "@/components/revenue/charts";
+import { barGap, formatAxisValue, MonthAxis } from "@/components/revenue/charts";
 import { color, font, numeric, radius, spacing } from "@/theme/tokens";
-import type { MonthlyPoint } from "@/api/types";
+import type { AveragePoint } from "@/components/revenue/monthlySeries";
 
 /**
  * 店舗 1 軒を見るときの分析グラフ。
@@ -27,23 +27,7 @@ import type { MonthlyPoint } from "@/api/types";
  *    `FundsDisplay`）。`storeCount` は「何店舗を回ったか」で、店舗別のこの画面では
  *    常に 1 なので割ると総額と同じ数字になってしまう。
  */
-export function AveragePerCollectChart({ data }: { data: MonthlyPoint[] }) {
-  const points = useMemo(
-    () =>
-      data
-        .slice(-12)
-        .map((p) => ({
-          month: p.month,
-          total: p.total,
-          count: p.count,
-          // ⚠️ 0 除算。集金が 1 件も無い月は summary に載らないはずだが、
-          //    載ってきても NaN を描かないようにする
-          average: p.count > 0 ? Math.round(p.total / p.count) : 0,
-        }))
-        .filter((p) => p.count > 0),
-    [data]
-  );
-
+export function AveragePerCollectChart({ points }: { points: AveragePoint[] }) {
   const [selected, setSelected] = useState<string | null>(null);
 
   if (points.length === 0) {
@@ -52,14 +36,21 @@ export function AveragePerCollectChart({ data }: { data: MonthlyPoint[] }) {
 
   const max = Math.max(...points.map((p) => p.average), 1);
   const active = points.find((p) => p.month === selected) ?? points[points.length - 1];
+  /* ⚠️ 棒と x 軸で同じ値を使う。MonthAxis も barGap() を呼ぶので必ず一致する */
+  const gap = barGap(points.length);
 
   return (
     <View>
       <View style={styles.readout}>
         <Text style={styles.readoutLabel}>{formatMonthLabel(active.month)}</Text>
-        <Text style={styles.readoutValue}>¥{active.average.toLocaleString()}</Text>
+        {/* ⚠️ 集金が無い月は 0 円と書かない。「平均 0 円」と読めてしまう */}
+        <Text style={styles.readoutValue}>
+          {active.count > 0 ? `¥${active.average.toLocaleString()}` : "—"}
+        </Text>
         <Text style={styles.readoutSub}>
-          {active.count}回 / 合計 ¥{active.total.toLocaleString()}
+          {active.count > 0
+            ? `${active.count}回 / 合計 ¥${active.total.toLocaleString()}`
+            : "この月の集金記録はありません"}
         </Text>
       </View>
 
@@ -75,7 +66,7 @@ export function AveragePerCollectChart({ data }: { data: MonthlyPoint[] }) {
           <View style={[styles.gridLine, { top: "50%" }]} />
           <View style={[styles.gridLine, { bottom: 0 }]} />
 
-          <View style={styles.bars}>
+          <View style={[styles.bars, { gap }]}>
             {points.map((point) => {
               const isActive = point.month === active.month;
               const heightPct = Math.max(
@@ -107,14 +98,8 @@ export function AveragePerCollectChart({ data }: { data: MonthlyPoint[] }) {
         </View>
       </View>
 
-      <View style={styles.xAxis}>
-        {points.map((point) => (
-          <Text key={point.month} style={styles.xLabel} numberOfLines={1}>
-            {Number(point.month.slice(5))}
-          </Text>
-        ))}
-      </View>
-      <Text style={styles.axisCaption}>月</Text>
+      {/* ⚠️ 月別売上と同じ軸を使う。自前で並べると長い期間でラベルが切り詰められる */}
+      <MonthAxis months={points.map((p) => p.month)} />
     </View>
   );
 }

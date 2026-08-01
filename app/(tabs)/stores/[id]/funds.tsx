@@ -201,6 +201,7 @@ export default function StoreFunds() {
                 storeRevenue={storeRevenue}
                 revenueLoading={revenue.isLoading && !revenue.data}
                 points={points}
+                storeId={id}
               />
             </Appear>
 
