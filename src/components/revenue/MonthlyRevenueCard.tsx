@@ -6,8 +6,8 @@ import { MonthlyStackedBarChart, type StackSeries } from "@/components/revenue/c
 import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
 import { buildMethodPoints, buildStackedPoints } from "@/components/revenue/monthlySeries";
 import { ALL_METHODS, MethodChips } from "@/components/revenue/MethodChips";
-import { usePaymentMethods } from "@/api/queries";
-import { CASH_METHOD_KEY } from "@/api/types";
+import { paymentMethodNames, useStores } from "@/api/queries";
+import { CASH_METHOD_KEY, methodKeyOf } from "@/api/types";
 import { usePeriodPager } from "@/components/revenue/usePeriodPager";
 import { FilterSheet } from "@/components/revenue/PeriodFilterSheet";
 import { monthLabel } from "@/components/revenue/monthIndex";
@@ -64,14 +64,19 @@ export function MonthlyRevenueCard({
   /** 支払方法の絞り込み。ALL_METHODS = 絞らない */
   const [method, setMethod] = useState<string>(ALL_METHODS);
 
-  const paymentMethods = usePaymentMethods();
-  const activeMethods = (paymentMethods.data ?? []).filter((m) => m.isActive);
+  /*
+    ⚠️ **支払方法は店舗ごと**（009）なので、店舗一覧から名前を集めて畳む。
+       ⚠️ ここで使う `stores` は収益サマリ（StoreRevenue）で支払方法を持たない。
+       別物なので取り違えないこと。
+  */
+  const storeList = useStores();
+  const methodNames = paymentMethodNames(storeList.data);
   const byMethodActive = method !== ALL_METHODS;
 
   const methodName =
     method === CASH_METHOD_KEY
       ? "現金"
-      : (paymentMethods.data ?? []).find((m) => m.id === method)?.name ?? "支払方法";
+      : methodNames.find((name) => methodKeyOf(name) === method) ?? "支払方法";
 
   const visible = stores
     // 色は stores の並び（＝売上の多い順）で決める。店舗別タブのグラフと同じ色になる
@@ -139,7 +144,7 @@ export function MonthlyRevenueCard({
         ⚠️ 支払方法が 1 件も無い組織ではこの行ごと出ない（MethodChips が null を返す）。
       */}
       <MethodChips
-        methods={activeMethods}
+        names={methodNames}
         value={method}
         onChange={(next) => {
           setMethod(next);

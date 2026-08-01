@@ -14,8 +14,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import {
+  activePaymentMethods,
   useBootstrap,
-  usePaymentMethods,
   useSetCollectMethod,
   useStore,
 } from "@/api/queries";
@@ -106,9 +106,12 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
   const { data: store, isLoading } = useStore(storeId);
   const bootstrap = useBootstrap();
   const setCollectMethod = useSetCollectMethod();
-  /* ⚠️ 使用停止中のものは新しく選ばせない（過去の記録は残っている） */
-  const paymentMethods = usePaymentMethods();
-  const activeMethods = (paymentMethods.data ?? []).filter((m) => m.isActive);
+  /*
+    ⚠️ **支払方法は店舗ごと**（009）。`GET /stores/:id` の応答に乗っているので
+       別のクエリは張らない。⚠️ 使用停止中のものは新しく選ばせない
+       （過去の記録には残っている）。
+  */
+  const activeMethods = activePaymentMethods(store);
   const { flush, isOnline } = useOutbox();
 
   const [epoch, setEpoch] = useState(() => toJstMidnightEpoch(nowInJst()));

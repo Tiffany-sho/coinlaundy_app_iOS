@@ -4,7 +4,8 @@ import { color, font, numeric, radius, spacing } from "@/theme/tokens";
 import type { PaymentMethod } from "@/api/types";
 
 /**
- * キャッシュレス決済の入力欄。設定 → 支払方法 で登録したものが並ぶ。
+ * キャッシュレス決済の入力欄。**その店舗の**支払方法が並ぶ。
+ * 登録は店舗の登録・編集フォームの「支払方法」の節で行う（009 で店舗ごとになった）。
  *
  * ⚠️ **単位は「円」。** すぐ上の機種別入力は**硬貨の枚数**なので、
  *    同じ画面に単位の違う欄が並ぶ。ラベルの `¥` を消さないこと。
@@ -29,7 +30,7 @@ export function CashlessInputs({
   if (methods.length === 0) {
     return (
       <Muted style={styles.empty}>
-        設定 → 支払方法 で登録すると、現金以外で受け取った金額もここに記録できます。
+        店舗の編集画面で支払方法を登録すると、現金以外で受け取った金額もここに記録できます。
       </Muted>
     );
   }

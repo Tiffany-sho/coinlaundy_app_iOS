@@ -53,6 +53,8 @@ export default function NewStore() {
         description: values.description,
         machines: values.machines,
         images: values.images,
+        // ⚠️ 店舗ができてからでないと入らないので、サーバが登録の後に流し込む
+        paymentMethods: values.paymentMethods,
       },
       {
         onSuccess: (created) => {

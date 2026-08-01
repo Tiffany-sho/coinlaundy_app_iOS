@@ -70,6 +70,12 @@ export default function EditStore() {
         machines: values.machines,
         // ⚠️ フォームが持っている配列をまるごと返す。省略すると空配列で上書きされて写真が消える
         images: values.images,
+        /*
+          ⚠️ **無効にしたものも含めてまるごと返す。** サーバは「配列に無い名前」を
+             無効化として扱うので、落とすと一覧から外したつもりが有効なまま残る。
+             ⚠️ 逆に `?? []` を挟むと「据え置き」の意味が消える（送らない＝据え置き）。
+        */
+        paymentMethods: values.paymentMethods,
       },
       {
         onSuccess: () => {
@@ -110,6 +116,7 @@ export default function EditStore() {
           description: data.description,
           machines: data.machines,
           images: data.images,
+          paymentMethods: data.paymentMethods,
         }}
         submitting={update.isPending}
         onSubmit={onSubmit}

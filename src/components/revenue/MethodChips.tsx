@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import * as Haptics from "expo-haptics";
-import { CASH_METHOD_KEY, type PaymentMethod } from "@/api/types";
+import { CASH_METHOD_KEY, methodKeyOf } from "@/api/types";
 import { color, font, radius, spacing } from "@/theme/tokens";
 
 /** 「すべて」を表す値。⚠️ 空文字にしない（`||` で誤って falsy 扱いされる） */
@@ -9,29 +9,34 @@ export const ALL_METHODS = "__all__";
 /**
  * 支払方法の絞り込みチップ。月別売上の上に置く。
  *
+ * ⚠️ **受け取るのは名前の配列（id ではない）。** 支払方法は**店舗ごと**なので、
+ *    同じ「PayPay」でも店舗ごとに別の uuid になる。id で並べると
+ *    **同じ名前のチップが店舗の数だけ出る。** サーバの `byMethod` も
+ *    名前で畳んであるので、キーは `methodKeyOf(name)` で組み立てる。
+ *
  * ⚠️ **「すべて」以外を選ぶと店舗別の内訳が出せない。** 応答の `byStore` と
  *    `byMethod` は独立した畳み方で、「この店舗の PayPay」はデータとして存在しない。
  *    呼び出し側は方法を選んだ時点で**店舗の選択を解除する**こと。
  *
- * ⚠️ **支払方法が 1 件も無い組織ではこの行ごと出さない。**「すべて / 現金」の
+ * ⚠️ **支払方法が 1 件も無いときはこの行ごと出さない。**「すべて / 現金」の
  *    2 択だけが並んでも意味が無く、画面が 1 行ぶん無駄に伸びる。
  */
 export function MethodChips({
-  methods,
+  names,
   value,
   onChange,
 }: {
-  /** ⚠️ 現金は含めない（ここで先頭に足す） */
-  methods: PaymentMethod[];
+  /** ⚠️ 現金は含めない（ここで先頭に足す）。店舗をまたいで重複を畳んだ名前 */
+  names: string[];
   value: string;
   onChange: (next: string) => void;
 }) {
-  if (methods.length === 0) return null;
+  if (names.length === 0) return null;
 
   const options = [
     { key: ALL_METHODS, label: "すべて" },
     { key: CASH_METHOD_KEY, label: "現金" },
-    ...methods.map((m) => ({ key: m.id, label: m.name })),
+    ...names.map((name) => ({ key: methodKeyOf(name), label: name })),
   ];
 
   return (

@@ -26,7 +26,7 @@ import type {
   MembersResponse,
   MonthlyChartPoint,
   MonthlyPoint,
-  PaymentMethod,
+  PaymentMethodInput,
   RecurringExpense,
   Role,
   Store,
@@ -111,6 +111,16 @@ export type StoreInput = {
   description?: string;
   machines?: { id: string; name: string }[];
   images?: StoreImage[];
+  /**
+   * この店舗の支払方法（現金以外）。
+   *
+   * ⚠️ **`images` と規約が逆。省略は「据え置き」で、空配列が「全部無効にする」。**
+   *    支払方法を知らないクライアント（Web の店舗フォーム）が保存したときに
+   *    全部消えないようにするため。**`?? []` を付けて送らないこと。**
+   * ⚠️ `id` は送らない。サーバが**名前**で既存の行と突き合わせる
+   *    （他店舗の id を送られても書き換えられないようにするため）。
+   */
+  paymentMethods?: PaymentMethodInput[];
 };
 
 /**
@@ -756,45 +766,55 @@ export const settingsKeys = {
   schedule: ["org", "collect-schedule"] as const,
   joinPassword: ["org", "join-password"] as const,
   messages: ["org", "messages"] as const,
-  paymentMethods: ["org", "payment-methods"] as const,
   deletionSummary: ["account", "deletion-summary"] as const,
 };
 
+/*
+  ⚠️ **支払方法のクエリはもう無い。** 009 で組織ごとから**店舗ごと**に移し、
+     `GET /stores` の応答に `paymentMethods` として乗せてある。
+     ⚠️ **独立したフックを作り直さないこと。** 店舗と別々に取ると、
+     店舗一覧を更新しても支払方法が古いまま残る組み合わせが生まれる。
+     登録・編集は店舗の POST / PATCH に `paymentMethods` を載せて行う。
+*/
+
 /**
- * 組織の支払方法。
+ * 店舗の有効な支払方法を並び順どおりに取り出す。
  *
- * ⚠️ **現金は含まれない。** 常に存在する暗黙の方法なので、一覧に出すときは
- *    呼び出し側が先頭に足すこと。
- * ⚠️ **無効にしたものも返る。** 集金画面は `isActive` で絞ること
- *    （設定画面は戻せるように全部出す）。
+ * ⚠️ **`isActive` で絞る。** 無効にしたものも応答には含まれている
+ *    （店舗フォームで戻せるようにするため）。
+ * ⚠️ **`paymentMethods` は `undefined` のことがある**（009 より前の応答が
+ *    永続キャッシュから復元される）。`?? []` を通すこと。
  */
-export function usePaymentMethods(enabled = true) {
-  return useQuery({
-    queryKey: settingsKeys.paymentMethods,
-    queryFn: () => apiFetch<PaymentMethod[]>("/org/payment-methods"),
-    enabled,
-  });
+export function activePaymentMethods(store: Store | null | undefined) {
+  return (store?.paymentMethods ?? []).filter((m) => m.isActive);
 }
 
-export function useCreatePaymentMethod() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) =>
-      apiFetch<PaymentMethod>("/org/payment-methods", { method: "POST", body: { name } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKeys.paymentMethods }),
-  });
-}
-
-export function useUpdatePaymentMethod() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, name, isActive }: { id: string; name?: string; isActive?: boolean }) =>
-      apiFetch<PaymentMethod>(`/org/payment-methods/${id}`, {
-        method: "PATCH",
-        body: { name, isActive },
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKeys.paymentMethods }),
-  });
+/**
+ * 組織にある支払方法の名前を、店舗をまたいで 1 つにまとめる。
+ * 収益ページの絞り込みチップに使う。
+ *
+ * ⚠️ **名前で束ねる。** 支払方法は店舗ごとなので、同じ「PayPay」でも
+ *    店舗ごとに別の uuid になる。id で並べると同じ名前のチップが
+ *    店舗の数だけ出る（サーバの `byMethod` も名前で畳んである）。
+ * ⚠️ **無効にしたものは出さない。** ただし過去の集金には残っているので、
+ *    「無効にすると過去のぶんも絞り込めなくなる」ことになる。
+ *    無効化は「もう使わない」の意味なので、それでよい。
+ */
+export function paymentMethodNames(stores: Store[] | null | undefined) {
+  const names = new Map<string, number>();
+  for (const store of stores ?? []) {
+    for (const method of store.paymentMethods ?? []) {
+      if (!method.isActive) continue;
+      const name = method.name.trim();
+      if (!name) continue;
+      // 並び順は「いちばん手前に出てくる sortOrder」に揃える
+      const current = names.get(name);
+      if (current === undefined || method.sortOrder < current) names.set(name, method.sortOrder);
+    }
+  }
+  return [...names.entries()]
+    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0], "ja"))
+    .map(([name]) => name);
 }
 
 export function useMembers(enabled = true) {

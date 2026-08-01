@@ -16,8 +16,13 @@ import { Button } from "@/components/common/ui";
 import { Field, Input } from "@/components/common/form";
 import { StoreImagePicker } from "@/components/stores/StoreImagePicker";
 import { MachineSection } from "@/components/stores/MachineSection";
+import {
+  PaymentMethodSection,
+  toPaymentMethodRows,
+  type PaymentMethodRow,
+} from "@/components/stores/PaymentMethodSection";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
-import type { Machine, StoreImage } from "@/api/types";
+import type { Machine, PaymentMethod, StoreImage } from "@/api/types";
 import { makeUuid } from "@/shared/uuid";
 
 /**
@@ -55,6 +60,15 @@ export type StoreFormValues = {
    *    画像の実体は選んだ時点で Storage に上がっているので、ここには { url, path } が並ぶ。
    */
   images: StoreImage[];
+  /**
+   * この店舗の支払方法（現金以外）。
+   *
+   * ⚠️ **無効にしたものも `isActive: false` として配列に残す。** 落として送ると
+   *    サーバ側で「消えたもの」と「一度も無かったもの」の区別が付かない。
+   * ⚠️ 呼び出し側は**そのまま** `StoreInput.paymentMethods` に渡すこと。
+   *    `?? []` を挟むと「据え置き」の意味が消える。
+   */
+  paymentMethods: PaymentMethodRow[];
 };
 
 /** 既存の machines を編集用に整える。未知のフィールドは温存する */
@@ -103,6 +117,8 @@ export function StoreForm({
     description?: string | null;
     machines?: Machine[] | null;
     images?: StoreImage[] | null;
+    /** ⚠️ 無効にしたものも含めて渡すこと（フォームで戻せるようにするため） */
+    paymentMethods?: PaymentMethod[] | null;
   };
   submitting?: boolean;
   onSubmit: (values: StoreFormValues) => void;
@@ -122,6 +138,9 @@ export function StoreForm({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [machines, setMachines] = useState<MachineRow[]>(() => toMachineRows(initial?.machines));
   const [images, setImages] = useState<StoreImage[]>(() => initial?.images ?? []);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>(() =>
+    toPaymentMethodRows(initial?.paymentMethods)
+  );
 
   const canSubmit = store.trim().length > 0 && !submitting;
 
@@ -133,6 +152,7 @@ export function StoreForm({
       description: description.trim(),
       machines: machines.map((m) => ({ ...m, name: m.name.trim() })),
       images,
+      paymentMethods,
     });
   }
 
@@ -226,6 +246,15 @@ export function StoreForm({
               <Text style={styles.sectionLabel}>機械</Text>
             </View>
             <MachineSection machines={machines} onChange={setMachines} />
+          </View>
+
+          {/* ── 支払方法 ── ⚠️ 店舗ごと（009）。設定画面には無い */}
+          <View style={styles.card}>
+            <View style={styles.sectionHead}>
+              <Ionicons name="card-outline" size={17} color={color.teal} />
+              <Text style={styles.sectionLabel}>支払方法</Text>
+            </View>
+            <PaymentMethodSection methods={paymentMethods} onChange={setPaymentMethods} />
           </View>
 
           <View style={{ gap: spacing.sm }}>

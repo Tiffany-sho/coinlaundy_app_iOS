@@ -32,6 +32,15 @@ export type Store = {
   owner: string;
   organization_id: string;
   created_at?: string;
+  /**
+   * この店舗の支払方法。**無効にしたものも含む**（店舗フォームで戻せるように）。
+   *
+   * ⚠️ **集金画面は必ず `isActive` で絞る。**
+   * ⚠️ **`undefined` のことがある。** 009 より前の応答が react-query の永続
+   *    キャッシュ（MMKV）から最大 7 日復元されるため。型は新しいので
+   *    TypeScript は何も言わない。`?? []` を通すこと。
+   */
+  paymentMethods?: PaymentMethod[];
 };
 
 export type Profile = {
@@ -411,9 +420,12 @@ export type MonthlyChartPoint = MonthlyPoint & {
   /** laundryId → その月の合計。storeId 指定で取ると空になる */
   byStore: Record<string, number>;
   /**
-   * 支払方法 → その月の合計。**現金は `"cash"` の固定キー**（支払方法テーブルに
-   * 現金の行は無く、総額からキャッシュレスを引いて出している）。
+   * 支払方法 → その月の合計。キーは **`"cash"`（現金）** と
+   * **`"method:" + 支払方法の名前`**。`methodKeyOf()` で組み立てる。
    *
+   * ⚠️ **id ではなく名前で畳んである。** 支払方法は店舗ごとなので、同じ
+   *    「PayPay」でも店舗ごとに別の uuid になる。id で引くと組織全体の
+   *    グラフで店舗の数だけ同じ名前のチップが並ぶ。
    * ⚠️ **値の和は `total` と一致する。**
    * ⚠️ **古い応答が react-query の永続キャッシュから復元されると `undefined`。**
    *    `?? {}` を通してから読むこと（`Object.values(undefined)` は例外になる）。
@@ -421,21 +433,40 @@ export type MonthlyChartPoint = MonthlyPoint & {
   byMethod?: Record<string, number>;
 };
 
-/** 現金を表す `byMethod` のキー。⚠️ uuid と衝突しない名前なのでそのまま使える */
+/** 現金を表す `byMethod` のキー */
 export const CASH_METHOD_KEY = "cash";
 
 /**
- * 組織の支払方法（PayPay・クレジットカードなど）。
+ * 支払方法の `byMethod` キー。
  *
+ * ⚠️ **接頭辞を外さない。** 「cash」という名前の支払方法を作られたときに
+ *    現金と合算されてしまう。⚠️ サーバ（`/api/v1/funds/chart`）が同じ
+ *    組み立てをしているので、**変えるときは必ず両方**直すこと。
+ */
+export function methodKeyOf(name: string) {
+  return `method:${name.trim()}`;
+}
+
+/**
+ * 店舗の支払方法（PayPay・クレジットカードなど）。
+ *
+ * ⚠️ **組織ごとではなく店舗ごと**（009 で移した）。登録・編集は
+ *    **店舗の登録・編集フォームの中**で行う。設定画面には無い。
  * ⚠️ **現金は含まれない。** 常に存在する暗黙の方法なので、一覧に出すときは
  *    アプリ側が先頭に足すこと。サーバから行として返すと集金画面で
  *    現金を 2 回入力できてしまう。
  * ⚠️ 「削除」は物理削除ではなく `isActive: false`。**集金画面は必ず
- *    `isActive` で絞る**（設定画面は戻せるように無効なものも出す）。
+ *    `isActive` で絞る**（店舗フォームは戻せるように無効なものも出す）。
  */
 export type PaymentMethod = {
   id: string;
   name: string;
   sortOrder: number;
+  isActive: boolean;
+};
+
+/** 店舗フォームから送る支払方法。⚠️ `id` は送らない（サーバが名前で突き合わせる） */
+export type PaymentMethodInput = {
+  name: string;
   isActive: boolean;
 };
