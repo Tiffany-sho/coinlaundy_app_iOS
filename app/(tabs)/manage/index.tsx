@@ -3,6 +3,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Appear } from "@/components/common/Appear";
 import { useBootstrap, useLaundryStates } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { useOutbox } from "@/offline/OutboxProvider";
@@ -91,21 +92,29 @@ export default function Manage() {
             </Card>
           )}
 
-          {(data ?? []).map((state) =>
-            segment === "stock" ? (
-              <StockSummaryCard
-                key={state.laundryId}
-                state={state}
-                onPress={() => setEditingId(state.laundryId)}
-              />
-            ) : (
-              <EquipmentSummaryCard
-                key={state.laundryId}
-                state={state}
-                onPress={() => setEditingId(state.laundryId)}
-              />
-            )
-          )}
+          {/*
+            ⚠️ **Appear は条件分岐の外側に置く。** 在庫 / 設備を切り替えると
+               中身は別のコンポーネントになって作り直されるが、Appear 自身は
+               残るので**初回の 1 度しか動かない。** 内側に置くと切り替えるたびに
+               全カードが出直してうるさくなる。
+            ⚠️ ここは仮想化していない ScrollView なので 1 枚ずつずらしてよい。
+               FlashList の行では使い回しのせいで再生され直す（Appear のコメント参照）。
+          */}
+          {(data ?? []).map((state, i) => (
+            <Appear key={state.laundryId} index={i}>
+              {segment === "stock" ? (
+                <StockSummaryCard
+                  state={state}
+                  onPress={() => setEditingId(state.laundryId)}
+                />
+              ) : (
+                <EquipmentSummaryCard
+                  state={state}
+                  onPress={() => setEditingId(state.laundryId)}
+                />
+              )}
+            </Appear>
+          ))}
 
           {(data?.length ?? 0) === 0 && (
             <Card>

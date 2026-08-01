@@ -24,6 +24,9 @@ export default function StoresLayout() {
         // 各画面が自前のヘッダー（詳細は画像に重ねた戻るボタン、履歴は独自バー）を持っている
         headerShown: false,
         contentStyle: { backgroundColor: color.appBg },
+        /* ⚠️ ルートの Stack の screenOptions は**入れ子の Stack には降りてこない。**
+              ここにも書かないと、タブの中だけ遷移が無アニメーションになる */
+        animation: "slide_from_right",
       }}
     />
   );

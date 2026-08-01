@@ -9,6 +9,7 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import { Appear } from "@/components/common/Appear";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -284,9 +285,18 @@ export default function Revenue() {
             tintColor={color.teal}
           />
         }
+        /*
+          ⚠️ **Appear を使ってよいのはこのヘッダの中の静的な塊だけ。**
+             renderItem（明細行）に付けるとセルが使い回されるので、
+             スクロールのたびに古い行が「現れ直す」ように見える。
+          ⚠️ **onLayout で位置を測る View を Appear で包まないこと。** `layout.y` は
+             親からの相対位置なので、包むと 0 になって着地点が壊れる（下の売上履歴を参照）。
+        */
         ListHeaderComponent={
           <View>
-            <Title style={{ marginBottom: spacing.md, fontSize: 22 }}>収益</Title>
+            <Appear index={0}>
+              <Title style={{ marginBottom: spacing.md, fontSize: 22 }}>収益</Title>
+            </Appear>
 
             {pendingCount > 0 && (
               <Pressable onPress={() => router.push("/")} style={styles.badge}>
@@ -294,56 +304,73 @@ export default function Revenue() {
               </Pressable>
             )}
 
-            <TotalRevenueCard
-              total={allTimeTotal}
-              stats={[
-                { label: "店舗数", value: stores.length > 0 ? `${stores.length}店舗` : "—" },
-                { label: "集金回数", value: fundCount > 0 ? `${fundCount}回` : "—" },
-              ]}
-              firstDate={firstDate}
-              lastDate={lastDate}
-              isLoading={byStore.isLoading && !byStore.data}
-            />
-
-            <SegmentedTabs options={CHART_TABS} value={tab} onChange={setTab} />
-
-            {tab === "store" && (
-              <Card style={{ marginBottom: spacing.lg }}>
-                <Text style={styles.cardTitle}>店舗別の売上</Text>
-                <StoreRankBars data={stores} />
-              </Card>
-            )}
-
-            {tab === "monthly" && (
-              <MonthlyRevenueCard stores={stores} isLoading={byStore.isLoading && !byStore.data} />
-            )}
-
-            {/* 月次サマリーはデータが無いと何も描かない（カードごと消える）ので、代わりを出す */}
-            {tab === "summary" &&
-              (points.length > 0 ? (
-                <MonthlySummaryTable data={points} />
-              ) : (
-                <Card style={{ marginBottom: spacing.lg }}>
-                  <Text style={styles.cardTitle}>月次サマリー</Text>
-                  <Muted>集計できる月がありません</Muted>
-                </Card>
-              ))}
-
-            {/* 並び替え後はここへ戻す。y を測るためにひとつの View にまとめてある */}
-            <View onLayout={onHistoryLayout}>
-              <Text style={styles.sectionTitle}>売上履歴</Text>
-
-              <HistoryControls
-                sortField={sortField}
-                sortDirection={sortDirection}
-                onSortChange={(field, next) => {
-                  setSortField(field);
-                  setSortDirection(next);
-                }}
-                collecter={collecter}
-                collecterOptions={collecterOptions}
-                onCollecterChange={setCollecter}
+            <Appear index={1}>
+              <TotalRevenueCard
+                total={allTimeTotal}
+                stats={[
+                  { label: "店舗数", value: stores.length > 0 ? `${stores.length}店舗` : "—" },
+                  { label: "集金回数", value: fundCount > 0 ? `${fundCount}回` : "—" },
+                ]}
+                firstDate={firstDate}
+                lastDate={lastDate}
+                isLoading={byStore.isLoading && !byStore.data}
               />
+            </Appear>
+
+            {/* ⚠️ タブとグラフはまとめて 1 つの Appear に入れる。分けると
+                   タブを切り替えるたびにグラフだけが出直す */}
+            <Appear index={2}>
+              <SegmentedTabs options={CHART_TABS} value={tab} onChange={setTab} />
+
+              {tab === "store" && (
+                <Card style={{ marginBottom: spacing.lg }}>
+                  <Text style={styles.cardTitle}>店舗別の売上</Text>
+                  <StoreRankBars data={stores} />
+                </Card>
+              )}
+
+              {tab === "monthly" && (
+                <MonthlyRevenueCard stores={stores} isLoading={byStore.isLoading && !byStore.data} />
+              )}
+
+              {/* 月次サマリーはデータが無いと何も描かない（カードごと消える）ので、代わりを出す */}
+              {tab === "summary" &&
+                (points.length > 0 ? (
+                  <MonthlySummaryTable data={points} />
+                ) : (
+                  <Card style={{ marginBottom: spacing.lg }}>
+                    <Text style={styles.cardTitle}>月次サマリー</Text>
+                    <Muted>集計できる月がありません</Muted>
+                  </Card>
+                ))}
+            </Appear>
+
+            {/*
+              並び替え後はここへ戻す。y を測るためにひとつの View にまとめてある。
+
+              ⚠️ **計測する View は Appear の「外側」に置くこと。** `onLayout` の
+                 `layout.y` は**親からの相対位置**なので、Appear で包むと親が
+                 Appear になって **y がほぼ 0 になる。** そうなると並び替えのたびに
+                 ヘッダの先頭付近（月別売上のあたり）へ飛んで、履歴の頭に着かない。
+                 ⚠️ 一度これで壊した。`transform` がレイアウトを動かさないことと、
+                    **包むと親が変わること**は別の話。
+            */}
+            <View onLayout={onHistoryLayout}>
+              <Appear index={3}>
+                <Text style={styles.sectionTitle}>売上履歴</Text>
+
+                <HistoryControls
+                  sortField={sortField}
+                  sortDirection={sortDirection}
+                  onSortChange={(field, next) => {
+                    setSortField(field);
+                    setSortDirection(next);
+                  }}
+                  collecter={collecter}
+                  collecterOptions={collecterOptions}
+                  onCollecterChange={setCollecter}
+                />
+              </Appear>
             </View>
 
             {/* 並び順を変えた直後。前の並びを出したまま裏で取り直している */}

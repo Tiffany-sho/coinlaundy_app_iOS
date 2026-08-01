@@ -61,6 +61,14 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        /*
+          タブの切り替えを左右へ滑らせる。
+          ⚠️ **既定は "none"（瞬間で入れ替わる）。** 明示しないと動かない。
+          ⚠️ 使える値は "none" | "fade" | "shift" の 3 つだけで、
+             Stack のような "slide_from_right" は**受け付けない**（型エラーになる）。
+             左右に滑らせたいなら "shift" が唯一の選択肢。
+        */
+        animation: "shift",
         tabBarActiveTintColor: color.teal,
         tabBarInactiveTintColor: color.textFaint,
         /* ⚠️ ラベルは必ず出す。アイコンだけだと「水滴＝店舗」「箱＝管理」が伝わらない。

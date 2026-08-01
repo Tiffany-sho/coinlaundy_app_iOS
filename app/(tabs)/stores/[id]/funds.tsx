@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
+import { Appear } from "@/components/common/Appear";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -139,6 +140,7 @@ export default function StoreFunds() {
 
   return (
     <Screen>
+      {/* ⚠️ ヘッダは動かさない。戻るボタンが遅れて現れると押しそこねる */}
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerButton}>
           <Ionicons name="chevron-back" size={24} color={color.teal} />
@@ -165,44 +167,58 @@ export default function StoreFunds() {
             tintColor={color.teal}
           />
         }
+        /*
+          ⚠️ **Appear を使ってよいのはこのヘッダの中の静的な塊だけ。**
+             renderItem（明細行）に付けるとセルが使い回されるので、
+             スクロールのたびに古い行が「現れ直す」ように見える。
+          ⚠️ この画面には onLayout で位置を測っている View が無いので素直に包める。
+             全体版（revenue.tsx）は売上履歴の見出しの y を測っているので、
+             そちらは測る View を外側にしてある。
+        */
         ListHeaderComponent={
           <View>
             {/*
               全体版と同じカード・同じ見出し。店舗が固定なので下段は「集金回数」だけ。
               ⚠️ 見出しに店舗名を混ぜない。どの店舗かは上のヘッダ（「◯◯店の収益」）で分かる
             */}
-            <TotalRevenueCard
-              total={summary?.total ?? 0}
-              stats={[
-                {
-                  label: "集金回数",
-                  value: (summary?.count ?? 0) > 0 ? `${summary.count}回` : "—",
-                },
-              ]}
-              firstDate={summary?.firstDate ?? null}
-              lastDate={summary?.lastDate ?? null}
-              isLoading={revenue.isLoading && !revenue.data}
-            />
+            <Appear index={0}>
+              <TotalRevenueCard
+                total={summary?.total ?? 0}
+                stats={[
+                  {
+                    label: "集金回数",
+                    value: (summary?.count ?? 0) > 0 ? `${summary.count}回` : "—",
+                  },
+                ]}
+                firstDate={summary?.firstDate ?? null}
+                lastDate={summary?.lastDate ?? null}
+                isLoading={revenue.isLoading && !revenue.data}
+              />
+            </Appear>
 
-            <StoreChartTabs
-              storeRevenue={storeRevenue}
-              revenueLoading={revenue.isLoading && !revenue.data}
-              points={points}
-            />
+            <Appear index={1}>
+              <StoreChartTabs
+                storeRevenue={storeRevenue}
+                revenueLoading={revenue.isLoading && !revenue.data}
+                points={points}
+              />
+            </Appear>
 
-            <Text style={styles.sectionTitle}>売上履歴</Text>
+            <Appear index={2}>
+              <Text style={styles.sectionTitle}>売上履歴</Text>
 
-            <HistoryControls
-              sortField={sortField}
-              sortDirection={sortDirection}
-              onSortChange={(field, next) => {
-                setSortField(field);
-                setSortDirection(next);
-              }}
-              collecter={collecter}
-              collecterOptions={collecterOptions}
-              onCollecterChange={setCollecter}
-            />
+              <HistoryControls
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onSortChange={(field, next) => {
+                  setSortField(field);
+                  setSortDirection(next);
+                }}
+                collecter={collecter}
+                collecterOptions={collecterOptions}
+                onCollecterChange={setCollecter}
+              />
+            </Appear>
 
             {/* 並び順を変えた直後。前の並びを出したまま裏で取り直している */}
             {list.isFetching && <Muted style={styles.loadingNote}>並び替えています…</Muted>}

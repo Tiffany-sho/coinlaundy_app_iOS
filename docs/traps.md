@@ -479,6 +479,55 @@
 - ⚠️ **デプロイ後は静的ルートが動的ルートより優先される**ので、`[id]` 側は壊れない
   （`funds/chart` が先例）。ただし **`id` がその名前になり得ないこと**は確かめること
 
+## 画面遷移と登場アニメーション
+
+2026-07-31 に足したもの。**どれも「書いたのに動かない」形で外れる**ので、
+動いていないときに見る場所を残しておく。
+
+- ⚠️ **ルートの `Stack` の `screenOptions` は入れ子の `Stack` に降りてこない。**
+  `app/_layout.tsx` に `animation` を書いても、`app/(tabs)/stores/_layout.tsx` と
+  `manage/_layout.tsx` の中の遷移は**無アニメーションのまま**になる。
+  各 `_layout.tsx` に同じものを書くこと。エラーも警告も出ない
+- ⚠️ **`Tabs` の `animation` に `"slide_from_right"` は渡せない。** 受け付けるのは
+  **`"none" | "fade" | "shift"` の 3 つだけ**（`TabAnimationName`）。
+  **既定は `"none"`** なので、明示するまでタブは瞬間で入れ替わる。
+  左右に滑らせたいなら `"shift"` が唯一の選択肢
+- ⚠️ **iOS の native-stack は既定でもスライドするので「効いている」ように見える。**
+  Android と web は既定が別物なので、明示しないと**同じ操作の見え方が端末で変わる**。
+  ブラウザ確認だけでは気づけない
+- ⚠️ **仮想化リストの行に登場アニメーションを付けない。** FlashList / FlatList の
+  セルは使い回されるので、**スクロールするたびに古い行が「新しく現れ直す」**。
+  付けてよいのは `ListHeaderComponent` の中と、リストの外に置いた静的な塊だけ
+  （`app/(tabs)/stores/index.tsx` の検索・絞り込み、`revenue.tsx` のヘッダ）
+- ⚠️ **`onLayout` で位置を測っている View を包まない。** `layout.y` は
+  **親からの相対位置**なので、包むと親が `Appear` になって **`y` がほぼ 0 になる。**
+  `revenue.tsx` はこれで壊れた（並び替えのたびに履歴の頭ではなく**月別売上のあたり**へ
+  飛ぶ）。**測る View を外側、`Appear` を内側**にすること:
+
+  ```tsx
+  // ✗ y が 0 になる
+  <Appear index={3}><View onLayout={onHistoryLayout}>…</View></Appear>
+  // ✓ 親が元のままなので y が変わらない
+  <View onLayout={onHistoryLayout}><Appear index={3}>…</Appear></View>
+  ```
+
+  ⚠️ **「`transform` はレイアウトを動かさないから安全」は誤り。** それは本当だが、
+  **包むこと自体が親を変える**のは別の話で、こちらが原因になる
+- ⚠️ **`Appear` は条件分岐の外側に置く。** 中身が別のコンポーネントに切り替わる場所
+  （管理タブの在庫 / 設備）で内側に置くと、切り替えるたびに全カードが出直す。
+  外に置けば Appear 自身は残るので初回の 1 度しか動かない
+- ⚠️ **タブの画面は unmount されない**ので、タブを戻ってきても再生されない
+  （＝毎回ちらつかない）。これは狙った挙動。`useFocusEffect` で再生させ直さないこと
+- **`useNativeDriver: true` は web で警告を出すが動く。**
+  `Animated: useNativeDriver is not supported because the native animated module is
+  missing. Falling back to JS-based animation.` が出るだけで、JS 実装に落ちて動く。
+  実機ではネイティブ駆動になるので**この警告を理由に外さないこと**
+- **`react-native-reanimated` は入っているが 1 行も使っていない。** アニメーションは
+  RN コアの `Animated`（`toast.tsx` / `MonthlySalesCarousel.tsx` / `Appear.tsx`）で
+  揃えてある。⚠️ reanimated へ移ると **babel の worklets プラグインの設定が要る**
+  （`babel.config.js` が無い＝`babel-preset-expo` の自動検出に任せている状態）ので、
+  使い始めるなら先にそこを確かめること
+
 ## 検証
 
 - 型チェックは `npx tsc --noEmit`

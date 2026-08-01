@@ -22,6 +22,8 @@ export default function ManageLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: color.appBg },
+        /* ⚠️ ルートの Stack の screenOptions は入れ子の Stack には降りてこない */
+        animation: "slide_from_right",
       }}
     />
   );

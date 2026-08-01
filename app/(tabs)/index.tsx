@@ -9,6 +9,7 @@ import { useOutbox } from "@/offline/OutboxProvider";
 import { usePushPriming } from "@/push/usePushPriming";
 import { ApiError } from "@/api/client";
 import { GreetingHeader } from "@/components/home/GreetingHeader";
+import { Appear } from "@/components/common/Appear";
 import { MonthlySalesCarousel } from "@/components/home/MonthlySalesCarousel";
 import { QuickActions } from "@/components/home/QuickActions";
 import {
@@ -109,7 +110,10 @@ export default function Home() {
           />
         }
       >
-        <GreetingHeader username={username} schedule={bootstrap.data.collectSchedule} />
+        {/* ⚠️ 上から順に index を振る。飛ばすと出る順が入れ替わって不自然に見える */}
+        <Appear index={0}>
+          <GreetingHeader username={username} schedule={bootstrap.data.collectSchedule} />
+        </Appear>
 
         {outbox.items.length > 0 && (
           <Pressable onPress={() => outbox.flush()} style={styles.outboxBadge}>
@@ -122,20 +126,20 @@ export default function Home() {
         )}
 
         {/* ヒーローは月ごとに配色が変わる（Web と同じ）。横スワイプで過去の月へ */}
-        <View style={{ marginTop: spacing.lg }}>
+        <Appear index={1} style={{ marginTop: spacing.lg }}>
           <MonthlySalesCarousel
             data={monthly.data}
             isLoading={monthly.isLoading && !monthly.data}
             isError={Boolean(monthly.error)}
           />
-        </View>
+        </Appear>
 
         {/* ⚠️ 集金日のカウントダウンはヘッダー（日付の隣）へ移した。ここに戻さないこと */}
 
         {/* ⚠️ 今日の対応状況をクイックアクションより先に出す（2026-07-30）。
                Web は逆順だが、アプリでは「まず今日どうなっているか」を見て
                そのあと操作を選ぶ流れにしてある。Web に合わせ直さないこと */}
-        <View style={{ marginTop: spacing.xl }}>
+        <Appear index={2} style={{ marginTop: spacing.xl }}>
           <SectionHeading>今日の対応状況</SectionHeading>
           <View style={styles.statusRow}>
             {/*
@@ -168,14 +172,14 @@ export default function Home() {
               }
             />
           </View>
-        </View>
+        </Appear>
 
-        <View style={{ marginTop: spacing.xl }}>
+        <Appear index={3} style={{ marginTop: spacing.xl }}>
           <SectionHeading>クイックアクション</SectionHeading>
           <QuickActions myRole={bootstrap.data.organization.myRole} />
-        </View>
+        </Appear>
 
-        <View style={{ marginTop: spacing.xl }}>
+        <Appear index={4} style={{ marginTop: spacing.xl }}>
           <ListCard
             icon="time-outline"
             title="過去1ヶ月の集金記録"
@@ -215,7 +219,7 @@ export default function Home() {
               </>
             )}
           </ListCard>
-        </View>
+        </Appear>
       </ScrollView>
     </Screen>
   );

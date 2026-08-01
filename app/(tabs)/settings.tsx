@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useScrollToTop, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAnnouncements, useBootstrap } from "@/api/queries";
+import { Appear } from "@/components/common/Appear";
 import { useUnreadAnnouncementCount } from "@/components/settings/announcementsRead";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, ListCard, ListRow, Muted, Screen, Title } from "@/components/common/ui";
@@ -50,7 +51,10 @@ export default function Settings() {
           paddingBottom: spacing.xxl,
         }}
       >
-        <Title style={{ marginBottom: spacing.lg, fontSize: 22 }}>設定</Title>
+        {/* ⚠️ 上から順に index を振る。飛ばすと出る順が入れ替わって不自然に見える */}
+        <Appear index={0}>
+          <Title style={{ marginBottom: spacing.lg, fontSize: 22 }}>設定</Title>
+        </Appear>
 
         {/*
           アカウントはこのカード 1 枚だけにする。
@@ -58,34 +62,36 @@ export default function Settings() {
              2 か所に出していて役割が被っていた。増やし直さないこと。
              氏名・メール・権限はマイアカウント（app/settings/account/index.tsx）で見る。
         */}
-        <Pressable
-          onPress={() => router.push("/settings/account")}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.accountCard, pressed && { opacity: 0.7 }]}
-        >
-          <View style={styles.avatar}>
-            {data?.profile?.avatar_url ? (
-              <Image
-                source={{ uri: data.profile.avatar_url }}
-                style={{ width: "100%", height: "100%" }}
-                contentFit="cover"
-              />
-            ) : (
-              <Text style={styles.avatarInitial}>
-                {(data?.profile?.username ?? "?").charAt(0).toUpperCase()}
-              </Text>
-            )}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.avatarName}>{data?.profile?.username ?? "未設定"}</Text>
-            <Muted>
-              {data?.organization ? (ROLE_LABEL[data.organization.myRole] ?? "—") : "組織未所属"}
-            </Muted>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={color.cyan300} />
-        </Pressable>
+        <Appear index={1}>
+          <Pressable
+            onPress={() => router.push("/settings/account")}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.accountCard, pressed && { opacity: 0.7 }]}
+          >
+            <View style={styles.avatar}>
+              {data?.profile?.avatar_url ? (
+                <Image
+                  source={{ uri: data.profile.avatar_url }}
+                  style={{ width: "100%", height: "100%" }}
+                  contentFit="cover"
+                />
+              ) : (
+                <Text style={styles.avatarInitial}>
+                  {(data?.profile?.username ?? "?").charAt(0).toUpperCase()}
+                </Text>
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.avatarName}>{data?.profile?.username ?? "未設定"}</Text>
+              <Muted>
+                {data?.organization ? (ROLE_LABEL[data.organization.myRole] ?? "—") : "組織未所属"}
+              </Muted>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={color.cyan300} />
+          </Pressable>
+        </Appear>
 
-        <View style={{ marginTop: spacing.lg }}>
+        <Appear index={2} style={{ marginTop: spacing.lg }}>
           <ListCard icon="people-outline" title="組織">
             <InfoRow label="組織名" value={data?.organization?.name ?? "未所属"} />
             <LinkRow
@@ -103,9 +109,9 @@ export default function Settings() {
               last
             />
           </ListCard>
-        </View>
+        </Appear>
 
-        <View style={{ marginTop: spacing.lg }}>
+        <Appear index={3} style={{ marginTop: spacing.lg }}>
           <ListCard icon="notifications-outline" title="通知">
             <LinkRow
               label="通知の設定"
@@ -113,7 +119,7 @@ export default function Settings() {
               last
             />
           </ListCard>
-        </View>
+        </Appear>
 
         {/*
           プランの変更はアプリ内課金（App Store）でのみ行う。
@@ -123,7 +129,7 @@ export default function Settings() {
              価格を出してよいのは StoreKit の displayPrice を使うプラン画面だけで、
              ここには金額を書かないこと。
         */}
-        <View style={{ marginTop: spacing.lg }}>
+        <Appear index={4} style={{ marginTop: spacing.lg }}>
           <ListCard icon="card-outline" title="プラン">
             <InfoRow label="現在のプラン" value={PLAN_LABEL[data?.plan?.plan ?? ""] ?? "—"} />
             <InfoRow
@@ -138,7 +144,7 @@ export default function Settings() {
               last
             />
           </ListCard>
-        </View>
+        </Appear>
 
         {/*
           規約・プライバシーは**アプリ内のテキスト**を描く（app/settings/legal.tsx）。
@@ -155,7 +161,7 @@ export default function Settings() {
           ⚠️ 特商法（/tokushoho）は載せない。販売価格と決済条件を必ず書く性質の文書で、
              Web の当該ページは Stripe 決済（当方が販売者）を前提に書かれている。
         */}
-        <View style={{ marginTop: spacing.lg }}>
+        <Appear index={5} style={{ marginTop: spacing.lg }}>
           <ListCard icon="document-text-outline" title="その他">
             <LinkRow
               label="開発者からのお知らせ"
@@ -178,9 +184,9 @@ export default function Settings() {
               last
             />
           </ListCard>
-        </View>
+        </Appear>
 
-        <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
+        <Appear index={6} style={{ marginTop: spacing.xl, gap: spacing.md }}>
           <Button label="サインアウト" variant="ghost" onPress={onSignOut} />
           {/* App Store Guideline 5.1.1(v)：アプリ内から削除を開始できること */}
           <Button
@@ -188,7 +194,7 @@ export default function Settings() {
             variant="danger"
             onPress={() => router.push("/settings/delete-account")}
           />
-        </View>
+        </Appear>
 
         <Muted style={{ textAlign: "center", marginTop: spacing.xl }}>Collecie v1.0.0</Muted>
       </ScrollView>

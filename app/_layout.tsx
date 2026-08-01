@@ -55,6 +55,15 @@ export default function RootLayout() {
               screenOptions={{
                 headerShown: false,
                 contentStyle: { backgroundColor: color.appBg },
+                /*
+                  画面遷移は右からのスライド。
+                  ⚠️ **既定に任せない。** iOS の native-stack は既定でもスライドするが、
+                     Android と web では既定が別物（fade / なし）になり、
+                     **同じ操作の見え方が端末で変わる。** 明示しておけば揃う。
+                  ⚠️ 個別に上書きしている画面（集金モーダルの slide_from_bottom）は
+                     そちらが勝つ。ここを変えてもモーダルの出方は変わらない。
+                */
+                animation: "slide_from_right",
               }}
             >
               {/*

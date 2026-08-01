@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import { Appear } from "@/components/common/Appear";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useScrollToTop } from "expo-router";
@@ -193,7 +194,12 @@ export default function Stores() {
 
       {/* 検索欄はリストの外に置く。FlashList の ListHeaderComponent に入れると
           再描画のたびに作り直されて入力途中でフォーカスが外れる */}
-      <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
+      {/*
+        ⚠️ **登場アニメーションを付けてよいのはこの検索・絞り込みの塊だけ。**
+           一覧の行は FlashList のセルで使い回されるので、Appear を付けると
+           スクロールのたびに古い行が「現れ直す」ように見える（Appear のコメント参照）。
+      */}
+      <Appear index={0} style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
         <Title style={{ fontSize: 22 }}>店舗一覧</Title>
 
         {hasStores && (
@@ -254,7 +260,7 @@ export default function Stores() {
             )}
           </>
         )}
-      </View>
+      </Appear>
 
       <FlashList
         ref={listRef}
