@@ -334,35 +334,48 @@ Web 側でこれを除外すれば WebView に戻す選択肢も復活する。
 - `laundry_state` は `laundryId` で店舗に紐づき、`laundryName` を自分で持っている
   （通知の文面などで店舗名が要るだけなら `laundry_store` を引かなくてよい）
 
-## 設備（`machines`）の id は安定していない
+## 設備（`machines`）の id
 
-⚠️ **`laundry_store.machines[].id` は店舗を保存するたびに全部振り直される。**
-Web の `useStoreSubmit.js` がこう書いているため:
+`collect_funds.fundsArray[].id` は集金を登録した**時点の設備 id を焼き込む**ので、
+設備の id が動くと過去の集金との対応が切れる。
 
-```js
-const newMachine = state.machines
-  .filter((machine) => machine.num > 0)
-  .map((machine) => ({ ...machine, id: crypto.randomUUID() }));   // ⚠️ 既存の id を捨てている
-```
+### 2026-08-02 に塞いだ穴
 
-`collect_funds.fundsArray[].id` は**登録した時点の id を焼き込む**ので、
-**店舗を 1 回編集しただけで過去の集金と id が食い違う。**
+⚠️ **それまで `laundry_store.machines[].id` は店舗を保存するたびに全部振り直されていた。**
+Web の `useStoreSubmit.js` が `{ ...machine, id: crypto.randomUUID() }` と書いていたため。
+**店舗を 1 回編集しただけで過去の集金と id が食い違い**、機器別の売上内訳
+（`GET /funds/summary/machines`）が**同じ台を「編集した回数」だけ別の行に割っていた。**
+エラーは出ず棒が増えるだけなので気づきにくい。
 
-- ⚠️ **設備をまたいだ集計は必ず「名前」で束ねる。`id` で束ねない。**
-  2026-08-02 に機器別の売上内訳（`GET /funds/summary/machines`）がこれで壊れ、
-  **同じ台が店舗を編集した回数だけ別の行に割れて**いた。
-  エラーは出ず、棒が増えるだけなので気づきにくい
+**サーバ側で id を引き継ぐようにした**（`laundryStore/action.js` の `stableMachineIds`）。
+
+- ⚠️ **id を決めるのはサーバ。クライアントが送ってきた id をそのまま保存しない。**
+  Web とアプリの 2 経路あるので、クライアント側だけ直すと片方が漏れる
+- 引き継ぐ順は **① 同じ名前の設備の id → ② クライアントが送った id（改名の救済）
+  → ③ 新規発行**。⚠️ **同じ id を 2 つに配らない**（同名 2 つ、
+  「A を B に改名 + 新しい A を追加」で衝突しうる。使った id は取り除き、
+  衝突したら発行し直す）
+- ⚠️ **`stableMachineIds` を export しない。** `"use server"` のモジュールは
+  **async 関数しか export できず**、ビルドが落ちる（`docs/traps.md` の該当節）
+
+### それでも集計は「名前」で束ねる
+
+⚠️ **過去のデータは直らない。** 既に記録された `fundsArray[].id` は振り直された
+あとの id なので、**設備をまたいだ集計は今後も名前で束ねること**（`id` で束ねない）。
+id が安定したのは 2026-08-02 以降に保存された分だけ。
+
 - ⚠️ 引き換えに **設備を改名すると別の台として並ぶ**（`fundsArray[].name` も
   登録時の名前を焼き込むため。`cashless[].name` と同じ理屈）。
-  ⚠️ **同じ名前の設備を 2 つ登録すると 1 本にまとまる。**どちらも
-  id 側で救えない以上、受け入れている挙動
-- ⚠️ **アプリ側（`StoreForm.tsx` の `toMachineRows`）は既存の id を温存している。**
-  振り直すのは Web だけ。「アプリで直せば済む」話ではない
-- **設備の状態（`laundry_state.machines`）は影響を受けない。**
-  `updateStore` が**名前**で差分を取って（`addMachine` / `deleteMachine`）
-  既存の行をそのまま残すので、故障中のフラグは id が変わっても消えない。
-  ⚠️ その代わり `laundry_state.machines[].id` は
-  **`laundry_store.machines[].id` と一致しなくなる。**2 つを join しないこと
+  ⚠️ **同じ名前の設備を 2 つ登録すると 1 本にまとまる**
+- ⚠️ **アプリ側（`StoreForm.tsx` の `toMachineRows`）は元から id を温存していた。**
+  振り直していたのは Web だけ
+
+### 設備の状態（`laundry_state.machines`）は別系統
+
+`updateStore` が**名前**で差分を取って（`addMachine` / `deleteMachine`）既存の行を
+そのまま残すので、故障中のフラグは id が変わっても消えない。
+⚠️ その代わり `laundry_state.machines[].id` は
+**`laundry_store.machines[].id` と一致しない。**2 つを join しないこと。
 
 ## 集計の定義
 
