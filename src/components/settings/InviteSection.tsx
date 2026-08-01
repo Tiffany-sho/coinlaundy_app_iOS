@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useDeleteInvitation, useInviteMember } from "@/api/queries";
+import { useBootstrap, useDeleteInvitation, useInviteMember } from "@/api/queries";
 import { Button } from "@/components/common/ui";
 import { Field, FormError, Input } from "@/components/common/form";
 import { useDialog } from "@/components/common/dialog";
@@ -9,12 +10,30 @@ import { errorText, INVITABLE_ROLES, ROLE_INFO } from "@/components/settings/org
 import { color, font, radius, spacing } from "@/theme/tokens";
 import type { Role } from "@/api/types";
 
-/** メンバーの招待。Web の OrganizationSettings の招待フォーム */
+/**
+ * メンバーの招待。Web の OrganizationSettings の招待フォーム。
+ *
+ * ⚠️ **free では招待できない**（プラン表で「メンバーの招待」を Pro 以上の機能として
+ *    出しているため）。ここでフォームを隠すのは**表示だけの話**で、判定の正は
+ *    Server Action（`memberCapacityError`）。**アプリ側の分岐を認可の代わりにしないこと。**
+ *
+ * ⚠️ **サーバは 3 か所で見ている**（招待の作成 / 招待の受諾 / 参加パスワードでの参加）。
+ *    ここを消しても参加パスワードの経路は残るので、UI だけで塞いだ気にならないこと。
+ */
 export function InviteSection() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("collecter");
   const [notice, setNotice] = useState<string | null>(null);
   const invite = useInviteMember();
+  const router = useRouter();
+  const bootstrap = useBootstrap();
+
+  /*
+    ⚠️ プランが取れていない間（初回起動など）は free 扱いにしない。
+       招待できる人にアップグレードの案内を一瞬出すことになる。
+  */
+  const plan = bootstrap.data?.plan?.plan;
+  if (plan === "free") return <InviteLocked onOpenPlan={() => router.push("/settings/plan")} />;
 
   function onInvite() {
     setNotice(null);
@@ -88,6 +107,28 @@ export function InviteSection() {
   );
 }
 
+/**
+ * free のときに招待フォームの代わりに出す案内。
+ *
+ * ⚠️ **「Web サイトで契約できます」等の外部購入への言及を入れないこと**
+ *    （App Store Guideline 3.1.3(a)）。行き先はアプリ内のプラン画面だけ。
+ */
+function InviteLocked({ onOpenPlan }: { onOpenPlan: () => void }) {
+  return (
+    <View style={styles.lockedBox}>
+      <View style={styles.lockedHead}>
+        <Ionicons name="people-outline" size={17} color={color.tealDeeper} />
+        <Text style={styles.lockedTitle}>メンバーを招待</Text>
+      </View>
+      <Text style={styles.lockedText}>
+        メンバーの招待は Pro プラン以上でご利用いただけます。
+        プランを変更すると、集金担当者や閲覧者を追加して店舗の情報を共有できます。
+      </Text>
+      <Button label="プランを見る" variant="gradient" icon="arrow-forward" onPress={onOpenPlan} />
+    </View>
+  );
+}
+
 /** 保留中の招待 1 件 */
 export function PendingInvitation({
   id,
@@ -156,6 +197,19 @@ const styles = StyleSheet.create({
     color: color.tealDeeper,
     marginBottom: spacing.lg,
   },
+
+  lockedBox: {
+    backgroundColor: color.tealPale,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: color.cyan100,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  lockedHead: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  /* ⚠️ inviteTitle を流用しないこと。あちらは marginBottom を持っていて gap と二重になる */
+  lockedTitle: { fontFamily: font.uiBold, fontSize: 14, color: color.tealDeeper },
+  lockedText: { fontFamily: font.ui, fontSize: 13, lineHeight: 20, color: color.textMuted },
   roleChoices: { flexDirection: "row", gap: spacing.sm },
   roleChoice: {
     flex: 1,
