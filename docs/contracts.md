@@ -334,6 +334,36 @@ Web 側でこれを除外すれば WebView に戻す選択肢も復活する。
 - `laundry_state` は `laundryId` で店舗に紐づき、`laundryName` を自分で持っている
   （通知の文面などで店舗名が要るだけなら `laundry_store` を引かなくてよい）
 
+## 設備（`machines`）の id は安定していない
+
+⚠️ **`laundry_store.machines[].id` は店舗を保存するたびに全部振り直される。**
+Web の `useStoreSubmit.js` がこう書いているため:
+
+```js
+const newMachine = state.machines
+  .filter((machine) => machine.num > 0)
+  .map((machine) => ({ ...machine, id: crypto.randomUUID() }));   // ⚠️ 既存の id を捨てている
+```
+
+`collect_funds.fundsArray[].id` は**登録した時点の id を焼き込む**ので、
+**店舗を 1 回編集しただけで過去の集金と id が食い違う。**
+
+- ⚠️ **設備をまたいだ集計は必ず「名前」で束ねる。`id` で束ねない。**
+  2026-08-02 に機器別の売上内訳（`GET /funds/summary/machines`）がこれで壊れ、
+  **同じ台が店舗を編集した回数だけ別の行に割れて**いた。
+  エラーは出ず、棒が増えるだけなので気づきにくい
+- ⚠️ 引き換えに **設備を改名すると別の台として並ぶ**（`fundsArray[].name` も
+  登録時の名前を焼き込むため。`cashless[].name` と同じ理屈）。
+  ⚠️ **同じ名前の設備を 2 つ登録すると 1 本にまとまる。**どちらも
+  id 側で救えない以上、受け入れている挙動
+- ⚠️ **アプリ側（`StoreForm.tsx` の `toMachineRows`）は既存の id を温存している。**
+  振り直すのは Web だけ。「アプリで直せば済む」話ではない
+- **設備の状態（`laundry_state.machines`）は影響を受けない。**
+  `updateStore` が**名前**で差分を取って（`addMachine` / `deleteMachine`）
+  既存の行をそのまま残すので、故障中のフラグは id が変わっても消えない。
+  ⚠️ その代わり `laundry_state.machines[].id` は
+  **`laundry_store.machines[].id` と一致しなくなる。**2 つを join しないこと
+
 ## 集計の定義
 
 - ホームの「1 回あたり平均」= **月の集金金額 ÷ 集金回数**。`storeCount`（その月に回った店舗数）で割らない。本家 `SalesCardClient.jsx` の `FundsDisplay` と同じ式
