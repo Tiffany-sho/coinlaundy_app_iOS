@@ -141,7 +141,7 @@ export default function Setup() {
               variant="ghost"
               onPress={async () => {
                 await signOut();
-                router.replace("/welcome");
+                router.replace("/login");
               }}
               style={{ marginTop: spacing.lg }}
             />

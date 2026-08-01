@@ -206,7 +206,7 @@ export default function JoinOrganization() {
           <View style={styles.card}>
             <Button label="サインアウト" variant="ghost" onPress={async () => {
               await signOut();
-              router.replace("/welcome");
+              router.replace("/login");
             }} />
           </View>
         </ScrollView>

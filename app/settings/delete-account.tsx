@@ -62,7 +62,7 @@ export default function DeleteAccount() {
     try {
       await apiFetch("/account", { method: "DELETE" });
       await signOut();
-      router.replace("/welcome");
+      router.replace("/login");
     } catch (e) {
       setError(e instanceof Error ? e.message : "削除に失敗しました");
     } finally {

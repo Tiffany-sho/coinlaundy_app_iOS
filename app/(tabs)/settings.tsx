@@ -38,7 +38,7 @@ export default function Settings() {
 
   async function onSignOut() {
     await signOut();
-    router.replace("/welcome");
+    router.replace("/login");
   }
 
   return (

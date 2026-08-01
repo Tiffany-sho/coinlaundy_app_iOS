@@ -8,7 +8,7 @@ import { color } from "@/theme/tokens";
 /**
  * 起動時の振り分け。設計図 5 章の起動時フローと 1 対 1 で対応させる。
  *
- *   セッションなし            → 未ログイン画面（そこからログイン / 新規登録）
+ *   セッションなし            → ログイン画面（そこから新規登録へ）
  *   profiles 未登録          → 初回セットアップ
  *   組織未所属               → 組織参加
  *   それ以外                 → ホームタブ
@@ -21,7 +21,10 @@ export default function Index() {
   const { data, isLoading, isFetching, error } = useBootstrap(Boolean(session));
 
   if (isRestoring) return <Splash />;
-  if (!session) return <Redirect href="/welcome" />;
+  /* ⚠️ ここがアプリの起点。2026-08-01 に未ログイン画面（/welcome）を廃止した。
+        「ダウンロードした時点で説明は済んでいる」ため、1 タップ挟む価値が無かった。
+        新規登録はログイン画面の中の導線から入る */
+  if (!session) return <Redirect href="/login" />;
 
   // キャッシュがあれば data が入っているので待たされない
   if (isLoading && !data) return <Splash />;

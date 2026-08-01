@@ -15,13 +15,31 @@ import { Ionicons } from "@expo/vector-icons";
 import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
 
 /**
+ * 入力欄が置かれている面。
+ *
+ * - `default` … 白いカードの中か `color.appBg` の上。アプリのほぼ全画面がこれ
+ * - `plain`   … **真っ白な画面に直接**置く（`app/login.tsx` / `app/signup.tsx`）。
+ *   ⚠️ 既定のままだと白い下地 + `divider`（#F1F5F9）の枠なので、**白の上では
+ *      枠も下地も見えず、入力欄があること自体が分からない。** 薄い灰色を敷いて
+ *      枠を `color.border` まで濃くする。
+ */
+export type Tone = "default" | "plain";
+
+/**
  * 入力欄。Web の Chakra Input と同じ見え方にする。
  *   既定  : 1px solid var(--divider)
  *   focus : cyan.400 の枠 + rgba(6,182,212,0.15) のリング
  * リングは RN に box-shadow がないので枠線を 2px にして代用している。
  */
-export function Input({ style, onFocus, onBlur, ...props }: TextInputProps) {
+export function Input({
+  style,
+  onFocus,
+  onBlur,
+  tone = "default",
+  ...props
+}: TextInputProps & { tone?: Tone }) {
   const [focused, setFocused] = useState(false);
+  const plain = tone === "plain";
   return (
     <TextInput
       {...props}
@@ -34,7 +52,12 @@ export function Input({ style, onFocus, onBlur, ...props }: TextInputProps) {
         onBlur?.(e);
       }}
       placeholderTextColor={color.textFaint}
-      style={[styles.input, focused && styles.inputFocused, style]}
+      style={[
+        styles.input,
+        plain && styles.inputPlain,
+        focused && (plain ? styles.inputFocusedPlain : styles.inputFocused),
+        style,
+      ]}
     />
   );
 }
@@ -129,10 +152,12 @@ export function Checkbox({
   checked,
   onChange,
   children,
+  tone = "default",
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   children: React.ReactNode;
+  tone?: Tone;
 }) {
   return (
     <Pressable
@@ -142,7 +167,14 @@ export function Checkbox({
       style={styles.checkboxRow}
       hitSlop={6}
     >
-      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+      {/* ⚠️ 既定の枠は cyan300。白地に直接置くと 1.4:1 で見えないので plain では濃くする */}
+      <View
+        style={[
+          styles.checkbox,
+          tone === "plain" && styles.checkboxPlain,
+          checked && styles.checkboxChecked,
+        ]}
+      >
         {checked && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
       </View>
       <View style={{ flex: 1 }}>{children}</View>
@@ -324,6 +356,16 @@ const styles = StyleSheet.create({
     borderColor: color.divider,
   },
   inputFocused: { borderWidth: 2, borderColor: color.cyan400, paddingHorizontal: spacing.lg - 1 },
+  /* 真っ白な画面に直接置く用。下地と枠の両方で形を示す（白 + 白では境目が出ない）。
+     ⚠️ 枠は border（#E2E8F0）では白に対して 1.2:1 で見えない。textFaint まで濃くする */
+  inputPlain: { backgroundColor: color.divider, borderColor: color.textFaint },
+  /* ⚠️ フォーカス枠は既定の cyan400（白に対して 1.8:1）だと**平常時の枠より薄くなり、
+        フォーカスすると枠が消えたように見える。** plain では teal まで濃くする */
+  inputFocusedPlain: {
+    borderWidth: 2,
+    borderColor: color.teal,
+    paddingHorizontal: spacing.lg - 1,
+  },
   fieldLabel: {
     fontFamily: font.uiBold,
     fontSize: 13,
@@ -369,6 +411,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   checkboxChecked: { backgroundColor: color.teal, borderColor: color.teal },
+  checkboxPlain: { borderColor: color.textFaint },
 
   /* セレクト。閉じているときは Input と同じ見え方に揃える */
   selectField: {

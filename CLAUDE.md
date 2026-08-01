@@ -73,6 +73,7 @@
 | ディレクトリ | 対応する画面 | 中身の例 |
 |---|---|---|
 | `common/` | どこからでも使う汎用部品 | `ui` `form` `dialog` `toast` `SegmentedTabs` `CalendarPicker` |
+| `auth/` | `app/login.tsx` `signup.tsx` | `AuthScreen` `AuthMessage` `PasswordField` |
 | `home/` | `app/(tabs)/index.tsx` | `MonthlySalesCarousel` `QuickActions` `useCardSwipe` |
 | `stores/` | `app/(tabs)/stores/` | `StoreForm` `StoreImagePicker` `MachineListSheet` |
 | `revenue/` | `app/(tabs)/revenue.tsx` | `charts` `MonthlyRevenueCard` `MonthRangePicker` |
@@ -187,6 +188,29 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
   モーダル画面でトーストが見えない / 画像アップロードが失敗（Vercel の 4.5MB 上限）/
   店舗別収益の履歴が 2 か月しか出ない（`useFundList` の罠）/ ステータスバーが白のまま残る。
   **原因と直し方はすべて `docs/traps.md` に節を立てて書いた**
+- **未ログイン画面（`app/welcome.tsx`）を廃止し、ログイン画面を起点にした**（2026-08-01）。
+  「App Store で選んで入れた時点で説明は済んでいる」ため。紹介 3 枚のコラージュが
+  **差し替え前提のモック画像のまま**で、出すなら実画面のスクショを作る作業が先に
+  発生することも決め手になった。詳細と復活方法は `docs/traps.md` の該当節。
+  - ⚠️ **`/welcome` はサインアウト後の着地点でもあった**（5 か所）。全部 `/login` に向けた
+  - ⚠️ **ログイン画面に「戻る」は無い**（起点なので戻り先が無い）
+  - ⚠️ **審査でデモアカウントの重みが増した。** 起動して最初に出るのが素のログイン壁
+- **ログイン・新規登録をカード無し・白基調にした**（2026-07-31）。それまでは薄い水色の地に
+  `GradientHeaderCard` を 1 枚置く形。今は**純白の紙にフォームを直接置く**
+  （`src/components/auth/AuthScreen.tsx`）。
+  - ⚠️ **カードに戻さない。teal / cyan を面で使わない。** 使ってよいのは主ボタン
+    （`variant="gradient"`）とリンク・フォーカス枠などの**線と点だけ**
+  - ⚠️ **入力欄は `tone="plain"` を指定する。** 既定は白い下地 + `divider`（#F1F5F9）の枠で、
+    **白の上では枠も下地も見えず入力欄だと分からない**（枠は 1.2:1）。
+    plain は薄い灰色を敷き、枠を `textFaint` まで濃くする
+  - ⚠️ **フォーカス枠も plain 専用のものを使う。** 既定の `cyan400` は白に対して 1.8:1 で、
+    **平常時の枠より薄いのでフォーカスすると枠が消えたように見える**
+  - ⚠️ **`color.divider`（#F1F5F9）を白地の区切り線に使わない**（1.07:1 で見えない）。
+    白地に直接引く線は `color.border`（#E2E8F0、2026-07-31 に追加）
+  - ⚠️ **アプリに濃色の面はもう 1 つも無い**（2026-08-01 に未ログイン画面を廃止したため）。
+    `AuthBackground` / `onDark.*` / `Button variant="light"` も一緒に消してある
+  - ⚠️ `app/join-organization.tsx` は**ログイン後**の画面なので `GradientHeaderCard`
+    のまま。ここを揃えに行かないこと
 - **2026-07-31 のぶんも実機で確認済み**（3 件とも通した）
   - **月別売上の店舗別内訳を折りたたみ式にした**（棒を押す / 見出しの開閉ボタンで開く）
   - **店舗一覧を都道府県で絞り込めるようにした。** 店名にフリガナが無く

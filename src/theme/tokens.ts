@@ -14,6 +14,12 @@ export const color = {
   textMuted: "#64748B",
   textFaint: "#94A3B8",
   divider: "#F1F5F9",
+  /**
+   * 真っ白な画面の上で「枠」として見える最も薄い線（slate.200）。Web も 4 箇所で使っている。
+   * ⚠️ `divider`（#F1F5F9）は**白の上に置くと 1.07:1 で見えない。** カードの中の
+   *    区切り線専用。白地に直接置くフォームの枠にはこちらを使うこと。
+   */
+  border: "#E2E8F0",
 
   // Web が Chakra / Tailwind のパレットで使っている色。値を合わせてある
   cyan50: "#ECFEFF", // 選択中のラジオカード背景
