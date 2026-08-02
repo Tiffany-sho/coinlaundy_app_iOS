@@ -73,6 +73,9 @@ export function RegionFilter({
                     label={option.label}
                     count={option.count}
                     selected={selected}
+                    /* ⚠️ 上の SegmentedTabs と同じ列の絞り込みなので大きさを揃える。
+                          既定（34pt）のままだとタブ（40pt）より一回り小さく見える */
+                    size="lg"
                     // もう一度押したら解除。タブ側に「すべて」があるので迷子にならない
                     onPress={() => onChange(selected ? null : option.value)}
                   />
