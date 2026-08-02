@@ -108,8 +108,12 @@ export default function FundDetailScreen() {
    *    サーバがキャッシュレスを**もう一度足して二重計上**になる。
    */
   const [totalDraft, setTotalDraft] = useState("");
-  /** 編集中のキャッシュレス。methodId → 数字だけの文字列 */
+  /** 集金レベルの編集中キャッシュレス。methodId → 数字だけの文字列 */
   const [cashlessDraft, setCashlessDraft] = useState<Record<string, string>>({});
+  /** 機器ごとの編集中キャッシュレス。entryId → methodId → 数字だけの文字列 */
+  const [entryCashlessDraft, setEntryCashlessDraft] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   /**
@@ -121,13 +125,6 @@ export default function FundDetailScreen() {
   const entries: FundEntry[] = detail.data?.fundsArray ?? [];
   const hasEntries = entries.length > 0;
 
-  /*
-    ⚠️ **記録の形をそのまま保つ。** 機器ごとに内訳を持つ集金（機種別入力）と、
-       集金レベルにだけ持つ集金（合計入力・007 時代の記録）が混在している。
-       編集で形を変えると、サーバが「機器ぶんが正」と判断して**集金レベルの
-       内訳を空で上書きし、キャッシュレスの金額が消える。**
-  */
-  const hasMachineCashless = entries.some((e) => Array.isArray(e.cashless) && e.cashless.length > 0);
   /** この集金の合計キャッシュレス。⚠️ 古い応答では undefined */
   const recordedCashless = detail.data?.cashless ?? [];
   const recordedCashlessSum = recordedCashless.reduce((sum, e) => sum + (e.amount ?? 0), 0);
@@ -136,17 +133,49 @@ export default function FundDetailScreen() {
   const store = useStore(detail.data?.laundryId ?? undefined);
   const methodRows = buildMethodRows(recordedCashless, activePaymentMethods(store.data));
 
+  /*
+    ⚠️ **記録の形をそのまま保つ。** キャッシュレスの置き場所は 2 通りある。
+
+      機器ごと（機種別入力）      … fundsArray[].cashless が正
+      集金レベル（合計入力・007） … cashless 列が正
+
+    編集で形を変えると、サーバが「機器ぶんが正」と判断して**集金レベルの
+    内訳を空で上書きし、キャッシュレスの金額が消える。**
+    そこで「設備の明細があり、かつ 007 型でない」ときだけ機器ごとに編集する。
+    ⚠️ **設備の明細があってキャッシュレスがまだ無い集金も機器ごと側。**
+       新しく入れるぶんは機器に紐づくのが自然で、登録画面ともそろう。
+  */
+  const hasMachineCashless = entries.some((e) => Array.isArray(e.cashless) && e.cashless.length > 0);
+  const isLegacyCashless = !hasMachineCashless && recordedCashless.length > 0;
+  const perMachineMode = hasEntries && !isLegacyCashless;
+
   /**
    * 編集中の明細。
    * ⚠️ funds は「円」ではなく硬貨の枚数。金額にするときは必ず ×100 する
    *    （本家 MachineAndFundsList.jsx の submitMachineData と同じ）。
    */
-  const draftEntries: FundEntry[] = entries.map((entry) => ({
-    ...entry,
-    funds: toInt(coinDraft[entry.id]),
-  }));
+  const draftEntries: FundEntry[] = entries.map((entry) => {
+    const base = { ...entry, funds: toInt(coinDraft[entry.id]) };
+    if (!perMachineMode) return base;
+    const amounts = entryCashlessDraft[entry.id] ?? {};
+    /*
+      ⚠️ **キーは必ず載せる（空配列でも）。** サーバは `cashless` キーの有無で
+         「機器ごとの入力がある集金か」を判断し、無い行は既存の内訳を
+         引き継ぐ。0 件にしたつもりが元に戻る、という形で効いてくる。
+    */
+    return {
+      ...base,
+      cashless: methodRows
+        .map((method) => ({
+          methodId: method.methodId,
+          name: method.name,
+          amount: toInt(amounts[method.methodId]),
+        }))
+        .filter((item) => item.amount > 0),
+    };
+  });
 
-  /** 編集中のキャッシュレス。⚠️ 0 円は落とす（サーバも同じ扱い） */
+  /** 集金レベルの編集中キャッシュレス。⚠️ 0 円は落とす（サーバも同じ扱い） */
   const draftCashless = methodRows
     .map((method) => ({ methodId: method.methodId, amount: toInt(cashlessDraft[method.methodId]) }))
     .filter((entry) => entry.amount > 0);
@@ -160,8 +189,8 @@ export default function FundDetailScreen() {
   */
   const displayTotal = hasEntries
     ? calcDisplayTotal(editing ? draftEntries : entries) +
-      // 機器ごとに持たない集金（007 時代の記録）は集金レベルのぶんを足す
-      (hasMachineCashless ? 0 : editing ? draftCashlessSum : recordedCashlessSum)
+      // 007 時代の記録は集金レベルにしか内訳が無いので、そちらを足す
+      (perMachineMode ? 0 : editing ? draftCashlessSum : recordedCashlessSum)
     : editing
       ? toInt(totalDraft) + draftCashlessSum
       : (recordTotal ?? 0);
@@ -216,6 +245,16 @@ export default function FundDetailScreen() {
         recordedCashless.map((entry) => [String(entry.methodId), String(entry.amount ?? 0)])
       )
     );
+    setEntryCashlessDraft(
+      Object.fromEntries(
+        entries.map((entry) => [
+          entry.id,
+          Object.fromEntries(
+            (entry.cashless ?? []).map((item) => [String(item.methodId), String(item.amount ?? 0)])
+          ),
+        ])
+      )
+    );
     setErrorMsg(null);
     setEditing(true);
   }
@@ -240,7 +279,7 @@ export default function FundDetailScreen() {
       ? {
           fundsArray: draftEntries,
           totalFunds: calcTotalFunds(draftEntries),
-          ...(hasMachineCashless ? {} : { cashless: draftCashless }),
+          ...(perMachineMode ? {} : { cashless: draftCashless }),
         }
       : { fundsArray: [], totalFunds: toInt(totalDraft), cashless: draftCashless };
 
@@ -369,6 +408,19 @@ export default function FundDetailScreen() {
               onCoinChange={(entryId, digits) =>
                 setCoinDraft((prev) => ({ ...prev, [entryId]: digits }))
               }
+              /*
+                ⚠️ **007 時代の記録では空を渡す。** 機器の行に欄を出すと、
+                   保存時にサーバが「機器ぶんが正」と判断して**集金レベルの
+                   内訳を空で上書きし、キャッシュレスの金額が消える。**
+              */
+              methods={perMachineMode ? methodRows : []}
+              cashlessDraft={entryCashlessDraft}
+              onCashlessChange={(entryId, methodId, digits) =>
+                setEntryCashlessDraft((prev) => ({
+                  ...prev,
+                  [entryId]: { ...(prev[entryId] ?? {}), [methodId]: digits },
+                }))
+              }
               displayTotal={displayTotal}
             />
           ) : (
@@ -376,14 +428,12 @@ export default function FundDetailScreen() {
           )}
 
           {/*
-            キャッシュレスの内訳。
-            ⚠️ **機器ごとに持つ集金では出さない。** そちらは設備ごとの行に
-               含まれており、ここにも出すと同じ金額が 2 か所に見える。
-               ⚠️ ただし**編集はまだ設備側にも無い**ので、機器ごとの金額を
-               直したいときは登録し直してもらうことになる（既知の制限）。
+            集金レベルのキャッシュレスの内訳。
+            ⚠️ **機器ごとに扱う集金では出さない。** そちらは設備ごとの行に
+               入力欄があり、ここにも出すと同じ金額を 2 か所に入れられてしまう。
             ⚠️ **記録が空でも編集中は出す。** あとからキャッシュレスを足せるようにするため。
           */}
-          {!hasMachineCashless && (editing || recordedCashless.length > 0) && (
+          {!perMachineMode && (editing || recordedCashless.length > 0) && (
             <>
               <Divider />
               <SectionHead icon="card-outline" label="現金以外の内訳" />

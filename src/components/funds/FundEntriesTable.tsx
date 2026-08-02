@@ -2,6 +2,7 @@ import { StyleSheet, Text, TextInput, View } from "react-native";
 import { Muted } from "@/components/common/ui";
 import { entryAmount, COIN_VALUE } from "@/shared/collectMoney";
 import { color, font, radius, spacing, numeric } from "@/theme/tokens";
+import type { MethodRow } from "@/components/funds/FundCashlessSection";
 import type { FundEntry } from "@/api/types";
 
 /**
@@ -17,6 +18,9 @@ export function FundEntriesTable({
   editing,
   coinDraft,
   onCoinChange,
+  methods,
+  cashlessDraft,
+  onCashlessChange,
   displayTotal,
 }: {
   entries: FundEntry[];
@@ -24,8 +28,21 @@ export function FundEntriesTable({
   /** 編集中の枚数。TextInput に合わせて文字列で持つ */
   coinDraft: Record<string, string>;
   onCoinChange: (id: string, digitsOnly: string) => void;
+  /**
+   * 機器ごとのキャッシュレスを扱うときに渡す。空なら現金の欄だけになる。
+   *
+   * ⚠️ **007 時代の記録（集金レベルにだけ内訳がある）では空を渡すこと。**
+   *    ここに欄を出すと、保存時に**集金レベルの内訳が空で上書きされて
+   *    金額が消える**（サーバは機器の側を正とするため）。
+   */
+  methods: MethodRow[];
+  /** entryId → methodId → 数字だけの文字列 */
+  cashlessDraft: Record<string, Record<string, string>>;
+  onCashlessChange: (entryId: string, methodId: string, digitsOnly: string) => void;
   displayTotal: number;
 }) {
+  const perMachine = methods.length > 0;
+
   return (
     <View style={styles.table}>
       <View style={styles.tableHead}>
@@ -35,35 +52,90 @@ export function FundEntriesTable({
 
       {entries.map((entry) => {
         const coins = editing ? toInt(coinDraft[entry.id]) : (entry.funds ?? 0);
+        const amounts = cashlessDraft[entry.id] ?? {};
+        const recorded = entry.cashless ?? [];
+        /* ⚠️ 表示は「現金 + その機器のキャッシュレス」。現金だけだと総額と合わない */
+        const rowCashless = editing
+          ? methods.reduce((sum, m) => sum + toInt(amounts[m.methodId]), 0)
+          : recorded.reduce((sum, c) => sum + (c.amount ?? 0), 0);
+
         return (
-          <View key={entry.id} style={styles.tableRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.machineName}>{entry.name}</Text>
-              <Text style={styles.machineHint}>
-                {coins.toLocaleString()}枚 × {COIN_VALUE}円
-              </Text>
+          <View key={entry.id} style={styles.entryBlock}>
+            <View style={styles.tableRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.machineName}>{entry.name}</Text>
+                <Text style={styles.machineHint}>
+                  {coins.toLocaleString()}枚 × {COIN_VALUE}円
+                </Text>
+              </View>
+
+              {editing ? (
+                <View style={styles.inputGroup}>
+                  <TextInput
+                    style={styles.input}
+                    value={coinDraft[entry.id] ?? ""}
+                    /* 数字以外は弾く。本家は入力後に「数字以外の文字が含まれています」を
+                       出すが、テンキー入力では最初から入らないようにするほうが早い */
+                    onChangeText={(text) => onCoinChange(entry.id, text.replace(/[^0-9]/g, ""))}
+                    keyboardType="number-pad"
+                    inputMode="numeric"
+                    placeholder="0"
+                    placeholderTextColor={color.textFaint}
+                    selectTextOnFocus
+                  />
+                  <View style={styles.addon}>
+                    <Text style={styles.addonText}>枚</Text>
+                  </View>
+                </View>
+              ) : (
+                <Text style={styles.amount}>
+                  ¥{(entryAmount(entry) + rowCashless).toLocaleString()}
+                </Text>
+              )}
             </View>
 
-            {editing ? (
-              <View style={styles.inputGroup}>
-                <TextInput
-                  style={styles.input}
-                  value={coinDraft[entry.id] ?? ""}
-                  /* 数字以外は弾く。本家は入力後に「数字以外の文字が含まれています」を
-                     出すが、テンキー入力では最初から入らないようにするほうが早い */
-                  onChangeText={(text) => onCoinChange(entry.id, text.replace(/[^0-9]/g, ""))}
-                  keyboardType="number-pad"
-                  inputMode="numeric"
-                  placeholder="0"
-                  placeholderTextColor={color.textFaint}
-                  selectTextOnFocus
-                />
-                <View style={styles.addon}>
-                  <Text style={styles.addonText}>枚</Text>
-                </View>
+            {/* 機器ごとのキャッシュレス。⚠️ 単位は「円」（上は枚数） */}
+            {perMachine && editing && (
+              <View style={styles.cashlessBox}>
+                {methods.map((method) => (
+                  <View key={method.methodId} style={styles.cashlessRow}>
+                    <Text style={styles.cashlessName} numberOfLines={1}>
+                      {method.name}
+                    </Text>
+                    <View style={styles.cashlessInputGroup}>
+                      <Text style={styles.yen}>¥</Text>
+                      <TextInput
+                        style={styles.cashlessInput}
+                        value={amounts[method.methodId] ?? ""}
+                        onChangeText={(text) =>
+                          onCashlessChange(entry.id, method.methodId, text.replace(/[^0-9]/g, ""))
+                        }
+                        keyboardType="number-pad"
+                        inputMode="numeric"
+                        placeholder="0"
+                        placeholderTextColor={color.textFaint}
+                        accessibilityLabel={`${entry.name}の${method.name}の金額`}
+                      />
+                    </View>
+                  </View>
+                ))}
               </View>
-            ) : (
-              <Text style={styles.amount}>¥{entryAmount(entry).toLocaleString()}</Text>
+            )}
+
+            {/* 編集していないときは記録されているぶんだけを並べる */}
+            {!editing && recorded.length > 0 && (
+              <View style={styles.cashlessBox}>
+                {recorded.map((item) => (
+                  <View key={String(item.methodId)} style={styles.cashlessRow}>
+                    <Text style={styles.cashlessName} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.cashlessAmount}>
+                      ¥{(item.amount ?? 0).toLocaleString()}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             )}
           </View>
         );
@@ -146,6 +218,38 @@ const styles = StyleSheet.create({
   machineName: { fontFamily: font.uiBold, fontSize: 14, color: color.textMain },
   machineHint: { fontFamily: font.ui, fontSize: 11, color: color.textFaint, marginTop: 2 },
   amount: { ...numeric, fontSize: 16, color: color.textMain },
+
+  /* 設備 1 件ぶんの塊。行の下にキャッシュレスがぶら下がる */
+  entryBlock: {},
+  cashlessBox: {
+    gap: spacing.sm,
+    paddingLeft: spacing.xl,
+    paddingRight: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  cashlessRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minHeight: 36 },
+  cashlessName: { flex: 1, fontFamily: font.ui, fontSize: 12, color: color.textMuted },
+  cashlessAmount: { ...numeric, fontSize: 13, color: color.tealDeeper },
+  cashlessInputGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: 130,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.card - 8,
+    borderWidth: 1.5,
+    borderColor: color.cyan200,
+    backgroundColor: color.cardBg,
+  },
+  yen: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
+  cashlessInput: {
+    flex: 1,
+    minHeight: 42,
+    paddingHorizontal: spacing.xs,
+    textAlign: "right",
+    ...numeric,
+    fontSize: 14,
+    color: color.textMain,
+  },
 
   inputGroup: {
     flexDirection: "row",
