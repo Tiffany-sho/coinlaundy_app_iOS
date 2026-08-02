@@ -449,8 +449,19 @@ export function useUpdateFundDate(id: string) {
 export function useUpdateFundData(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: { fundsArray: FundEntry[]; totalFunds: number }) =>
-      apiFetch(`/funds/${id}`, { method: "PATCH", body }),
+    /**
+     * ⚠️ **`totalFunds` は「現金ぶん」。** DB に入るのは現金 + キャッシュレスの
+     *    総額で、サーバ（`updateData`）が組み直す。総額を送ると二重計上になる。
+     * ⚠️ **`cashless` を省略＝据え置き。** 空配列は「消す」の意味なので、
+     *    `?? []` を挟まないこと。
+     * ⚠️ **機器ごとに内訳を持つ集金では送らない。** `fundsArray[].cashless` が
+     *    正で、サーバがそちらから集金レベルの内訳を組み直す。
+     */
+    mutationFn: (body: {
+      fundsArray: FundEntry[];
+      totalFunds: number;
+      cashless?: { methodId: string; amount: number }[];
+    }) => apiFetch(`/funds/${id}`, { method: "PATCH", body }),
     onSuccess: () => invalidateFunds(queryClient, id),
   });
 }

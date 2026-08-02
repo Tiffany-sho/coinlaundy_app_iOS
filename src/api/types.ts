@@ -3,6 +3,13 @@
  * 形は Web の Server Action の戻り値に合わせてある。勝手に変えないこと。
  */
 
+/*
+  ⚠️ キャッシュレスの 1 行は**下書き・送信キューと同じ型**を使う。
+     2 か所に同じ形を書くと、片方だけ直したときに型エラーの出ない
+     食い違いが生まれる（`fundsArray` がその状態で、単位の取り違えを招いている）。
+*/
+import type { CashlessEntry } from "@/offline/types";
+
 export type Role = "admin" | "collecter" | "viewer";
 
 /** laundry_store.machines の 1 要素 */
@@ -171,12 +178,32 @@ export type FundEntry = {
   name: string;
   /** コインの枚数。金額は ×100 */
   funds: number;
+  /**
+   * この機器で受け取ったキャッシュレス（機種別入力のときだけ）。
+   * ⚠️ **`amount` は「円」。** 同じ行の `funds` は枚数なので単位が違う。
+   * ⚠️ 合計入力で登録された集金と、007 時代の記録では `undefined`。
+   */
+  cashless?: CashlessEntry[];
   [key: string]: unknown;
 };
 
 /** 集金 1 件の明細。一覧には含まれないので詳細を開いたときだけ取る */
 export type FundDetail = {
   fundsArray: FundEntry[] | null;
+  /**
+   * その集金の**合計**キャッシュレス。
+   *
+   * ⚠️ **機種別入力では `fundsArray[].cashless` の和と一致する。**
+   *    どちらを編集するかは記録の形で決めること（両方送るとサーバが
+   *    機器の側を正としてこちらを捨てる）。
+   * ⚠️ **`undefined` になり得る**（この項目を返す前の応答が react-query の
+   *    永続キャッシュから最大 7 日復元される）。`?? []` を通すこと。
+   */
+  cashless?: CashlessEntry[] | null;
+  /** ⚠️ 現金 + キャッシュレスの**総額**。合計欄に出す「現金ぶん」とは別物 */
+  totalFunds?: number | null;
+  /** その店舗の支払方法を引くのに使う */
+  laundryId?: string | null;
 };
 
 /**

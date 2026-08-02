@@ -13,9 +13,11 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  activePaymentMethods,
   useBootstrap,
   useDeleteFund,
   useFundDetail,
+  useStore,
   useUpdateFundData,
   useUpdateFundDate,
 } from "@/api/queries";
@@ -34,6 +36,10 @@ import {
 } from "@/components/funds/FundDetailHeader";
 import { FundDateSection } from "@/components/funds/FundDateSection";
 import { FundEntriesTable, FundTotalOnlyInput } from "@/components/funds/FundEntriesTable";
+import {
+  buildMethodRows,
+  FundCashlessSection,
+} from "@/components/funds/FundCashlessSection";
 import { Button, CenterMessage, Screen } from "@/components/common/ui";
 import { Divider, SectionHead } from "@/components/common/section";
 import { useDialog } from "@/components/common/dialog";
@@ -95,8 +101,15 @@ export default function FundDetailScreen() {
   const [editing, setEditing] = useState(false);
   /** 編集中の枚数。TextInput に合わせて文字列で持つ */
   const [coinDraft, setCoinDraft] = useState<Record<string, string>>({});
-  /** 明細を持たない集金データ（合計だけの登録）用の金額。単位は円 */
+  /**
+   * 明細を持たない集金データ（合計だけの登録）用の金額。単位は円。
+   * ⚠️ **入れるのは「現金ぶん」。** レコードの `totalFunds` は
+   *    現金 + キャッシュレスの総額なので、そのまま入れて保存すると
+   *    サーバがキャッシュレスを**もう一度足して二重計上**になる。
+   */
   const [totalDraft, setTotalDraft] = useState("");
+  /** 編集中のキャッシュレス。methodId → 数字だけの文字列 */
+  const [cashlessDraft, setCashlessDraft] = useState<Record<string, string>>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   /**
@@ -108,6 +121,21 @@ export default function FundDetailScreen() {
   const entries: FundEntry[] = detail.data?.fundsArray ?? [];
   const hasEntries = entries.length > 0;
 
+  /*
+    ⚠️ **記録の形をそのまま保つ。** 機器ごとに内訳を持つ集金（機種別入力）と、
+       集金レベルにだけ持つ集金（合計入力・007 時代の記録）が混在している。
+       編集で形を変えると、サーバが「機器ぶんが正」と判断して**集金レベルの
+       内訳を空で上書きし、キャッシュレスの金額が消える。**
+  */
+  const hasMachineCashless = entries.some((e) => Array.isArray(e.cashless) && e.cashless.length > 0);
+  /** この集金の合計キャッシュレス。⚠️ 古い応答では undefined */
+  const recordedCashless = detail.data?.cashless ?? [];
+  const recordedCashlessSum = recordedCashless.reduce((sum, e) => sum + (e.amount ?? 0), 0);
+
+  /* 編集欄に並べる支払方法。⚠️ 記録にあるものは使用停止でも並べる（0 に戻せなくなる） */
+  const store = useStore(detail.data?.laundryId ?? undefined);
+  const methodRows = buildMethodRows(recordedCashless, activePaymentMethods(store.data));
+
   /**
    * 編集中の明細。
    * ⚠️ funds は「円」ではなく硬貨の枚数。金額にするときは必ず ×100 する
@@ -118,6 +146,12 @@ export default function FundDetailScreen() {
     funds: toInt(coinDraft[entry.id]),
   }));
 
+  /** 編集中のキャッシュレス。⚠️ 0 円は落とす（サーバも同じ扱い） */
+  const draftCashless = methodRows
+    .map((method) => ({ methodId: method.methodId, amount: toInt(cashlessDraft[method.methodId]) }))
+    .filter((entry) => entry.amount > 0);
+  const draftCashlessSum = draftCashless.reduce((sum, e) => sum + e.amount, 0);
+
   /*
     ⚠️ **`calcDisplayTotal` を使う（`calcTotalFunds` ではない）。**
        あちらは現金しか数えないので、機器ごとのキャッシュレスがある集金では
@@ -125,9 +159,11 @@ export default function FundDetailScreen() {
        サーバへ送るのは現金ぶん（`calcTotalFunds`）のまま。
   */
   const displayTotal = hasEntries
-    ? calcDisplayTotal(editing ? draftEntries : entries)
+    ? calcDisplayTotal(editing ? draftEntries : entries) +
+      // 機器ごとに持たない集金（007 時代の記録）は集金レベルのぶんを足す
+      (hasMachineCashless ? 0 : editing ? draftCashlessSum : recordedCashlessSum)
     : editing
-      ? toInt(totalDraft)
+      ? toInt(totalDraft) + draftCashlessSum
       : (recordTotal ?? 0);
 
   const myRole = bootstrap.data?.organization?.myRole;
@@ -168,7 +204,18 @@ export default function FundDetailScreen() {
   function startEdit() {
     Haptics.selectionAsync().catch(() => {});
     setCoinDraft(Object.fromEntries(entries.map((e) => [e.id, String(e.funds ?? 0)])));
-    setTotalDraft(String(recordTotal ?? 0));
+    /*
+      ⚠️ **キャッシュレスを引いた「現金ぶん」を入れる。** `recordTotal` は
+         現金 + キャッシュレスの総額なので、そのまま入れて保存すると
+         サーバがキャッシュレスを足し直して**総額がその分だけ増える。**
+         2026-08-02 まで実際にそうなっていた。
+    */
+    setTotalDraft(String(Math.max(0, (recordTotal ?? 0) - recordedCashlessSum)));
+    setCashlessDraft(
+      Object.fromEntries(
+        recordedCashless.map((entry) => [String(entry.methodId), String(entry.amount ?? 0)])
+      )
+    );
     setErrorMsg(null);
     setEditing(true);
   }
@@ -179,10 +226,23 @@ export default function FundDetailScreen() {
    * 合計は本家と同じ「枚数の総和 × 100」で組み立てる（MachineAndFundsList.jsx:48）。
    * 明細を持たない集金データは合計をそのまま円として送る（fundsArray は空配列）。
    */
+  /**
+   * 明細（または合計）の保存。
+   *
+   * ⚠️ **`cashless` を送るのは「機器ごとに持たない集金」のときだけ。**
+   *    機器ごとに持つ集金では `fundsArray[].cashless` が正で、サーバはそちらから
+   *    集金レベルの内訳を組み直す。両方送っても機器の側が勝つが、
+   *    **形を混ぜると読む人が取り違える**ので送らない。
+   * ⚠️ **`totalFunds` は現金ぶん。** サーバが総額を組み直す。
+   */
   function saveFunds() {
     const body = hasEntries
-      ? { fundsArray: draftEntries, totalFunds: calcTotalFunds(draftEntries) }
-      : { fundsArray: [], totalFunds: toInt(totalDraft) };
+      ? {
+          fundsArray: draftEntries,
+          totalFunds: calcTotalFunds(draftEntries),
+          ...(hasMachineCashless ? {} : { cashless: draftCashless }),
+        }
+      : { fundsArray: [], totalFunds: toInt(totalDraft), cashless: draftCashless };
 
     // ⚠️ 触覚は toast 側が鳴らす。ここで notificationAsync を呼ぶと二重に振動する
     updateData.mutate(body, {
@@ -313,6 +373,30 @@ export default function FundDetailScreen() {
             />
           ) : (
             <FundTotalOnlyInput editing={editing} value={totalDraft} onChange={setTotalDraft} />
+          )}
+
+          {/*
+            キャッシュレスの内訳。
+            ⚠️ **機器ごとに持つ集金では出さない。** そちらは設備ごとの行に
+               含まれており、ここにも出すと同じ金額が 2 か所に見える。
+               ⚠️ ただし**編集はまだ設備側にも無い**ので、機器ごとの金額を
+               直したいときは登録し直してもらうことになる（既知の制限）。
+            ⚠️ **記録が空でも編集中は出す。** あとからキャッシュレスを足せるようにするため。
+          */}
+          {!hasMachineCashless && (editing || recordedCashless.length > 0) && (
+            <>
+              <Divider />
+              <SectionHead icon="card-outline" label="現金以外の内訳" />
+              <FundCashlessSection
+                methods={methodRows}
+                recorded={recordedCashless}
+                editing={editing}
+                draft={cashlessDraft}
+                onChange={(methodId, digits) =>
+                  setCashlessDraft((prev) => ({ ...prev, [methodId]: digits }))
+                }
+              />
+            </>
           )}
 
           {canEdit && (
