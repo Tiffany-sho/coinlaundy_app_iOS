@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -7,6 +8,7 @@ import {
   useInvitations,
   useMembers,
   useRemoveMember,
+  useStores,
   useUpdateMemberRole,
 } from "@/api/queries";
 import { CenterMessage, Muted, Screen } from "@/components/common/ui";
@@ -15,6 +17,7 @@ import { useToast } from "@/components/common/toast";
 import { INVITABLE_ROLES, ROLE_INFO, orgStyles } from "@/components/settings/orgShared";
 import { OrgNameSection } from "@/components/settings/OrgNameSection";
 import { MemberRow } from "@/components/settings/MemberRow";
+import { MemberStoreSheet } from "@/components/settings/MemberStoreSheet";
 import { InviteSection, PendingInvitation } from "@/components/settings/InviteSection";
 import { JoinPasswordCard } from "@/components/settings/JoinPasswordCard";
 import { color, font, spacing } from "@/theme/tokens";
@@ -46,6 +49,15 @@ export default function Organization() {
 
   const updateRole = useUpdateMemberRole();
   const removeMember = useRemoveMember();
+  /*
+    担当店舗の割り当てに使う店舗の一覧。
+    ⚠️ **管理者から取るので全店舗が返る**（getStores は担当で絞るが admin は素通り）。
+       管理者以外では取りに行かない — 使わないうえ、担当ぶんしか返らないので
+       「割り当てられる店舗が足りない」ように見える。
+  */
+  const stores = useStores(isAdmin);
+  /** 担当店舗シートを開いている相手。null で閉じる */
+  const [assignTarget, setAssignTarget] = useState<OrgMember | null>(null);
 
   if (members.isLoading && !members.data) {
     return (
@@ -154,6 +166,13 @@ export default function Organization() {
                     }
                     onChangeRole={() => onChangeRole(member)}
                     onRemove={() => onRemove(member)}
+                    /* ⚠️ 管理者は常に全店舗（行を持たない）ので出さない。
+                          出すと「未設定」に見え、保存すると 400 が返る */
+                    onAssignStores={
+                      isAdmin && member.role !== "admin"
+                        ? () => setAssignTarget(member)
+                        : undefined
+                    }
                   />
                 ))
               )}
@@ -190,6 +209,13 @@ export default function Organization() {
           {!isAdmin && <Muted>役割の変更・メンバーの削除・招待は店舗管理者のみ行えます。</Muted>}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ⚠️ ScrollView の外に置く。中に入れるとキーボードやスクロールに巻き込まれる */}
+      <MemberStoreSheet
+        member={assignTarget}
+        stores={stores.data ?? []}
+        onClose={() => setAssignTarget(null)}
+      />
     </Screen>
   );
 }

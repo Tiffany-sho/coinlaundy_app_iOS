@@ -379,6 +379,17 @@ export type OrgMember = {
   user_id: string;
   role: Role;
   joined_at: string | null;
+  /**
+   * 担当店舗（011）。
+   *
+   * ⚠️ **管理者から見たときだけ中身が入る。** サーバは呼び出し元が admin の
+   *    ときにしか引かないので、集金担当者が見ると常に空。
+   * ⚠️ **admin 自身は常に空。** admin は行を持たない（＝全店舗）ので、
+   *    画面では「未設定」ではなく**「全店舗」**と出すこと。
+   * ⚠️ **古い応答には無い。** react-query の永続キャッシュ（MMKV）が
+   *    最大 7 日ぶん前のバージョンを返すので `?? []` を通すこと。
+   */
+  storeIds?: string[];
   profiles: { id: string; username: string | null; full_name: string | null };
 };
 

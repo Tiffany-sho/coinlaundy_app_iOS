@@ -906,6 +906,30 @@ export function useRemoveMember() {
   });
 }
 
+/**
+ * 担当店舗の割り当て（011）。**置き換えであって部分更新ではない。**
+ *
+ * ⚠️ **管理者しか通らない**（サーバが 403 を返す）。ボタンの出し分けだけで
+ *    信じないこと。
+ * ⚠️ **空配列は「担当を全解除」。** その人は集金も在庫も何も見えなくなる。
+ *    送らないのと同じ意味なので、意図しない空を渡さないよう呼び出し側で確かめる。
+ * ⚠️ **メンバー一覧だけでなく店舗まわりも取り直す。** 自分の担当を変えた場合、
+ *    店舗一覧・ホーム・在庫がその場で変わらないと「反映されていない」に見える。
+ */
+export function useSetMemberStores() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, laundryIds }: { userId: string; laundryIds: string[] }) =>
+      apiFetch(`/org/members/${userId}/stores`, { method: "PUT", body: { laundryIds } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: settingsKeys.members });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stores });
+      queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap });
+      queryClient.invalidateQueries({ queryKey: queryKeys.home });
+    },
+  });
+}
+
 /** 組織名の変更。名前はホームの bootstrap にも出るので両方取り直す */
 export function useUpdateOrgName() {
   const queryClient = useQueryClient();

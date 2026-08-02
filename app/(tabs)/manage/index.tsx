@@ -63,6 +63,8 @@ export default function Manage() {
 
   // viewer は読み取り専用。Web の inventory/page.jsx も myRole !== "viewer" で canEdit を決めている
   const canEdit = bootstrap.data?.organization?.myRole !== "viewer";
+  /** 空表示の文言を分けるのに使う。管理者は常に全店舗を見る（011） */
+  const isAdmin = bootstrap.data?.organization?.myRole === "admin";
 
   return (
     <Screen>
@@ -118,7 +120,16 @@ export default function Manage() {
 
           {(data?.length ?? 0) === 0 && (
             <Card>
-              <Muted>店舗がありません</Muted>
+              {/* ⚠️ 担当店舗が 0 件でも同じ 0 件になる（店舗一覧と同じ理由）。
+                     非管理者には割り当てを疑えるように書く */}
+              <Muted>
+                {isAdmin ? "店舗がありません" : "担当する店舗がありません"}
+              </Muted>
+              {!isAdmin && (
+                <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
+                  担当する店舗は店舗管理者が割り当てます。
+                </Muted>
+              )}
             </Card>
           )}
         </ScrollView>

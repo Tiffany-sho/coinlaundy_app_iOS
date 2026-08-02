@@ -277,10 +277,24 @@ export default function Stores() {
           <Card>
             {!hasStores ? (
               <>
-                <Muted>登録された店舗がありません</Muted>
-                {canAddStore && (
+                {/*
+                  ⚠️ **担当店舗（011）が 0 件でも同じ「0 件」になる。**
+                     `getStores` が担当ぶんしか返さないので、アプリからは
+                     「組織に店舗が無い」のか「自分が担当していない」のか区別が付かない。
+                     管理者は常に全店舗なので、**非管理者のときは担当を疑うほうが当たる。**
+                  ⚠️ ここを「店舗がありません」だけにすると、集金担当者は
+                     **組織ごと空だと思って管理者に連絡しない。**
+                */}
+                <Muted>
+                  {canAddStore ? "登録された店舗がありません" : "担当する店舗がありません"}
+                </Muted>
+                {canAddStore ? (
                   <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
                     右下のボタンから新しい店舗を追加できます
+                  </Muted>
+                ) : (
+                  <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
+                    担当する店舗は店舗管理者が割り当てます。心当たりがなければ管理者にご確認ください。
                   </Muted>
                 )}
               </>
