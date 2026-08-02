@@ -699,6 +699,37 @@
 - ⚠️ **払う操作だけにしない。** 気づかれないうえ **VoiceOver から操作できない。**
   矢印（`PagerArrow`）を必ず併設する
 
+## Next のビルドをパイプで切らない
+
+- ⚠️ **`npm run build | grep … | head` はビルドを途中で殺す。** `head` が
+  読み終えてパイプを閉じた瞬間に SIGPIPE で落ちるので、**静的生成の途中で
+  終わる。** そのとき `.next/diagnostics/build-diagnostics.json` に
+
+  ```json
+  { "buildStage": "static-generation" }
+  ```
+
+  が残り、以降のビルドが全部
+
+  ```
+  ⨯ Another next build process is already running.
+  ```
+
+  で落ちる。⚠️ **プロセスは 1 つも残っていない**ので、`Get-CimInstance` で
+  探しても見つからず原因に辿り着けない。ロックファイルという名前でもないので
+  `*.lock` を探しても出てこない。
+
+  ```bash
+  rm -f .next/diagnostics/build-diagnostics.json   # 復旧
+  npm run build > /tmp/build.log 2>&1; grep -E "Error|✓ Compiled" /tmp/build.log
+  ```
+
+  **出力を絞りたいときはファイルに落としてから grep する。**
+  `| tail` は全部読むので安全だが、`| head` と `| grep -m1` は危ない。
+- ⚠️ **dev server を動かしたままビルドすると `.next` の書き込みが競合する。**
+  `ENOENT: … _buildManifest.js.tmp.xxxx` はこれ。撃ち直せば通ることが多いが、
+  繰り返すなら dev server を止める
+
 ## 検証
 
 - 型チェックは `npx tsc --noEmit`
