@@ -8,9 +8,13 @@ import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
  *
  * 店舗行の右側は 2 通り。
  *   modes 未指定 … シェブロン 1 つ（選ぶ＝その店舗のページへ行く）
- *   modes 指定   … ボタンを並べる（在庫 / 設備）。その場で編集シートを開くため、
- *                  「店舗を選ぶ → もう一度モードを選ぶ」の 2 段階にしない。
+ *   modes 指定   … ボタンを並べる（在庫 / 設備、集金の 現金 / 現金以外 / 両方）。
+ *                  その場で決めるため「店舗を選ぶ → もう一度モードを選ぶ」の
+ *                  2 段階にしない。
  *                  ⚠️ 段を増やすと Modal を 2 枚重ねることになり iOS で表示に失敗する。
+ *
+ * 店舗ごとに出し分けたいときは `modesFor` を使う（集金がこれ。支払方法が
+ * 無い店舗では聞かずにそのまま遷移させる）。
  */
 
 export type StorePickerOption = { id: string; name: string };
@@ -24,6 +28,7 @@ export function StorePickerSheet<T extends string>({
   isLoading,
   emptyText,
   modes,
+  modesFor,
   onPick,
   onClose,
   onDismiss,
@@ -34,6 +39,14 @@ export function StorePickerSheet<T extends string>({
   isLoading: boolean;
   emptyText: string;
   modes?: readonly StorePickerMode<T>[];
+  /**
+   * 店舗ごとにボタンを出し分けたいときに使う（`modes` より優先）。
+   *
+   * ⚠️ **`undefined` を返した店舗はシェブロン 1 つの行になる。**
+   *    集金の「現金 / 現金以外 / 両方」がこれで、**支払方法が無い店舗では
+   *    聞かない**（選択肢が実質 1 つしか無いのに 1 タップ増えるだけになる）。
+   */
+  modesFor?: (storeId: string) => readonly StorePickerMode<T>[] | undefined;
   onPick: (storeId: string, mode?: T) => void;
   onClose: () => void;
   /** iOS で閉じ切ったあとに呼ばれる。次の Modal を開くのはここ */
@@ -70,14 +83,15 @@ export function StorePickerSheet<T extends string>({
           ) : (
             /* 店舗が多い組織でも選べるように、リストだけスクロールさせる */
             <ScrollView style={styles.sheetList} keyboardShouldPersistTaps="handled">
-              {stores.map((store) =>
-                modes ? (
+              {stores.map((store) => {
+                const rowModes = modesFor ? modesFor(store.id) : modes;
+                return rowModes ? (
                   <View key={store.id} style={styles.storeRowStatic}>
                     <Text style={styles.storeName} numberOfLines={1}>
                       {store.name}店
                     </Text>
                     <View style={styles.modeRow}>
-                      {modes.map((mode) => (
+                      {rowModes.map((mode) => (
                         <Pressable
                           key={mode.value}
                           onPress={() => onPick(store.id, mode.value)}
@@ -99,8 +113,8 @@ export function StorePickerSheet<T extends string>({
                     </Text>
                     <Ionicons name="chevron-forward" size={16} color={color.cyan300} />
                   </Pressable>
-                )
-              )}
+                );
+              })}
             </ScrollView>
           )}
 

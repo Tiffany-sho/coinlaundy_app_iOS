@@ -455,6 +455,29 @@ collect_funds.cashless   = [{ methodId, name, amount }]        ← amount は「
 collect_funds.fundsArray = [{ id, name, funds, cashless? }]    ← 機種別入力のとき機器ごとにも持つ
 ```
 
+### 集金で何を記録するか（`scope`）
+
+`/collect/[storeId]` は `scope` パラメータを取る（`src/components/collect/collectScope.ts`）。
+
+| | |
+|---|---|
+| `cash` | 現金のみ。**支払方法の欄を一切出さず、空配列を送る** |
+| `cashless` | 現金以外のみ。**枚数・合計金額の欄を出さず、現金は必ず 0 で送る** |
+| `both` | 両方（従来どおり） |
+
+- ⚠️ **未指定は `both`。** 通知のディープリンクなど `scope` を持たない経路から
+  開かれたときに、**入力欄が黙って消えている**状態にしないため
+- ⚠️ **聞くのは支払方法がある店舗だけ。** 無い店舗で聞いても実質 1 択で、
+  1 タップ増えるだけになる
+- ⚠️ **集金の入口は 3 か所ある。**（店舗一覧 / 店舗詳細 / ホームのクイックアクション）
+  **1 つでも `scope` を載せ忘れると、そこだけ既定の `both` で開く**（型エラーは出ない）
+  - 店舗一覧・店舗詳細 … `useCollectLauncher()` + `CollectScopeSheet`
+  - クイックアクション … 店舗選択シートの行にボタンを並べる（`modesFor`）。
+    ⚠️ **2 枚目の Modal を重ねない**ため。iOS では表示に失敗する
+- ⚠️ **`router.push` はシートが閉じ切ってから。** 集金画面は `fullScreenModal` なので、
+  モーダルを出したまま push すると **以降タブを切り替えても何も表示されなくなる**
+  （`docs/traps.md` の iOS）。`useCollectLauncher` がこの待ち合わせを持っている
+
 ### 機器ごとのキャッシュレス（機種別入力のとき）
 
 ⚠️ **`cashless` の列は常に「その集金の合計」で不変。** 機器ごとに分けても、

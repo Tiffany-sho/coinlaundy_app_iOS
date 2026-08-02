@@ -46,6 +46,7 @@ import {
   cashlessTotal,
   toCashlessEntries,
 } from "@/components/collect/CashlessInputs";
+import { toCollectScope } from "@/components/collect/collectScope";
 import type { CashlessEntry, Draft } from "@/offline/types";
 import { COIN_VALUE, weightToCoins } from "@/shared/collectMoney";
 import { nowInJst, toJstMidnightEpoch } from "@/shared/date";
@@ -97,7 +98,13 @@ export default function CollectMoneyModal() {
  *                  この画面に留まるときは `useToast()`（ネスト側）を使う
  */
 function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
-  const { storeId } = useLocalSearchParams<{ storeId: string }>();
+  const { storeId, scope } = useLocalSearchParams<{ storeId: string; scope?: string }>();
+  /**
+   * 何を記録するか。⚠️ **未指定は「両方」。** 通知のディープリンクなど
+   * scope を持たない経路から開かれたときに、**入力欄が黙って消えている**
+   * 状態にしないため（`toCollectScope` の説明を参照）。
+   */
+  const collectScope = toCollectScope(scope);
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
   const router = useRouter();
@@ -111,7 +118,15 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
        別のクエリは張らない。⚠️ 使用停止中のものは新しく選ばせない
        （過去の記録には残っている）。
   */
-  const activeMethods = activePaymentMethods(store);
+  const storeMethods = activePaymentMethods(store);
+  /**
+   * 画面に出す支払方法。⚠️ **`scope === "cash"` のときは空にする。**
+   * 空にすると入力欄も下書きの復元も送信も一斉に止まるので、
+   * 「現金のみ」を選んだのにキャッシュレスが混ざる経路が残らない。
+   */
+  const activeMethods = collectScope === "cash" ? [] : storeMethods;
+  /** 現金（硬貨・合計金額）の欄を出すか。⚠️ 出さないときは金額も 0 で送る */
+  const showCash = collectScope !== "cashless";
   const { flush, isOnline } = useOutbox();
 
   const [epoch, setEpoch] = useState(() => toJstMidnightEpoch(nowInJst()));
@@ -178,12 +193,15 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
    *    総額だが、**組み立てるのはサーバ（createData）**。ここで足して送ると二重計上になる。
    */
   const cashTotal = useMemo(() => {
+    // ⚠️ 「現金以外のみ」では欄を出していないので必ず 0。下書きから復元された
+    //    枚数が残っていても数えない（画面に出ていない金額を送らないため）
+    if (!showCash) return 0;
     if (!byMachine) {
       const n = Number(totalInput);
       return Number.isFinite(n) ? n : 0;
     }
     return rows.reduce((sum, r) => sum + (r.funds ?? 0), 0) * COIN_VALUE;
-  }, [byMachine, totalInput, rows]);
+  }, [showCash, byMachine, totalInput, rows]);
 
   /**
    * キャッシュレスの合計。
@@ -202,9 +220,11 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
   const total = cashTotal + cashlessSum;
 
   const hasInput =
-    (byMachine
-      ? rows.some((r) => r.funds !== null || r.weight !== null)
-      : totalInput.trim() !== "") || cashlessSum > 0;
+    (showCash &&
+      (byMachine
+        ? rows.some((r) => r.funds !== null || r.weight !== null)
+        : totalInput.trim() !== "")) ||
+    cashlessSum > 0;
 
   // 入力が変わるたびに自動保存する（アプリが落ちても失わない）
   useEffect(() => {
@@ -524,16 +544,37 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
 
           <Divider />
 
-          <SectionHead icon="cash-outline" label={byMachine ? "機種別金額" : "合計金額"} />
+          <SectionHead
+            icon="cash-outline"
+            label={
+              byMachine
+                ? showCash
+                  ? "機種別金額"
+                  : "機種別（現金以外）"
+                : showCash
+                  ? "合計金額"
+                  : "合計（現金以外）"
+            }
+          />
           {byMachine ? (
             <MachineAmountRows
               rows={rows}
               methods={activeMethods}
+              showCash={showCash}
               onChange={updateRow}
               onToggle={toggleRow}
             />
-          ) : (
+          ) : showCash ? (
             <TotalAmountInput value={totalInput} onChange={setTotalInput} />
+          ) : (
+            /* ⚠️ 合計入力 × 現金以外のみ。金額の欄は下のキャッシュレスの節だけになる */
+            <CashlessInputs
+              methods={activeMethods}
+              amounts={cashless}
+              onChange={(methodId, value) =>
+                setCashless((prev) => ({ ...prev, [methodId]: value }))
+              }
+            />
           )}
 
           {/*
@@ -542,9 +583,11 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
             ⚠️ **機種別入力のときも出さない。** あちらは機器ごとに欄があるので、
                ここにも出すと同じ金額を 2 か所へ入れられてしまう
                （サーバは機器ぶんを正とするので、ここの入力は黙って捨てられる）。
+            ⚠️ **現金以外のみのときも出さない。** その場合は上の「合計」の位置に
+               同じ入力欄を出しているので、ここにも出すと二重になる。
             ⚠️ 単位は「円」。すぐ上の機種別入力は**枚数**なので混ぜないこと。
           */}
-          {!byMachine && activeMethods.length > 0 && (
+          {!byMachine && showCash && activeMethods.length > 0 && (
             <>
               <Divider />
               <SectionHead icon="card-outline" label="キャッシュレス" />

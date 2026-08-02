@@ -3,9 +3,10 @@ import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useLaundryStates, useStores } from "@/api/queries";
+import { activePaymentMethods, useLaundryStates, useStores } from "@/api/queries";
 import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
 import { StorePickerSheet, type StorePickerMode } from "@/components/home/StorePickerSheet";
+import { COLLECT_SCOPES } from "@/components/collect/collectScope";
 import type { Role } from "@/api/types";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
@@ -39,10 +40,18 @@ type QuickActionDef = {
   pickerTitle: string;
   /** viewer には出さない操作 */
   hideForViewer?: boolean;
-  /** 店舗を選んだあとの行き先。在庫・設備管理は遷移しないので持たない */
-  href?: (storeId: string) => Href;
+  /**
+   * 店舗を選んだあとの行き先。在庫・設備管理は遷移しないので持たない。
+   * ⚠️ `mode` は店舗行のボタンで選ばれた値（集金の scope）。押されなければ undefined
+   */
+  href?: (storeId: string, mode?: string) => Href;
   /** true なら店舗行に「在庫 / 設備」を並べ、その場で編集シートを開く */
   opensStateSheet?: boolean;
+  /**
+   * true なら店舗行に「現金 / 現金以外 / 両方」を並べる。
+   * ⚠️ **支払方法がある店舗だけ。** 無い店舗は普通の行のまま（聞く意味が無い）
+   */
+  asksCollectScope?: boolean;
 };
 
 const ACTIONS: QuickActionDef[] = [
@@ -52,7 +61,17 @@ const ACTIONS: QuickActionDef[] = [
     icon: "cash-outline",
     pickerTitle: "集金したい店舗を選択してください",
     hideForViewer: true,
-    href: (storeId) => ({ pathname: "/collect/[storeId]", params: { storeId } }),
+    asksCollectScope: true,
+    /*
+      ⚠️ **scope を必ず載せる。** 落とすと集金画面が既定の "both" で開き、
+         「現金のみ」を選んだのに現金以外の欄が出る。
+      ⚠️ 支払方法が無い店舗ではボタンが出ないので mode は undefined。
+         その場合は現金だけなので "cash" に倒す。
+    */
+    href: (storeId, mode) => ({
+      pathname: "/collect/[storeId]",
+      params: { storeId, scope: mode ?? "cash" },
+    }),
   },
   {
     key: "stock",
@@ -136,17 +155,19 @@ export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
     setPicker(action);
   }
 
-  function pick(storeId: string, mode?: StateEditMode) {
+  function pick(storeId: string, mode?: string) {
     const target = picker;
     setPicker(null);
     if (!target) return;
 
     if (target.opensStateSheet) {
-      if (mode) setPending({ kind: "sheet", target: { laundryId: storeId, mode } });
+      if (mode) {
+        setPending({ kind: "sheet", target: { laundryId: storeId, mode: mode as StateEditMode } });
+      }
       return;
     }
     /* ⚠️ ここで直接 router.push しないこと。シートが閉じ切るのを待つ（PendingAction 参照） */
-    if (target.href) setPending({ kind: "navigate", href: target.href(storeId) });
+    if (target.href) setPending({ kind: "navigate", href: target.href(storeId, mode) });
   }
 
   const editing = sheet
@@ -176,6 +197,18 @@ export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
         isLoading={stores.isFetching && !stores.data}
         emptyText={stores.error ? "店舗を取得できませんでした" : "店舗がありません"}
         modes={picker?.opensStateSheet ? STATE_MODES : undefined}
+        /*
+          ⚠️ **支払方法がある店舗だけ「現金 / 現金以外 / 両方」を出す。**
+             無い店舗にも出すと、実質 1 択のボタンを毎回押させることになる。
+        */
+        modesFor={
+          picker?.asksCollectScope
+            ? (storeId) => {
+                const store = (stores.data ?? []).find((s) => s.id === storeId);
+                return activePaymentMethods(store).length > 0 ? COLLECT_SCOPES : undefined;
+              }
+            : undefined
+        }
         onPick={pick}
         onClose={() => setPicker(null)}
         onDismiss={runPending}

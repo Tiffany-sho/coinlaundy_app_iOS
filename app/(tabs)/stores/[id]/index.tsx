@@ -13,9 +13,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useBootstrap, useLaundryStates, useStore, useStoreRevenue } from "@/api/queries";
+import {
+  activePaymentMethods,
+  useBootstrap,
+  useLaundryStates,
+  useStore,
+  useStoreRevenue,
+} from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { MachineListSheet } from "@/components/stores/MachineListSheet";
+import {
+  CollectScopeSheet,
+  useCollectLauncher,
+} from "@/components/collect/CollectScopeSheet";
 import { StoreImageCarousel } from "@/components/stores/StoreImageCarousel";
 import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
 import { useDialog } from "@/components/common/dialog";
@@ -62,6 +72,8 @@ export default function StoreDetail() {
   const [editingMode, setEditingMode] = useState<StateEditMode | null>(null);
   /** 設置機種の詳細シートを開いているか */
   const [machinesOpen, setMachinesOpen] = useState(false);
+  /* ⚠️ 集金への遷移はこれを通す。支払方法がある店舗では何を集金するか聞く */
+  const collect = useCollectLauncher();
 
   const myRole = bootstrap.data?.organization?.myRole;
   const canEdit = myRole !== "viewer";
@@ -151,6 +163,8 @@ export default function StoreDetail() {
       (state.softener ?? 0) <= (state.stock_thresholds?.softener ?? 1)
     : false;
   const brokenCount = (state?.machines ?? []).filter((m) => m.break).length;
+  /* ⚠️ 現金は含まれない（暗黙の方法）。使用停止のものも出さない */
+  const paymentMethods = activePaymentMethods(data);
 
   return (
     <Screen>
@@ -257,13 +271,28 @@ export default function StoreDetail() {
                 {state ? `全 ${(state.machines ?? []).length}台` : ""}
               </Text>
             </Tile>
+
+            {/*
+              支払方法。⚠️ **現金は行として持っていない**（常に記録される暗黙の方法）ので、
+              ここに出るのは現金以外だけ。「現金のみ」は 0 件と同じ意味。
+              ⚠️ 使用停止にしたもの（`isActive: false`）は出さない。過去の集金には
+              残っているが、これから使う方法の一覧なので混ぜない。
+            */}
+            <Tile label="支払方法">
+              <Text style={styles.tileStatus}>
+                {paymentMethods.length === 0 ? "現金のみ" : `現金 + ${paymentMethods.length}種類`}
+              </Text>
+              <Text style={styles.tileSub} numberOfLines={2}>
+                {paymentMethods.map((m) => m.name).join("・") || "現金以外の登録はありません"}
+              </Text>
+              {canEdit && <Text style={styles.tileHint}>編集画面から追加できます</Text>}
+            </Tile>
           </View>
 
           {canEdit && (
             <Pressable
-              onPress={() =>
-                router.push({ pathname: "/collect/[storeId]", params: { storeId: data.id } })
-              }
+              /* ⚠️ 直接 push しない。支払方法がある店舗では何を集金するか聞く */
+              onPress={() => collect.launch(data)}
               style={({ pressed }) => [pressed && { opacity: 0.85 }, { marginTop: spacing.xl }]}
             >
               <LinearGradient
@@ -279,6 +308,8 @@ export default function StoreDetail() {
           )}
         </View>
       </ScrollView>
+
+      <CollectScopeSheet {...collect.sheetProps} />
 
       <MachineListSheet
         visible={machinesOpen}

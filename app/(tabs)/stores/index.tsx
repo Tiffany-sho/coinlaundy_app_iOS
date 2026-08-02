@@ -16,6 +16,10 @@ import {
 } from "@/components/common/SortControls";
 import { RegionFilter } from "@/components/stores/RegionFilter";
 import {
+  CollectScopeSheet,
+  useCollectLauncher,
+} from "@/components/collect/CollectScopeSheet";
+import {
   buildRegionOptions,
   prefectureOf,
   UNKNOWN_REGION,
@@ -77,6 +81,8 @@ export default function Stores() {
   const listRef = useRef<FlashListRef<Store>>(null);
   useScrollToTop(listRef);
   const router = useRouter();
+  /* ⚠️ 集金への遷移はこれを通す。支払方法がある店舗では何を集金するか聞く */
+  const collect = useCollectLauncher();
   const { data, isLoading, isRefetching, refetch, error } = useStores();
   // 在庫・設備の状況。「要対応」の絞り込みに使う
   const states = useLaundryStates();
@@ -314,12 +320,13 @@ export default function Stores() {
             store={item}
             state={stateById.get(item.id)}
             onPress={() => router.push({ pathname: "/stores/[id]", params: { id: item.id } })}
-            onCollect={() =>
-              router.push({ pathname: "/collect/[storeId]", params: { storeId: item.id } })
-            }
+            /* ⚠️ 直接 push しない。支払方法がある店舗では何を集金するか聞く */
+            onCollect={() => collect.launch(item)}
           />
         )}
       />
+
+      <CollectScopeSheet {...collect.sheetProps} />
 
       {/* 店舗の追加。Web の AddBtn と同じ右下固定の丸ボタン。admin だけに出す。
           ⚠️ Web の AddBtn は上限到達時にプラン画面へ誘導するが、そちらは移植しない

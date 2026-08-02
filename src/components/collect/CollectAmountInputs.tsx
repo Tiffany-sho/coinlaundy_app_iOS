@@ -100,12 +100,19 @@ export function CollectMethodSection({
 export function MachineAmountRows({
   rows,
   methods,
+  showCash = true,
   onChange,
   onToggle,
 }: {
   rows: MachineRow[];
   /** ⚠️ 使用中のものだけ。現金は含まない（現金は上の枚数欄そのもの） */
   methods: PaymentMethod[];
+  /**
+   * 硬貨の枚数の欄を出すか。「現金以外のみ」の集金では false。
+   * ⚠️ **false のときは ⟳（質量入力）も出さない。** 現金を入れない集金で
+   *    質量から枚数を計算しても行き場が無い。
+   */
+  showCash?: boolean;
   onChange: (id: string, patch: Partial<MachineRow>) => void;
   onToggle: (row: MachineRow) => void;
 }) {
@@ -117,8 +124,9 @@ export function MachineAmountRows({
       {rows.map((row, index) => {
         const amounts = row.cashless ?? {};
         const rowCashless = cashlessTotal(amounts);
-        const open = opened[row.id] ?? rowCashless > 0;
-        const cash = (row.funds ?? 0) * COIN_VALUE;
+        // ⚠️ 現金の欄を出していないときは常に開く（たたむと入力欄が 1 つも無くなる）
+        const open = showCash ? (opened[row.id] ?? rowCashless > 0) : true;
+        const cash = showCash ? (row.funds ?? 0) * COIN_VALUE : 0;
 
         return (
           <View key={row.id}>
@@ -128,36 +136,42 @@ export function MachineAmountRows({
               <View style={{ flex: 1 }}>
                 <Text style={styles.machineName}>{row.name}</Text>
                 <Text style={styles.machineHint}>
-                  {row.toggle ? "質量から計算" : "枚数を入力"}
+                  {showCash ? (row.toggle ? "質量から計算" : "枚数を入力") : "現金以外を入力"}
                 </Text>
               </View>
-              <Pressable onPress={() => onToggle(row)} style={styles.swapButton} hitSlop={8}>
-                <Ionicons name="refresh" size={16} color={color.teal} />
-              </Pressable>
+              {showCash && (
+                <Pressable onPress={() => onToggle(row)} style={styles.swapButton} hitSlop={8}>
+                  <Ionicons name="refresh" size={16} color={color.teal} />
+                </Pressable>
+              )}
             </View>
 
-            <View style={styles.inputGroup}>
-              <View style={styles.addon}>
-                <Text style={styles.addonText}>{row.toggle ? "g" : "枚"}</Text>
+            {showCash && (
+              <View style={styles.inputGroup}>
+                <View style={styles.addon}>
+                  <Text style={styles.addonText}>{row.toggle ? "g" : "枚"}</Text>
+                </View>
+                <TextInput
+                  style={styles.input}
+                  value={displayValue(row)}
+                  onChangeText={(text) => {
+                    const n = parseInt(text.replace(/[^0-9]/g, ""), 10);
+                    const value = Number.isFinite(n) ? n : null;
+                    onChange(row.id, row.toggle ? { weight: value } : { funds: value });
+                  }}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  placeholder={row.toggle ? "100円玉の質量を入力" : "100円玉の枚数を入力"}
+                  placeholderTextColor={color.textFaint}
+                />
               </View>
-              <TextInput
-                style={styles.input}
-                value={displayValue(row)}
-                onChangeText={(text) => {
-                  const n = parseInt(text.replace(/[^0-9]/g, ""), 10);
-                  const value = Number.isFinite(n) ? n : null;
-                  onChange(row.id, row.toggle ? { weight: value } : { funds: value });
-                }}
-                keyboardType="number-pad"
-                inputMode="numeric"
-                placeholder={row.toggle ? "100円玉の質量を入力" : "100円玉の枚数を入力"}
-                placeholderTextColor={color.textFaint}
-              />
-            </View>
+            )}
 
             {/* ⚠️ 支払方法が 1 件も無い店舗ではこのブロックごと出さない */}
             {methods.length > 0 && (
               <>
+                {/* ⚠️ 現金の欄が無いときは開閉ボタンを出さない（常に開いている） */}
+                {showCash && (
                 <Pressable
                   onPress={() => {
                     Haptics.selectionAsync().catch(() => {});
@@ -180,9 +194,10 @@ export function MachineAmountRows({
                     color={color.teal}
                   />
                 </Pressable>
+                )}
 
                 {open && (
-                  <View style={styles.cashlessBox}>
+                  <View style={[styles.cashlessBox, !showCash && styles.cashlessBoxBare]}>
                     {methods.map((method) => (
                       <View key={method.id} style={styles.cashlessRow}>
                         <Text style={styles.cashlessName} numberOfLines={1}>
@@ -221,7 +236,7 @@ export function MachineAmountRows({
                   合計: ¥{(cash + rowCashless).toLocaleString()}
                 </Text>
                 {/* ⚠️ 内訳を出す。合計だけだと現金の枚数を間違えても気づけない */}
-                {rowCashless > 0 && (
+                {showCash && rowCashless > 0 && (
                   <Text style={styles.resultBreakdown}>
                     現金 ¥{cash.toLocaleString()} ／ 現金以外 ¥{rowCashless.toLocaleString()}
                   </Text>
@@ -355,6 +370,8 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: color.cyan100,
   },
+  /* 現金の欄が無いときは入れ子に見せる必要がないので線を外す */
+  cashlessBoxBare: { paddingLeft: 0, borderLeftWidth: 0, marginTop: spacing.sm },
   cashlessRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   cashlessName: { flex: 1, fontFamily: font.ui, fontSize: 13, color: color.textMuted },
   cashlessInputGroup: {
