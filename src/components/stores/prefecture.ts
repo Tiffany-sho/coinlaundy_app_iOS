@@ -66,6 +66,12 @@ export function prefectureOf(location: string | null | undefined): Prefecture | 
 /** 「その他」（都道府県を判定できなかった店舗）を表す値。⚠️ 実在の都道府県名と衝突しない */
 export const UNKNOWN_REGION = "__unknown__";
 
+/**
+ * ⚠️ **`count` は並び順を決めるためだけに使う。画面には出さない。**
+ *    チップに件数を添えていたが、隣のタブ（「すべて」「東京都」…）には
+ *    数字が無く**同じ絞り込みなのに片方だけ数字が付いて**見えるため外した。
+ *    戻すならタブ側にも出すこと。
+ */
 export type RegionOption = { value: string; label: string; count: number };
 
 /**

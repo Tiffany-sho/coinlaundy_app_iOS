@@ -12,7 +12,6 @@ export function Chip({
   label,
   selected,
   dotColor,
-  count,
   size = "md",
   onPress,
 }: {
@@ -20,8 +19,6 @@ export function Chip({
   selected: boolean;
   /** 店舗色などの目印。省略すると出ない */
   dotColor?: string;
-  /** 件数を右に添える。省略すると出ない */
-  count?: number;
   /**
    * 大きさ。
    *
@@ -56,11 +53,6 @@ export function Chip({
       >
         {label}
       </Text>
-      {count !== undefined && (
-        <Text style={[styles.count, large && styles.countLarge, selected && styles.labelSelected]}>
-          {count}
-        </Text>
-      )}
     </Pressable>
   );
 }
@@ -86,6 +78,4 @@ const styles = StyleSheet.create({
   label: { fontFamily: font.ui, fontSize: 12, color: color.textMuted, flexShrink: 1 },
   labelLarge: { fontSize: 13 },
   labelSelected: { fontFamily: font.uiBold, color: color.cyan700 },
-  count: { fontFamily: font.ui, fontSize: 10, color: color.textFaint },
-  countLarge: { fontSize: 11 },
 });

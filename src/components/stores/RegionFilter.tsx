@@ -71,7 +71,6 @@ export function RegionFilter({
                   <Chip
                     key={option.value}
                     label={option.label}
-                    count={option.count}
                     selected={selected}
                     /* ⚠️ 上の SegmentedTabs と同じ列の絞り込みなので大きさを揃える。
                           既定（34pt）のままだとタブ（40pt）より一回り小さく見える */
