@@ -15,7 +15,7 @@ const DEFAULT_MONTHS = 12;
 /**
  * 「期間を選ぶ + 前後へ送る」の共通部分。
  *
- * 月別売上（`MonthlyRevenueCard`）と 1 回あたり（`AveragePerCollectCard`）が
+ * 月別売上（`MonthlyRevenueCard`）と機器別（`MachineBreakdownCard`）が
  * 同じ操作を持つので、**見た目は各カード、仕組みはここ**と分けてある。
  * ⚠️ どちらかにだけ直しを入れないこと。送り幅や下限の考え方はここが正。
  *

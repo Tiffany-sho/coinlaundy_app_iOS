@@ -111,39 +111,9 @@ export function oldestMonth(stores: StoreRevenue[]): MonthIndex | null {
   return oldest;
 }
 
-/** 月ごとの「1 回あたり平均集金額」 */
-export type AveragePoint = {
-  month: string;
-  total: number;
-  count: number;
-  /** ⚠️ 集金が 1 件も無い月は 0。棒を描かず、読み取りでは「集金なし」と出す */
-  average: number;
-};
-
-/**
- * 1 回あたり平均を月ごとに組み立てる。
- *
- * ⚠️ **割るのは `count`（集金回数）。`storeCount` で割らない。**
- *    ホームの「1回あたり平均」と同じ式（本家 `SalesCardClient.jsx` の `FundsDisplay`）。
- * ⚠️ **`rows` は `storeId` 付きで取ったものであること。** 組織全体の応答を渡すと
- *    `count` が全店舗の回数になり、1 回あたりが実際より小さく出る。
- * ⚠️ **集金の無い月も並べる。** 落とすと x 軸の間隔が月と対応しなくなり、
- *    「3 か月空いた」ことが読めなくなる。
- */
-export function buildAveragePoints(
-  rows: MonthlyChartPoint[] | undefined,
-  range: MonthRange
-): AveragePoint[] {
-  const byMonth = new Map((rows ?? []).map((point) => [point.month, point]));
-  const out: AveragePoint[] = [];
-
-  for (let i = range.start; i <= range.end; i += 1) {
-    const key = monthKey(i);
-    const point = byMonth.get(key);
-    const total = point?.total ?? 0;
-    const count = point?.count ?? 0;
-    // ⚠️ 0 除算を避ける
-    out.push({ month: key, total, count, average: count > 0 ? Math.round(total / count) : 0 });
-  }
-  return out;
-}
+/*
+  「1 回あたり平均」（`buildAveragePoints` / `AveragePoint`）は 2026-08-03 に外した。
+  店舗別の収益ページの「1回あたり」タブ専用で、他に使い手が無かったため。
+  ⚠️ ホームの「1回あたり平均」は別物で、そちらは今も出ている
+     （`MonthlySalesCarousel`。式は **月の集金金額 ÷ 集金回数**）。
+*/

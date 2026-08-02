@@ -55,7 +55,7 @@ const FAB_CLEARANCE = FAB_SIZE + spacing.lg + spacing.md;
  *
  * 全体版と違うのは 2 点だけ。
  *   - 店舗が固定なので「店舗別の売上」タブが無い。代わりに店舗の中の傾向を出す
- *     「1回あたり」を足してある
+ *     「機器別」を足してある
  *   - 総額収益カード（TotalRevenueCard）は組織全体の話なので出さない
  */
 export default function StoreFunds() {

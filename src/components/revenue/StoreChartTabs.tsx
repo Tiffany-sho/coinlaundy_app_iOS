@@ -2,7 +2,6 @@ import { useState } from "react";
 import { StyleSheet, Text } from "react-native";
 import { MonthlyRevenueCard } from "@/components/revenue/MonthlyRevenueCard";
 import { MonthlySummaryTable } from "@/components/revenue/MonthlySummaryTable";
-import { AveragePerCollectCard } from "@/components/revenue/AveragePerCollectCard";
 import { MachineBreakdownCard } from "@/components/revenue/MachineBreakdownCard";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { Card, Muted } from "@/components/common/ui";
@@ -10,20 +9,20 @@ import type { MonthlyPoint, StoreRevenue } from "@/api/types";
 import { color, font, spacing } from "@/theme/tokens";
 
 /** グラフカードの切り替えタブ。⚠️ 既定は「月別」 */
-type ChartTab = "monthly" | "average" | "machines" | "summary";
+type ChartTab = "monthly" | "machines" | "summary";
 
 const CHART_TABS: { value: ChartTab; label: string }[] = [
   { value: "monthly", label: "月別" },
-  { value: "average", label: "1回あたり" },
   { value: "machines", label: "機器別" },
-  { value: "summary", label: "サマリー" },
+  /* ⚠️ 3 枚に収まるので全体版と同じ「月次サマリー」に揃える（短縮しない） */
+  { value: "summary", label: "月次サマリー" },
 ];
 
 /**
  * 店舗別の収益ページのグラフ部分。1 枚ずつタブで出す。
  *
  * 組織全体版（収益タブ）は「店舗別 / 月別 / 月次サマリー」の 3 枚だが、店舗が 1 軒に
- * 固定されると店舗別の軸が消える。代わりに**その店舗の中の傾向**（1回あたり）を出す。
+ * 固定されると店舗別の軸が消える。代わりに**その店舗の中の傾向**（機器別）を出す。
  *
  * ⚠️ スマホ幅では縦に積むと売上履歴まで遠くなるので、全体版と同じく 1 枚だけ出す。
  */
@@ -39,8 +38,8 @@ export function StoreChartTabs({
   points: MonthlyPoint[];
   /**
    * この画面が見ている店舗。
-   * ⚠️ **グラフに必ず渡すこと。** 省くと「◯回」と「1 回あたり」が
-   *    組織全体の集金回数で計算される（金額は byStore から取れるが回数は取れない）。
+   * ⚠️ **グラフに必ず渡すこと。** 省くと月別売上の「◯回」が組織全体の集金回数になる
+   *    （金額は byStore から取れるが、**回数は店舗ごとに分かれていない**）。
    */
   storeId: string;
 }) {
@@ -55,14 +54,6 @@ export function StoreChartTabs({
           stores={storeRevenue}
           isLoading={revenueLoading}
           storeId={storeId}
-        />
-      )}
-
-      {tab === "average" && (
-        <AveragePerCollectCard
-          stores={storeRevenue}
-          storeId={storeId}
-          isLoading={revenueLoading}
         />
       )}
 

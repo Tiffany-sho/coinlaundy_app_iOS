@@ -509,7 +509,7 @@ export function useMonthlySummary(storeId?: string, enabled = true) {
  *
  * ⚠️ **1 店舗を見るときは `storeId` を渡すこと。** 省くと組織全体を集計するので、
  *    `byStore` から金額は取り出せても **`count`（集金回数）は組織全体の回数**になる。
- *    店舗別ページで「◯回」や「1 回あたり」を出すと数字がずれる。
+ *    店舗別ページで「◯回」を出すと数字がずれる。
  */
 export function useMonthlyChart(
   fromEpoch: number,

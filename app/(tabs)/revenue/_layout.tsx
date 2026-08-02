@@ -30,8 +30,10 @@ export default function RevenueLayout() {
 
           ⚠️ **これを外すと期間の送りが全部「前の画面へ戻る」に化ける。**
              iOS 26 以降は `fullScreenGestureEnabled` の既定が **true**（画面全体）で、
-             収益ページには横に払って期間を送る `ChartPager` が
-             **月別売上・1回あたり・機器別の 3 枚**に入っている。
+             収益ページには横に払って期間を送る `ChartPager` が**月別売上**に入っている。
+          ⚠️ **1 枚しか無いことを理由に消さないこと。** 期間の送りが 1 か所でも
+             奪われれば同じことで、`ChartPager` を持つカードは今後も増える
+             （店舗別の収益ページの機器別がそう。あちらは `stores/_layout.tsx` が塞ぐ）。
           ⚠️ **これまで露出していなかったのは偶然。** 収益がタブの葉で、
              ルートの `<Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />`
              （ログイン直後のスワイプ対策）に守られていただけ。
