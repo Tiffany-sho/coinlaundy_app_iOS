@@ -48,6 +48,7 @@ import { matchesMethods } from "@/components/revenue/methodFilter";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { useToast } from "@/components/common/toast";
 import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
+import { planAtLeast } from "@/billing/products";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 import type { ExportFile } from "@/api/types";
 
@@ -129,7 +130,8 @@ export default function Revenue() {
    *    判定して 403 を返す（アプリ側の判定を信じない）。
    */
   const plan = bootstrap.data?.plan?.plan;
-  const canExport = plan === "pro" || plan === "max";
+  /* ⚠️ プラン名を並べない。足すたびに直し漏れる（products.ts の planAtLeast を参照） */
+  const canExport = planAtLeast(plan ?? "free", "pro");
 
   const rows = list.data ?? [];
   const stores = byStore.data ?? [];

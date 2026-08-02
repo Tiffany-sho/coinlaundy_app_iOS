@@ -85,7 +85,13 @@ export type Organization = {
   myRole: Role;
 };
 
-export type PlanKey = "free" | "pro" | "max";
+/**
+ * ⚠️ **キーは Apple の商品 ID の中身と揃えてある**（`proplus` ↔
+ *    `com.collecie.app.proplus.monthly`）。サーバが商品 ID からこのキーを引いて
+ *    `organizations.plan` にそのまま入れるので、綴りが違うと**購入は成立するのに
+ *    プランが上がらない。** Web の `src/functions/plans.js` と同じ 4 つ。
+ */
+export type PlanKey = "free" | "pro" | "proplus" | "max";
 
 /**
  * 契約の出どころ。null = 有料契約なし。

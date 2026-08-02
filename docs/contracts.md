@@ -716,10 +716,23 @@ collect_funds.fundsArray = [{ id, name, funds, cashless? }]    ← 機種別入�
 上限は Web の `src/functions/plans.js` にある。**アプリ側の値は表示専用**
 （`src/billing/products.ts` の `PLAN_STORE_LIMIT`）。判定の正は Server Action。
 
-| | free | pro | max |
-|---|---|---|---|
-| 店舗数（`PLAN_LIMITS`） | 3 | 5 | 無制限 |
-| メンバー数（`PLAN_MEMBER_LIMITS`） | **1** | 無制限 | 無制限 |
+| | free | pro | proplus | max |
+|---|---|---|---|---|
+| 店舗数（`PLAN_LIMITS`） | 3 | 5 | **10** | 無制限 |
+| メンバー数（`PLAN_MEMBER_LIMITS`） | **1** | 無制限 | 無制限 | 無制限 |
+
+⚠️ **プランのキーは Apple の商品 ID の中身と同じ綴りにしてある**
+（`proplus` ↔ `com.collecie.app.proplus.monthly`）。`PLAN_BY_PRODUCT_ID` の引きを
+`organizations.plan` にそのまま入れるので、**片方だけ直すと購入は成立するのに
+プランが上がらない**（引きが `undefined` になり free 扱い）。010 の CHECK 制約が
+DB 側の防波堤になっている。
+
+⚠️ **有料機能の出し分けに `plan === "pro" || plan === "max"` と書かない。**
+`planAtLeast(plan, "pro")` を通すこと（Web は `plans.js`、アプリは `products.ts`）。
+プランを 1 つ足すたびに出し分けを全部直して回ることになり、**直し漏れた画面だけ
+機能が消える。** 2026-08-03 に Pro+ を足したとき、書き出しボタンが 3 か所とも
+Pro+ を弾いていた。⚠️ **サーバは `plan === "free"` で判定している**ので、
+**通るのにボタンが出ない**という食い違い方をする。
 
 - ⚠️ **`PLAN_LIMITS` と `PLAN_MEMBER_LIMITS` を取り違えない。** 名前が似ていて
   どちらも同じ plan キーで引くので、間違えても例外にならず「店舗が 1 件しか作れない」
@@ -761,6 +774,30 @@ collect_funds.fundsArray = [{ id, name, funds, cashless? }]    ← 機種別入�
 - `organizations.plan_source` は `'stripe' | 'apple' | null`。**null = 有料契約なし。**
   Stripe と Apple を同じ組織で同時に生かさない（双方向に 409 で弾いている）
 - ⚠️ **価格を文字列で持たない。** 表示は StoreKit の `displayPrice` だけ
+
+### 無料トライアル（導入オファー）
+
+⚠️ **アプリでは実装できない。** App Store Connect で購読商品に「導入オファー」を
+付けるもので、付与も受給資格の判定も Apple 側。アプリにできるのは
+**StoreKit が返した内容を出すこと**だけ（`src/billing/introOffer.ts`）。
+
+- ⚠️ **「6か月無料」を文字列で書かない**（`displayPrice` と同じ理由）。
+  App Store Connect で期間を変えると**アプリの表示だけ古いまま**になる
+- ⚠️ **`period.value` と `periodCount` を必ず掛ける。** 6 か月は Apple の設定次第で
+  `{month, 6} × 1` にも `{month, 1} × 6` にもなる。片方だけ見ると
+  **「1か月無料」と出して 6 か月無料で提供する**ことになる
+- ⚠️ **`paymentMode` を見る。** 導入オファーには「初回だけ割引」もあり、
+  それを「無料」と出すと課金が発生しているのに無料と書いたことになる
+- ⚠️ **導入オファーは購読グループ単位で 1 回。** Pro で試した人は Pro+ では
+  受けられない。**StoreKit は受けられるときだけ返す**ので、
+  「Pro には必ず付く」と決め打ちで画面を組まないこと
+- サーバは `trial_ends_at` を入れる（`appleAction.js` の `isFreeTrial`）。
+  ⚠️ **トライアルでないときは必ず null に戻す。** 残すと有料へ切り替わったあとも
+  設定画面が「無料期間 ◯◯まで」を出し続ける
+  - ⚠️ `offerType` だけで判断しない。`offerDiscountType` があればそちらが正。
+    **古い payload には無い**ので、無いときだけ `offerType === 1` に倒している
+- Web 側は Stripe の `trial_period_days`（環境変数 `STRIPE_PRO_TRIAL_DAYS`）。
+  ⚠️ **Apple と Stripe で期間が別々に設定されている。**片方を変えても揃わない
 
 ## 既知の未対応
 

@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ProductSubscription } from "expo-iap";
 import { Card, Muted } from "@/components/common/ui";
 import { PLAN_LABEL, PLAN_STORE_LIMIT, type PurchasablePlan } from "@/billing/products";
+import { freeTrialLabel } from "@/billing/introOffer";
 import { color, font, numeric, radius, spacing } from "@/theme/tokens";
 
 /**
@@ -16,6 +17,7 @@ import { color, font, numeric, radius, spacing } from "@/theme/tokens";
 const FEATURES: Record<string, string[]> = {
   free: ["店舗 3 件まで", "集金の記録と売上の集計"],
   pro: ["店舗 5 件まで", "集金の記録と売上の集計", "メンバーの招待"],
+  proplus: ["店舗 10 件まで", "集金の記録と売上の集計", "メンバーの招待"],
   max: ["店舗数の上限なし", "集金の記録と売上の集計", "メンバーの招待"],
 };
 
@@ -79,6 +81,19 @@ export function PlanOfferCard({
 }) {
   const limit = PLAN_STORE_LIMIT[plan];
   const unavailable = product === undefined;
+  /*
+    ⚠️ **StoreKit が返したときだけ出す。** 導入オファーは購読グループ単位で 1 回なので、
+       既に別のプランで試した Apple ID には返って来ない。「Pro には必ず無料期間が付く」
+       と決め打ちで書くと、**受けられない人にも無料と表示される。**
+  */
+  /*
+    ⚠️ **`as` で潰さないこと。** `ProductSubscription` は iOS / Android の union で、
+       Android 側に `subscriptionInfoIOS` が無い。`in` で絞れば iOS 側だけが残るので、
+       期待する形が来ていることを型が保証したまま渡せる。
+  */
+  const trial = freeTrialLabel(
+    product && "subscriptionInfoIOS" in product ? product : undefined
+  );
 
   return (
     <Card style={[styles.offer, isCurrent && styles.offerCurrent]}>
@@ -104,7 +119,21 @@ export function PlanOfferCard({
         <View style={styles.priceRow}>
           <Text style={styles.price}>{product.displayPrice}</Text>
           <Text style={styles.pricePeriod}>／ 月</Text>
+          {/* ⚠️ 期間も文字列で持たない。App Store Connect で変えたら追随する */}
+          {trial && (
+            <View style={styles.trialBadge}>
+              <Text style={styles.trialBadgeText}>{trial}</Text>
+            </View>
+          )}
         </View>
+      )}
+
+      {/* ⚠️ 無料期間の**終わり方**を必ず書く。書かないと「解約し忘れて課金された」に
+             なり、Guideline 3.1.2 が求める開示にも足りない */}
+      {trial && (
+        <Muted style={styles.trialNote}>
+          無料期間が終わると自動で更新されます。いつでも解約できます。
+        </Muted>
       )}
 
       <View style={styles.features}>
@@ -192,9 +221,27 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontFamily: font.uiBold, fontSize: 11, color: color.tealDeeper },
 
-  priceRow: { flexDirection: "row", alignItems: "baseline", marginTop: spacing.md, gap: 4 },
+  /* ⚠️ 長いトライアル表記でも折り返せるように wrap を許す（「12か月無料」等） */
+  priceRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexWrap: "wrap",
+    marginTop: spacing.md,
+    gap: 4,
+  },
   price: { ...numeric, fontSize: 28, color: color.tealDeeper },
   pricePeriod: { fontFamily: font.ui, fontSize: 13, color: color.textMuted },
+  trialBadge: {
+    marginLeft: 2,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: color.cyan50,
+    borderWidth: 1,
+    borderColor: color.cyan100,
+  },
+  trialBadgeText: { fontFamily: font.uiBold, fontSize: 11, color: color.tealDeeper },
+  trialNote: { fontSize: 11, marginTop: spacing.xs },
 
   features: { marginTop: spacing.md, gap: spacing.xs },
   featureRow: { flexDirection: "row", alignItems: "center", gap: 6 },

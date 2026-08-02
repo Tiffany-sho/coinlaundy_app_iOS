@@ -8,6 +8,7 @@ import { useAnnouncements, useBootstrap } from "@/api/queries";
 import { Appear } from "@/components/common/Appear";
 import { useUnreadAnnouncementCount } from "@/components/settings/announcementsRead";
 import { useAuth } from "@/auth/AuthProvider";
+import { PLAN_LABEL } from "@/billing/products";
 import { Button, ListCard, ListRow, Muted, Screen, Title } from "@/components/common/ui";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
@@ -18,11 +19,12 @@ const ROLE_LABEL: Record<string, string> = {
   viewer: "閲覧者",
 };
 
-const PLAN_LABEL: Record<string, string> = {
-  free: "Free",
-  pro: "Pro",
-  max: "Max",
-};
+/*
+  ⚠️ **プランの表記は `@/billing/products` の PLAN_LABEL を使う。**
+     2026-08-03 まで同じ表を**この画面が自前で持っていた**ので、
+     Pro+ を足したときにプラン画面だけ「Pro+」、設定の一覧は「—」になっていた
+     （知らないキーなので `?? "—"` に落ちる。型エラーは出ない）。
+*/
 
 export default function Settings() {
   const insets = useSafeAreaInsets();

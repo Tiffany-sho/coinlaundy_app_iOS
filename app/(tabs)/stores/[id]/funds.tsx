@@ -13,6 +13,7 @@ import {
   useStoreRevenue,
 } from "@/api/queries";
 import { EXPORT_MIME_TYPE, saveAndShareBase64 } from "@/export/saveFile";
+import { planAtLeast } from "@/billing/products";
 import { ExportSheet } from "@/components/revenue/ExportSheet";
 import { errorMessage } from "@/components/funds/fundCache";
 import { useToast } from "@/components/common/toast";
@@ -86,7 +87,8 @@ export default function StoreFunds() {
    *    判定して 403 を返す（アプリ側の判定を信じない）。
    */
   const plan = bootstrap.data?.plan?.plan;
-  const canExport = plan === "pro" || plan === "max";
+  /* ⚠️ プラン名を並べない。足すたびに直し漏れる（products.ts の planAtLeast を参照） */
+  const canExport = planAtLeast(plan ?? "free", "pro");
   /**
    * ⚠️ **`useFundList` を使わないこと。** あちらは BFF 側で
    *    `startEpoch = changeEpocFromNowYearMonth(-2)` が固定されているため
