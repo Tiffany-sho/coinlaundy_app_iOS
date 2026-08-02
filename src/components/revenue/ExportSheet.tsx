@@ -41,12 +41,13 @@ const FORMATS = [
   { value: "xlsx", label: "Excel" },
 ] as const satisfies readonly { value: ExportFormat; label: string }[];
 
-type Split = "period" | "store";
+type Split = "period" | "store" | "none";
 
+/** ⚠️ 画面に出すのは 2 つだけ。`"none"` は店舗を固定したときに内部で使う */
 const SPLITS = [
   { value: "period", label: "月ごと" },
   { value: "store", label: "店舗ごと" },
-] as const satisfies readonly { value: Split; label: string }[];
+] as const satisfies readonly { value: "period" | "store"; label: string }[];
 
 /**
  * 集金データの書き出しシート。Web の ExportPanel.jsx の移植。
@@ -124,8 +125,14 @@ export function ExportSheet({
     );
   }
 
-  /** ⚠️ 1 店舗では「店舗ごと」にシートを分けても 1 枚にしかならない。月で分ける */
-  const effectiveSplit: Split = lockedStoreId ? "period" : split;
+  /**
+   * ⚠️ **1 店舗に固定しているときは分けない（1 シートにまとめる）。**
+   *    月で分けると期間ぶんシートが増えて、1 店舗の推移を横に並べて見られない。
+   *    ⚠️ `"store"` で代用しないこと。グループは `laundryName` で作るので、
+   *       **店舗を改名していると 1 店舗なのに 2 シートに割れる**
+   *       （詳細は Web の `groupRecords`）。
+   */
+  const effectiveSplit: Split = lockedStoreId ? "none" : split;
   const lockedStoreName = lockedStoreId
     ? stores.find((s) => s.laundryId === lockedStoreId)?.laundryName ?? ""
     : "";
@@ -301,9 +308,11 @@ export function ExportSheet({
               <Text style={styles.note}>
                 {lockedStoreName ? `${lockedStoreName}店の` : ""}
                 {monthLabel(range.start)}〜{monthLabel(range.end)}の集金データを
-                {format === "xlsx"
-                  ? `1 つの Excel ファイルにまとめ、${effectiveSplit === "period" ? "月" : "店舗"}ごとにシートを分けます`
-                  : "1 つの CSV ファイルに書き出します"}
+                {format !== "xlsx"
+                  ? "1 つの CSV ファイルに書き出します"
+                  : effectiveSplit === "none"
+                    ? "1 つの Excel ファイル・1 枚のシートに書き出します"
+                    : `1 つの Excel ファイルにまとめ、${effectiveSplit === "period" ? "月" : "店舗"}ごとにシートを分けます`}
               </Text>
 
               {!canExport && (

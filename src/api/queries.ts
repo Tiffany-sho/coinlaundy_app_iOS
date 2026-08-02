@@ -682,7 +682,12 @@ export type ExportInput = {
   /** 空 = 全店舗 */
   storeIds?: string[];
   /** ⚠️ Excel のシート分割にだけ効く。CSV は常に 1 ファイル */
-  splitMethod?: "period" | "store";
+  /**
+   * Excel のシートの分け方。CSV では無視される（必ず 1 ファイル）。
+   * ⚠️ **`"none"` は「1 シートにまとめる」。** 1 店舗ぶんを `"store"` で代用しないこと
+   *    （改名をまたいだ集金があると 2 シートに割れる。詳細は Web の `groupRecords`）。
+   */
+  splitMethod?: "period" | "store" | "none";
 };
 
 /**
