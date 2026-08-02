@@ -14,11 +14,39 @@ import { color, font, numeric, radius, spacing } from "@/theme/tokens";
  *    Guideline 3.1.2（購読の内容を正しく開示すること）に触れる。
  */
 
+/**
+ * カードに並べる機能。
+ *
+ * ⚠️ **店舗数をここに書かないこと。** カードの見出し直下で PLAN_STORE_LIMIT から
+ *    別に出しているので、2026-08-03 まで**同じ行が 1 枚に 2 回**出ていた。
+ *    そのうえ数値が二重管理で、片方だけ直すと食い違う。
+ *
+ * ⚠️ **実際に出し分けている機能を落とさないこと。** 書き出しは
+ *    `planAtLeast(plan, "pro")` で止めていて（ExportSheet.tsx）Pro 以上の
+ *    実在する差なのに、ここに無いため Free と Pro の違いが店舗数だけに見えていた。
+ *
+ * ⚠️ 裏付けの無い項目（「優先サポート」など）を足さないこと。Web の料金表では
+ *    Max にだけ書かれていて、提供実態も無く 2 つの表が矛盾していた。
+ */
+const FREE_FEATURES = ["集金の記録と売上の集計", "在庫・機器の管理"];
+
+/**
+ * ⚠️ **有料プランの中身は 3 つとも同じ。** 差は店舗数だけ、というのが実態なので
+ *    1 つの配列を共有する。プランごとに書き分けると、片方にだけ足して
+ *    「Pro+ にだけ機能が無い」表になる。
+ */
+const PAID_FEATURES = [
+  ...FREE_FEATURES,
+  "データの書き出し（CSV / Excel）",
+  "メンバーの招待",
+];
+
 const FEATURES: Record<string, string[]> = {
-  free: ["店舗 3 件まで", "集金の記録と売上の集計"],
-  pro: ["店舗 5 件まで", "集金の記録と売上の集計", "メンバーの招待"],
-  proplus: ["店舗 10 件まで", "集金の記録と売上の集計", "メンバーの招待"],
-  max: ["店舗数の上限なし", "集金の記録と売上の集計", "メンバーの招待"],
+  // free は購入カードに出ないが、有料との差を読めるように残してある
+  free: FREE_FEATURES,
+  pro: PAID_FEATURES,
+  proplus: PAID_FEATURES,
+  max: PAID_FEATURES,
 };
 
 export function CurrentPlanCard({
