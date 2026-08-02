@@ -1,11 +1,21 @@
 import { useMemo, useState } from "react";
-import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { Appear } from "@/components/common/Appear";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useFundHistory, useMonthlySummary, useStore, useStoreRevenue } from "@/api/queries";
+import {
+  useBootstrap,
+  useFundHistory,
+  useMonthlySummary,
+  useStore,
+  useStoreRevenue,
+} from "@/api/queries";
+import { EXPORT_MIME_TYPE, saveAndShareBase64 } from "@/export/saveFile";
+import { ExportSheet } from "@/components/revenue/ExportSheet";
+import { errorMessage } from "@/components/funds/fundCache";
+import { useToast } from "@/components/common/toast";
 import { StoreChartTabs } from "@/components/revenue/StoreChartTabs";
 import { TotalRevenueCard } from "@/components/revenue/TotalRevenueCard";
 import { HistoryControls, type HistorySortField } from "@/components/revenue/HistoryControls";
@@ -23,8 +33,17 @@ import {
   limitStep,
 } from "@/components/revenue/historyRows";
 import { Card, CenterMessage, Muted, Screen } from "@/components/common/ui";
-import type { StoreRevenue } from "@/api/types";
-import { color, font, spacing } from "@/theme/tokens";
+import type { ExportFile, StoreRevenue } from "@/api/types";
+import { color, font, radius, shadow, spacing } from "@/theme/tokens";
+
+/** 収益タブの書き出しボタンと同じ大きさ（アプリの中で語彙を 1 つにする） */
+const FAB_SIZE = 60;
+/**
+ * リストの下に空ける余白。
+ * ⚠️ **ボタンの高さぶん確保すること。** 足りないと最終行（「すべて表示しました」や
+ *    「さらに表示」）がボタンの下に潜り、一番読みたい行が指で隠れる。
+ */
+const FAB_CLEARANCE = FAB_SIZE + spacing.lg + spacing.md;
 
 /**
  * 店舗別の収益。
@@ -50,8 +69,24 @@ export default function StoreFunds() {
   const [collecter, setCollecter] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [limit, setLimit] = useState(() => initialLimit(true));
+  const [exportOpen, setExportOpen] = useState(false);
+  /**
+   * 書き出せたファイル。⚠️ **シートが閉じきってから共有する**ために一旦ここに置く。
+   *    Modal が出ている間に共有シートを開くと、iOS は「すでに別の画面を出している」
+   *    として何も表示せずに失敗する（docs/traps.md の Modal 二重表示）。
+   */
+  const [pendingFile, setPendingFile] = useState<ExportFile | null>(null);
+  const toast = useToast();
 
   const store = useStore(id);
+  const bootstrap = useBootstrap();
+  /**
+   * 書き出せるプランか。
+   * ⚠️ **これは表示の出し分けだけ。** 実際の可否は BFF が organizations.plan で
+   *    判定して 403 を返す（アプリ側の判定を信じない）。
+   */
+  const plan = bootstrap.data?.plan?.plan;
+  const canExport = plan === "pro" || plan === "max";
   /**
    * ⚠️ **`useFundList` を使わないこと。** あちらは BFF 側で
    *    `startEpoch = changeEpocFromNowYearMonth(-2)` が固定されているため
@@ -130,6 +165,26 @@ export default function StoreFunds() {
     [filtered, isGrouped, collapsed, limit]
   );
 
+  /**
+   * 書き出したファイルを端末に置いて共有シートへ渡す。
+   * ⚠️ **必ずシートを閉じたあとに呼ぶこと**（pendingFile のコメントを参照）。
+   */
+  async function shareFile(file: ExportFile) {
+    try {
+      const result = await saveAndShareBase64(
+        file.name,
+        file.base64,
+        EXPORT_MIME_TYPE[file.format]
+      );
+      // 共有をやめただけなら失敗ではないので、何も出さない
+      if (result === "shared") {
+        toast.success(`${file.recordCount}件の集金データを書き出しました`);
+      }
+    } catch (e) {
+      toast.error(errorMessage(e, "ファイルを保存できませんでした"));
+    }
+  }
+
   if (list.isLoading && rows.length === 0 && monthly.isLoading) {
     return (
       <Screen>
@@ -155,7 +210,8 @@ export default function StoreFunds() {
         data={listRows}
         keyExtractor={(row) => row.key}
         // タブバーは画面の下に並ぶ（重ならない）ので、下端の余白に insets.bottom は足さない
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
+        // ⚠️ 右下の書き出しボタンに最終行が潜らないよう、ボタンの高さぶん空ける
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: FAB_CLEARANCE }}
         refreshControl={
           <RefreshControl
             refreshing={list.isRefetching}
@@ -273,6 +329,41 @@ export default function StoreFunds() {
           );
         }}
       />
+
+      {/* 書き出しの入口。収益タブと同じ形・同じ位置に置く（操作の語彙を 1 つにする）。
+          ⚠️ プラン外でも押せるようにして、理由はシートの中で説明する */}
+      <Pressable
+        onPress={() => setExportOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`${store.data?.store ?? ""}店の集金データを書き出す`}
+        style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
+      >
+        <Ionicons name="download-outline" size={24} color="#FFFFFF" />
+        <Text style={styles.fabLabel}>書き出し</Text>
+      </Pressable>
+
+      {/* ⚠️ **`lockedStoreId` を必ず渡す。** 渡さないと選択が空＝全店舗の規約に落ちて、
+             「この店舗の収益」から組織の全店舗ぶんが書き出される */}
+      <ExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        stores={storeRevenue}
+        canExport={canExport}
+        lockedStoreId={id}
+        onDone={(file) => {
+          setExportOpen(false);
+          /* ⚠️ onDismiss は iOS 専用。それ以外では発火しないので、
+                待たずにそのまま処理する（web のブラウザ確認がここで止まらないように） */
+          if (Platform.OS === "ios") setPendingFile(file);
+          else void shareFile(file);
+        }}
+        onDismiss={() => {
+          if (!pendingFile) return;
+          const file = pendingFile;
+          setPendingFile(null);
+          void shareFile(file);
+        }}
+      />
     </Screen>
   );
 }
@@ -309,4 +400,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   loadingNote: { fontSize: 11, marginBottom: spacing.md },
+  /* 収益タブ（app/(tabs)/revenue/index.tsx）の fab と同じ値。片方だけ変えないこと */
+  fab: {
+    position: "absolute",
+    right: spacing.lg,
+    bottom: spacing.lg,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: radius.pill,
+    backgroundColor: color.teal,
+    borderWidth: 2,
+    borderColor: color.tealDark,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.hero,
+  },
+  fabLabel: { fontFamily: font.uiBold, fontSize: 9, color: "#FFFFFF", letterSpacing: 0.3 },
 });

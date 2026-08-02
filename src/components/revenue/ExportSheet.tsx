@@ -28,6 +28,8 @@ import type { ExportFile, ExportFormat, StoreRevenue } from "@/api/types";
 const MAX_MONTHS_BACK = 60;
 
 const PRESETS = [
+  /* ⚠️ 「1か月」は**今月だけ**（start = end = 当月）。他と同じく「直近 N か月」の N=1 */
+  { months: 1, label: "1か月" },
   { months: 3, label: "3か月" },
   { months: 6, label: "6か月" },
   { months: 12, label: "12か月" },
@@ -65,6 +67,7 @@ export function ExportSheet({
   onDismiss,
   stores,
   canExport,
+  lockedStoreId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -75,6 +78,15 @@ export function ExportSheet({
   stores: StoreRevenue[];
   /** Pro 以上か。⚠️ 表示の出し分けだけ。実際の可否はサーバが判定する */
   canExport: boolean;
+  /**
+   * この店舗だけを書き出す（店舗別の収益ページから開いたとき）。
+   *
+   * ⚠️ **`stores` を 1 件にするだけでは足りない。** 選択が空＝全店舗という規約なので、
+   *    `storeIds` を省略した瞬間 **BFF は組織の全店舗を書き出す。**
+   *    店舗を固定する意思をここで明示すること。
+   * ⚠️ 固定中は店舗の選択肢もシートの分け方も出さない（1 店舗では選ぶ意味が無い）。
+   */
+  lockedStoreId?: string;
 }) {
   const current = currentMonthIndex();
   const oldest = current - (MAX_MONTHS_BACK - 1);
@@ -112,6 +124,12 @@ export function ExportSheet({
     );
   }
 
+  /** ⚠️ 1 店舗では「店舗ごと」にシートを分けても 1 枚にしかならない。月で分ける */
+  const effectiveSplit: Split = lockedStoreId ? "period" : split;
+  const lockedStoreName = lockedStoreId
+    ? stores.find((s) => s.laundryId === lockedStoreId)?.laundryName ?? ""
+    : "";
+
   async function run() {
     setError(null);
     try {
@@ -124,8 +142,13 @@ export function ExportSheet({
          *    （/funds/chart の `to` は排他で、向きが逆なので取り違えに注意）。
          */
         endEpoch: monthStartEpoch(range.end + 1) - 1,
-        storeIds: selectedIds.length > 0 ? selectedIds : undefined,
-        splitMethod: split,
+        /* ⚠️ 固定中は選択を見ない。undefined を渡すと全店舗になる（lockedStoreId のコメント） */
+        storeIds: lockedStoreId
+          ? [lockedStoreId]
+          : selectedIds.length > 0
+            ? selectedIds
+            : undefined,
+        splitMethod: effectiveSplit,
       });
       onDone(file);
     } catch (e) {
@@ -215,7 +238,25 @@ export function ExportSheet({
                 onChange={setEnd}
               />
 
-              {stores.length > 1 && (
+              {/* ⚠️ 固定中は「どの店舗か」を必ず出す。書き出したファイルを開くまで
+                     全店舗ぶんか 1 店舗ぶんか分からない、という状態にしない */}
+              {lockedStoreId && (
+                <>
+                  <View style={styles.divider} />
+                  <Text style={styles.label}>店舗</Text>
+                  {/* 選べないので触っても何も起きない。PeriodFilterSheet と同じ薄め方 */}
+                  <View style={[styles.chipRow, { opacity: 0.65 }]}>
+                    <Chip
+                      label={lockedStoreName || "この店舗"}
+                      selected
+                      dotColor={STORE_COLORS[0]}
+                      onPress={() => {}}
+                    />
+                  </View>
+                </>
+              )}
+
+              {!lockedStoreId && stores.length > 1 && (
                 <>
                   <View style={styles.divider} />
                   <View style={styles.labelRow}>
@@ -247,8 +288,10 @@ export function ExportSheet({
               <SegmentedTabs options={FORMATS} value={format} onChange={setFormat} />
 
               {/* ⚠️ 分割が効くのは Excel だけ。CSV は共有シートが 1 ファイルしか
-                     扱えないので、BFF 側で必ず 1 本にまとめている */}
-              {format === "xlsx" && (
+                     扱えないので、BFF 側で必ず 1 本にまとめている。
+                  ⚠️ 1 店舗に固定しているときは出さない（「店舗ごと」を選んでも
+                     シートが 1 枚しかできず、選択肢として意味を持たない） */}
+              {format === "xlsx" && !lockedStoreId && (
                 <>
                   <Text style={styles.label}>シートの分け方</Text>
                   <SegmentedTabs options={SPLITS} value={split} onChange={setSplit} />
@@ -256,9 +299,10 @@ export function ExportSheet({
               )}
 
               <Text style={styles.note}>
+                {lockedStoreName ? `${lockedStoreName}店の` : ""}
                 {monthLabel(range.start)}〜{monthLabel(range.end)}の集金データを
                 {format === "xlsx"
-                  ? `1 つの Excel ファイルにまとめ、${split === "period" ? "月" : "店舗"}ごとにシートを分けます`
+                  ? `1 つの Excel ファイルにまとめ、${effectiveSplit === "period" ? "月" : "店舗"}ごとにシートを分けます`
                   : "1 つの CSV ファイルに書き出します"}
               </Text>
 

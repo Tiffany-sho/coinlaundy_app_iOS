@@ -131,6 +131,7 @@ export function MonthlyStackedBarChart({
   data,
   series,
   showBreakdown = true,
+  breakdownTitle = "店舗別",
 }: {
   data: StackedPoint[];
   series: StackSeries[];
@@ -140,6 +141,12 @@ export function MonthlyStackedBarChart({
    *    棒の合計と内訳が同じ数字になり、色見本としての役割も無いので同じ行が 2 回並ぶだけになる。
    */
   showBreakdown?: boolean;
+  /**
+   * 内訳の見出し（「◯月の<ここ>」）。積み上げの単位が店舗とは限らない。
+   * ⚠️ **支払方法で絞ると系列は支払方法になる。** 「店舗別」のままだと
+   *    見出しと中身が食い違う。
+   */
+  breakdownTitle?: string;
 }) {
   /** 内訳を出している月。null = まだ押していない（＝最新月） */
   const [selected, setSelected] = useState<string | null>(null);
@@ -252,13 +259,13 @@ export function MonthlyStackedBarChart({
               setExpanded((prev) => !prev);
             }}
             accessibilityRole="button"
-            accessibilityLabel={`${formatMonthLabel(active.month)}の店舗別内訳を${expanded ? "閉じる" : "開く"}`}
+            accessibilityLabel={`${formatMonthLabel(active.month)}の${breakdownTitle}内訳を${expanded ? "閉じる" : "開く"}`}
             accessibilityState={{ expanded }}
             hitSlop={6}
             style={({ pressed }) => [styles.breakdownHead, pressed && { opacity: 0.7 }]}
           >
             <Text style={styles.breakdownTitle} numberOfLines={1}>
-              {formatMonthLabel(active.month)}の店舗別
+              {formatMonthLabel(active.month)}の{breakdownTitle}
             </Text>
             <Text style={styles.breakdownToggle}>{expanded ? "閉じる" : "内訳を見る"}</Text>
             <Ionicons
@@ -286,7 +293,10 @@ export function MonthlyStackedBarChart({
                       style={[styles.breakdownName, item.value === 0 && styles.breakdownDim]}
                       numberOfLines={1}
                     >
-                      {item.name}店
+                      {/* ⚠️ ここで「店」を足さない。系列は店舗とは限らない
+                             （支払方法で絞ると「PayPay店」になる）。
+                             表示名は呼び出し側が完成させて渡すこと */}
+                      {item.name}
                     </Text>
                     <Text style={styles.breakdownShare}>{item.value > 0 ? `${share}%` : ""}</Text>
                     <Text style={[styles.breakdownValue, item.value === 0 && styles.breakdownDim]}>

@@ -82,6 +82,10 @@ export function MonthlyRevenueCard({
        byMethod はそれぞれ独立した畳み方で、「この店舗の PayPay」は
        データとして存在しない。方法を選んだら**方法ごとの積み上げ**に切り替える。
   */
+  /*
+    ⚠️ **`name` は内訳にそのまま出る完成形。** グラフ側で「店」を足さない
+       （足していたので、支払方法で絞ると「PayPay店」と出ていた）。
+  */
   const series: StackSeries[] = byMethodActive
     ? methods.map((key, i) => ({
         key,
@@ -90,7 +94,7 @@ export function MonthlyRevenueCard({
       }))
     : visible.map(({ store, color: dot }) => ({
         key: store.laundryId,
-        name: store.laundryName,
+        name: `${store.laundryName}店`,
         color: dot,
       }));
 
@@ -107,6 +111,8 @@ export function MonthlyRevenueCard({
        支払方法で絞ったときも同じで、1 つだけ選んだ場合は出さない。
   */
   const showBreakdown = byMethodActive ? methods.length > 1 : stores.length > 1;
+  /** ⚠️ 積み上げの単位が変わるので見出しも変える（「7月の店舗別」→「7月の支払方法別」） */
+  const breakdownTitle = byMethodActive ? "支払方法別" : "店舗別";
 
   const buildPoints = (rows: typeof chart.data, r: typeof range) =>
     byMethodActive
@@ -199,6 +205,7 @@ export function MonthlyRevenueCard({
                 data={buildPoints(prevChart.data, prevRange)}
                 series={series}
                 showBreakdown={showBreakdown}
+                breakdownTitle={breakdownTitle}
               />
             ) : null
           }
@@ -207,6 +214,7 @@ export function MonthlyRevenueCard({
               data={stacked}
               series={series}
               showBreakdown={showBreakdown}
+                breakdownTitle={breakdownTitle}
             />
           }
           next={
@@ -215,6 +223,7 @@ export function MonthlyRevenueCard({
                 data={buildPoints(nextChart.data, nextRange)}
                 series={series}
                 showBreakdown={showBreakdown}
+                breakdownTitle={breakdownTitle}
               />
             ) : null
           }
