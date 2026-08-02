@@ -329,3 +329,17 @@ BFF は `/api/v1` 配下に一通り揃っている（`src/app/api/v1/**` を参
 - [x] マイグレーション **005（お知らせ）を適用済み**。最初の 1 件も入っているので
       空のまま審査に出ることはない
 - [ ] アカウント削除の動線確認（Guideline 5.1.1(v)）
+- [ ] **審査用アカウントにデモデータを入れる。** SQL は用意済み:
+      `../coin-laundry-app/docs/ios/seeds/demo_collect_funds.sql`
+      （浅草・難波・博多・すすきの・祇園の 5 店舗 × 2025-01〜2026-07 の集金 285 件）
+
+      ```
+      npx supabase db query --linked -f docs/ios/seeds/demo_collect_funds.sql
+      ```
+
+      - ⚠️ **先に 5 店舗と設備を作っておく。** 店舗名で組織を特定し、無ければ中止する。
+        設備が無い店舗は**合計入力モード**（`fundsArray` が空）で入り、機器別内訳に出ない
+      - ⚠️ **支払方法（PayPay / 交通系IC / クレジットカード）はシードが作る。**
+        通常の登録口は店舗フォームだけなので、これは**デモ専用の例外**
+      - ⚠️ **実データのある組織で流さないこと。** 取り消しは
+        `DELETE FROM collect_funds WHERE client_request_id LIKE 'seed-demo-%'`
