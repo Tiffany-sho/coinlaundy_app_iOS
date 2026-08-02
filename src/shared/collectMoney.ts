@@ -22,7 +22,31 @@ export function calcTotalFunds(fundsArray: FundEntry[]): number {
   return fundsArray.reduce((sum, entry) => sum + (entry.funds || 0), 0) * COIN_VALUE;
 }
 
-/** 1 行あたりの金額 */
+/** 1 行あたりの金額（現金のみ） */
 export function entryAmount(entry: FundEntry): number {
   return (entry.funds || 0) * COIN_VALUE;
+}
+
+/**
+ * 1 行のキャッシュレスの合計（円）。
+ * ⚠️ **`amount` は円。`funds` の枚数と混ぜて × 100 しないこと。**
+ * ⚠️ 合計入力で登録された集金と、この項目より前のデータでは `undefined`。
+ */
+export function entryCashless(entry: FundEntry): number {
+  return (entry.cashless ?? []).reduce((sum, item) => sum + (item.amount || 0), 0);
+}
+
+/**
+ * 明細の総額（現金 + 機器ごとのキャッシュレス）。
+ *
+ * ⚠️ **`calcTotalFunds` は現金しか数えない**（サーバへ送るのはそちら。
+ *    DB の `totalFunds` はサーバが組み直す）。**画面に出す合計はこちらを使うこと。**
+ *    取り違えると、編集中だけ金額がキャッシュレスぶん減って見え、
+ *    保存すると元に戻る、という挙動になる。
+ */
+export function calcDisplayTotal(fundsArray: FundEntry[]): number {
+  return (
+    calcTotalFunds(fundsArray) +
+    fundsArray.reduce((sum, entry) => sum + entryCashless(entry), 0)
+  );
 }

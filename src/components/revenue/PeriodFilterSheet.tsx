@@ -9,8 +9,15 @@ import {
   type MonthIndex,
   type MonthRange as Range,
 } from "@/components/revenue/monthIndex";
+import { CASH_METHOD_KEY, methodKeyOf } from "@/api/types";
 import { color, font, radius, spacing, STORE_COLORS } from "@/theme/tokens";
 import type { StoreRevenue } from "@/api/types";
+
+/**
+ * 支払方法を絞らないことを表す値。
+ * ⚠️ 空文字にしない（`||` で誤って falsy 扱いされる）。
+ */
+export const ALL_METHODS = "__all__";
 
 /**
  * 直接選べる範囲の下限（今月から何か月前まで）。
@@ -56,6 +63,10 @@ const PRESETS = [
  *    以前は 2 つのマス目を出しっぱなしにしていたので、シートが縦に長く
  *    中でスクロールしないと適用ボタンに届かなかった。
  *    ⚠️ **開くのはどちらか一方だけ。** 両方開くと同じ高さの問題に戻る。
+ *
+ * ⚠️ **支払方法もここに入っている**（2026-08-02 にカードの上の横並びチップから移した）。
+ *    ⚠️ **カードの上に戻さない。** 絞り込みの入口が 2 か所に分かれ、
+ *    「絞り込み」ボタンの点（`isFilterActive`）と実際の条件が食い違って見える。
  */
 export function FilterSheet({
   open,
@@ -63,6 +74,8 @@ export function FilterSheet({
   stores,
   range,
   selectedIds,
+  methodNames = [],
+  method = ALL_METHODS,
   onApply,
 }: {
   open: boolean;
@@ -70,7 +83,14 @@ export function FilterSheet({
   stores: StoreRevenue[];
   range: Range;
   selectedIds: string[];
-  onApply: (range: Range, selectedIds: string[]) => void;
+  /**
+   * 支払方法の名前（現金は含めない。ここで先頭に足す）。
+   * ⚠️ **空なら節ごと出さない。** 現金しか扱わない組織でシートが 1 段長くなるだけ。
+   * ⚠️ 渡さない画面（機器別の内訳）では支払方法の絞り込み自体が出ない。
+   */
+  methodNames?: string[];
+  method?: string;
+  onApply: (range: Range, selectedIds: string[], method: string) => void;
 }) {
   const current = currentMonthIndex();
   const oldest = current - (MAX_MONTHS_BACK - 1);
@@ -78,6 +98,7 @@ export function FilterSheet({
   const [draftRange, setDraftRange] = useState<Range>(range);
   /** ドラフトでは「全店舗」も全 id を並べた状態で持つ（Web の draftStores と同じ） */
   const [draftIds, setDraftIds] = useState<string[]>([]);
+  const [draftMethod, setDraftMethod] = useState<string>(ALL_METHODS);
   /** 開いている月のパネル。⚠️ 同時に 1 つだけ（両方開くとシートが画面より高くなる） */
   const [expanded, setExpanded] = useState<"start" | "end" | null>(null);
 
@@ -86,11 +107,19 @@ export function FilterSheet({
     if (!open) return;
     setDraftRange(range);
     setDraftIds(selectedIds.length > 0 ? [...selectedIds] : stores.map((s) => s.laundryId));
+    setDraftMethod(method);
     // ⚠️ たたんだ状態から始める。前回開いたパネルが残ると開いた瞬間に縦長になる
     setExpanded(null);
-  }, [open, range, selectedIds, stores]);
+  }, [open, range, selectedIds, stores, method]);
 
   const allSelected = draftIds.length === stores.length;
+  /*
+    ⚠️ **支払方法を選ぶと店舗では絞れない。** 応答の `byStore` と `byMethod` は
+       独立した畳み方で、「この店舗の PayPay」は**データとして存在しない。**
+       黙って無視すると「絞ったのに数字が変わらない」ので、
+       **店舗の選択を触れなくして理由を出す。**
+  */
+  const methodActive = draftMethod !== ALL_METHODS;
 
   /** ⚠️ 選んだら閉じる。集金画面の集金日と同じ挙動（開いたままにしない） */
   function setStart(index: MonthIndex) {
@@ -193,12 +222,40 @@ export function FilterSheet({
                 onChange={setEnd}
               />
 
+              {/* ⚠️ 支払方法が 1 件も無いときは節ごと出さない */}
+              {methodNames.length > 0 && (
+                <>
+                  <View style={sheetStyles.divider} />
+                  <Text style={styles.filterLabel}>支払方法</Text>
+                  <View style={styles.chipRow}>
+                    {[
+                      { key: ALL_METHODS, label: "すべて" },
+                      { key: CASH_METHOD_KEY, label: "現金" },
+                      ...methodNames.map((name) => ({ key: methodKeyOf(name), label: name })),
+                    ].map((option) => (
+                      <Chip
+                        key={option.key}
+                        label={option.label}
+                        selected={option.key === draftMethod}
+                        onPress={() => {
+                          setDraftMethod(option.key);
+                          // 方法で絞る間は店舗の内訳が出せないので、選択をすべてに戻す
+                          if (option.key !== ALL_METHODS) {
+                            setDraftIds(stores.map((s) => s.laundryId));
+                          }
+                        }}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+
               {stores.length > 1 && (
                 <>
                   <View style={sheetStyles.divider} />
                   <View style={sheetStyles.storeHead}>
                     <Text style={styles.filterLabel}>表示店舗</Text>
-                    {!allSelected && (
+                    {!allSelected && !methodActive && (
                       <Pressable
                         onPress={() => setDraftIds(stores.map((s) => s.laundryId))}
                         hitSlop={8}
@@ -207,14 +264,26 @@ export function FilterSheet({
                       </Pressable>
                     )}
                   </View>
-                  <View style={styles.chipRow}>
+
+                  {/* ⚠️ 押せなくするだけでなく理由を出す。黙って無効化すると故障に見える */}
+                  {methodActive && (
+                    <Text style={sheetStyles.storeNote}>
+                      支払方法で絞っている間は店舗を選べません（支払方法ごとの店舗別内訳は
+                      記録されていないため）
+                    </Text>
+                  )}
+
+                  <View style={[styles.chipRow, methodActive && { opacity: 0.4 }]}>
                     {stores.map((store, i) => (
                       <Chip
                         key={store.laundryId}
                         label={store.laundryName}
-                        selected={draftIds.includes(store.laundryId)}
+                        selected={!methodActive && draftIds.includes(store.laundryId)}
                         dotColor={STORE_COLORS[i % STORE_COLORS.length]}
-                        onPress={() => toggleStore(store.laundryId)}
+                        onPress={() => {
+                          if (methodActive) return;
+                          toggleStore(store.laundryId);
+                        }}
                       />
                     ))}
                   </View>
@@ -233,7 +302,12 @@ export function FilterSheet({
             <Pressable
               onPress={() =>
                 // 全部選んである状態は「絞り込みなし」（＝空配列）として持つ
-                onApply(draftRange, allSelected ? [] : draftIds)
+                // ⚠️ 方法で絞るときは店舗を必ず空にする（上の理由）
+                onApply(
+                  draftRange,
+                  allSelected || methodActive ? [] : draftIds,
+                  draftMethod
+                )
               }
               style={({ pressed }) => [
                 sheetStyles.footerButton,
@@ -285,6 +359,13 @@ const sheetStyles = StyleSheet.create({
   divider: { height: 1, backgroundColor: color.divider, marginVertical: spacing.lg },
   storeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   selectAll: { fontFamily: font.uiBold, fontSize: 12, color: color.teal },
+  storeNote: {
+    fontFamily: font.ui,
+    fontSize: 11,
+    color: color.textFaint,
+    lineHeight: 16,
+    marginBottom: spacing.sm,
+  },
   footer: {
     flexDirection: "row",
     justifyContent: "flex-end",

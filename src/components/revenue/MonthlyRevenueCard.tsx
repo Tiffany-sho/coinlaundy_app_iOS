@@ -5,11 +5,10 @@ import * as Haptics from "expo-haptics";
 import { MonthlyStackedBarChart, type StackSeries } from "@/components/revenue/charts";
 import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
 import { buildMethodPoints, buildStackedPoints } from "@/components/revenue/monthlySeries";
-import { ALL_METHODS, MethodChips } from "@/components/revenue/MethodChips";
 import { paymentMethodNames, useStores } from "@/api/queries";
 import { CASH_METHOD_KEY, methodKeyOf } from "@/api/types";
 import { usePeriodPager } from "@/components/revenue/usePeriodPager";
-import { FilterSheet } from "@/components/revenue/PeriodFilterSheet";
+import { ALL_METHODS, FilterSheet } from "@/components/revenue/PeriodFilterSheet";
 import { monthLabel } from "@/components/revenue/monthIndex";
 import { Card, MoneyText, Muted } from "@/components/common/ui";
 import { color, font, radius, spacing, STORE_COLORS } from "@/theme/tokens";
@@ -127,7 +126,7 @@ export function MonthlyRevenueCard({
             setFilterOpen(true);
           }}
           accessibilityRole="button"
-          accessibilityLabel="期間と店舗で絞り込む"
+          accessibilityLabel="期間・店舗・支払方法で絞り込む"
           style={({ pressed }) => [styles.filterButton, pressed && { opacity: 0.75 }]}
         >
           <Ionicons name="options-outline" size={15} color={color.tealDeeper} />
@@ -136,21 +135,6 @@ export function MonthlyRevenueCard({
           {isFilterActive && <View style={styles.filterDot} />}
         </Pressable>
       </View>
-
-      {/*
-        ⚠️ **支払方法を選んだら店舗の絞り込みを必ず解除する。** 「この店舗の PayPay」は
-           データとして存在しないので、残しておくと**絞っているつもりの店舗が
-           数字に反映されない**（黙って無視される）。
-        ⚠️ 支払方法が 1 件も無い組織ではこの行ごと出ない（MethodChips が null を返す）。
-      */}
-      <MethodChips
-        names={methodNames}
-        value={method}
-        onChange={(next) => {
-          setMethod(next);
-          if (next !== ALL_METHODS) setSelectedIds([]);
-        }}
-      />
 
       {/*
         期間の送り。グラフを横に払っても送れるが、**矢印も必ず出す。**
@@ -175,9 +159,12 @@ export function MonthlyRevenueCard({
         stores={stores}
         range={range}
         selectedIds={selectedIds}
-        onApply={(nextRange, nextIds) => {
+        methodNames={methodNames}
+        method={method}
+        onApply={(nextRange, nextIds, nextMethod) => {
           setRange(nextRange);
           setSelectedIds(nextIds);
+          setMethod(nextMethod);
           setFilterOpen(false);
         }}
       />

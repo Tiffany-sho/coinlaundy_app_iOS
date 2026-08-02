@@ -39,7 +39,7 @@ import { Divider, SectionHead } from "@/components/common/section";
 import { useDialog } from "@/components/common/dialog";
 import { useToast } from "@/components/common/toast";
 import { useOutbox } from "@/offline/OutboxProvider";
-import { calcTotalFunds } from "@/shared/collectMoney";
+import { calcDisplayTotal, calcTotalFunds } from "@/shared/collectMoney";
 import { formatJstDate } from "@/shared/date";
 import { color, font, spacing } from "@/theme/tokens";
 import type { FundEntry } from "@/api/types";
@@ -118,8 +118,14 @@ export default function FundDetailScreen() {
     funds: toInt(coinDraft[entry.id]),
   }));
 
+  /*
+    ⚠️ **`calcDisplayTotal` を使う（`calcTotalFunds` ではない）。**
+       あちらは現金しか数えないので、機器ごとのキャッシュレスがある集金では
+       **編集中だけ金額がその分減って見え、保存すると戻る**という挙動になる。
+       サーバへ送るのは現金ぶん（`calcTotalFunds`）のまま。
+  */
   const displayTotal = hasEntries
-    ? calcTotalFunds(editing ? draftEntries : entries)
+    ? calcDisplayTotal(editing ? draftEntries : entries)
     : editing
       ? toInt(totalDraft)
       : (recordTotal ?? 0);

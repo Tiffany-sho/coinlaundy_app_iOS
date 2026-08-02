@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { SectionHead } from "@/components/common/section";
 import { Muted } from "@/components/common/ui";
+import { cashlessTotal } from "@/components/collect/CashlessInputs";
 import { COIN_VALUE } from "@/shared/collectMoney";
 import { color, font, radius, spacing } from "@/theme/tokens";
+import type { PaymentMethod } from "@/api/types";
 
 /**
  * 集金方式と金額入力。
@@ -23,6 +26,14 @@ export type MachineRow = {
   weight: number | null;
   /** true なら質量入力モード */
   toggle: boolean;
+  /**
+   * この機器で受け取ったキャッシュレス。methodId → 数字だけの文字列。
+   *
+   * ⚠️ **単位は「円」。** 同じ行の `funds` は硬貨の**枚数**なので混ぜないこと。
+   * ⚠️ **前バージョンの下書きには無い**（MMKV から復元されると `undefined`）。
+   *    読むときは `?? {}` を通すこと。
+   */
+  cashless?: Record<string, string>;
 };
 
 /** 機種別 / 合計 の切り替えと「次回もこの集金方式を使う」 */
@@ -75,62 +86,151 @@ export function CollectMethodSection({
   );
 }
 
-/** 機種ごとの入力。⚠️ 入れるのは硬貨の枚数（または質量）で、円ではない */
+/**
+ * 機種ごとの入力。⚠️ 現金の欄に入れるのは硬貨の**枚数**（または質量）で、円ではない。
+ *
+ * ⚠️ **支払方法の欄だけ単位が「円」。** 同じカードに単位の違う欄が並ぶので、
+ *    アドオンの「枚」「¥」を消さないこと。
+ *
+ * ⚠️ **キャッシュレスの欄は既定でたたんでおく。** 5 機種 × 3 方法で 15 欄になり、
+ *    出しっぱなしだと現金だけ入れたい人が延々スクロールすることになる。
+ *    ただし**すでに入力がある機器は開いた状態で出す**（下書きから戻したときに
+ *    入力済みの金額が隠れていると、入れ忘れと区別が付かない）。
+ */
 export function MachineAmountRows({
   rows,
+  methods,
   onChange,
   onToggle,
 }: {
   rows: MachineRow[];
+  /** ⚠️ 使用中のものだけ。現金は含まない（現金は上の枚数欄そのもの） */
+  methods: PaymentMethod[];
   onChange: (id: string, patch: Partial<MachineRow>) => void;
   onToggle: (row: MachineRow) => void;
 }) {
+  /** 手で開いた／閉じた機器。⚠️ 未指定のものは「入力があれば開く」に従う */
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
+
   return (
     <>
-      {rows.map((row, index) => (
-        <View key={row.id}>
-          {index > 0 && <View style={styles.rowDivider} />}
+      {rows.map((row, index) => {
+        const amounts = row.cashless ?? {};
+        const rowCashless = cashlessTotal(amounts);
+        const open = opened[row.id] ?? rowCashless > 0;
+        const cash = (row.funds ?? 0) * COIN_VALUE;
 
-          <View style={styles.machineHead}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.machineName}>{row.name}</Text>
-              <Text style={styles.machineHint}>
-                {row.toggle ? "質量から計算" : "枚数を入力"}
-              </Text>
+        return (
+          <View key={row.id}>
+            {index > 0 && <View style={styles.rowDivider} />}
+
+            <View style={styles.machineHead}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.machineName}>{row.name}</Text>
+                <Text style={styles.machineHint}>
+                  {row.toggle ? "質量から計算" : "枚数を入力"}
+                </Text>
+              </View>
+              <Pressable onPress={() => onToggle(row)} style={styles.swapButton} hitSlop={8}>
+                <Ionicons name="refresh" size={16} color={color.teal} />
+              </Pressable>
             </View>
-            <Pressable onPress={() => onToggle(row)} style={styles.swapButton} hitSlop={8}>
-              <Ionicons name="refresh" size={16} color={color.teal} />
-            </Pressable>
+
+            <View style={styles.inputGroup}>
+              <View style={styles.addon}>
+                <Text style={styles.addonText}>{row.toggle ? "g" : "枚"}</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={displayValue(row)}
+                onChangeText={(text) => {
+                  const n = parseInt(text.replace(/[^0-9]/g, ""), 10);
+                  const value = Number.isFinite(n) ? n : null;
+                  onChange(row.id, row.toggle ? { weight: value } : { funds: value });
+                }}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                placeholder={row.toggle ? "100円玉の質量を入力" : "100円玉の枚数を入力"}
+                placeholderTextColor={color.textFaint}
+              />
+            </View>
+
+            {/* ⚠️ 支払方法が 1 件も無い店舗ではこのブロックごと出さない */}
+            {methods.length > 0 && (
+              <>
+                <Pressable
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setOpened((prev) => ({ ...prev, [row.id]: !open }));
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: open }}
+                  hitSlop={6}
+                  style={({ pressed }) => [styles.cashlessToggle, pressed && { opacity: 0.7 }]}
+                >
+                  <Ionicons name="card-outline" size={14} color={color.teal} />
+                  <Text style={styles.cashlessToggleLabel}>現金以外</Text>
+                  {/* たたんでいても入力済みの金額が分かるようにする */}
+                  {rowCashless > 0 && (
+                    <Text style={styles.cashlessBadge}>¥{rowCashless.toLocaleString()}</Text>
+                  )}
+                  <Ionicons
+                    name={open ? "chevron-up" : "chevron-down"}
+                    size={14}
+                    color={color.teal}
+                  />
+                </Pressable>
+
+                {open && (
+                  <View style={styles.cashlessBox}>
+                    {methods.map((method) => (
+                      <View key={method.id} style={styles.cashlessRow}>
+                        <Text style={styles.cashlessName} numberOfLines={1}>
+                          {method.name}
+                        </Text>
+                        <View style={styles.cashlessInputGroup}>
+                          <Text style={styles.cashlessYen}>¥</Text>
+                          <TextInput
+                            style={styles.cashlessInput}
+                            value={amounts[method.id] ?? ""}
+                            onChangeText={(text) =>
+                              onChange(row.id, {
+                                cashless: {
+                                  ...amounts,
+                                  [method.id]: text.replace(/[^0-9]/g, ""),
+                                },
+                              })
+                            }
+                            keyboardType="number-pad"
+                            inputMode="numeric"
+                            placeholder="0"
+                            placeholderTextColor={color.textFaint}
+                            accessibilityLabel={`${row.name}の${method.name}の金額`}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+
+            {(cash > 0 || rowCashless > 0) && (
+              <View style={styles.resultBox}>
+                <Text style={styles.resultText}>
+                  合計: ¥{(cash + rowCashless).toLocaleString()}
+                </Text>
+                {/* ⚠️ 内訳を出す。合計だけだと現金の枚数を間違えても気づけない */}
+                {rowCashless > 0 && (
+                  <Text style={styles.resultBreakdown}>
+                    現金 ¥{cash.toLocaleString()} ／ 現金以外 ¥{rowCashless.toLocaleString()}
+                  </Text>
+                )}
+              </View>
+            )}
           </View>
-
-          <View style={styles.inputGroup}>
-            <View style={styles.addon}>
-              <Text style={styles.addonText}>{row.toggle ? "g" : "枚"}</Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              value={displayValue(row)}
-              onChangeText={(text) => {
-                const n = parseInt(text.replace(/[^0-9]/g, ""), 10);
-                const value = Number.isFinite(n) ? n : null;
-                onChange(row.id, row.toggle ? { weight: value } : { funds: value });
-              }}
-              keyboardType="number-pad"
-              inputMode="numeric"
-              placeholder={row.toggle ? "100円玉の質量を入力" : "100円玉の枚数を入力"}
-              placeholderTextColor={color.textFaint}
-            />
-          </View>
-
-          {row.funds != null && row.funds > 0 && (
-            <View style={styles.resultBox}>
-              <Text style={styles.resultText}>
-                合計: ¥{(row.funds * COIN_VALUE).toLocaleString()}
-              </Text>
-            </View>
-          )}
-        </View>
-      ))}
+        );
+      })}
     </>
   );
 }
@@ -225,4 +325,56 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   resultText: { fontFamily: font.uiBold, fontSize: 13, color: color.tealDeeper },
+  resultBreakdown: {
+    fontFamily: font.ui,
+    fontSize: 11,
+    color: color.tealDeeper,
+    marginTop: 2,
+  },
+
+  cashlessToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minHeight: 36,
+    marginTop: spacing.sm,
+  },
+  cashlessToggleLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.teal },
+  /* たたんでいるときの入力済み金額。⚠️ flex:1 で右端の chevron を端に寄せる */
+  cashlessBadge: {
+    flex: 1,
+    fontFamily: font.uiBold,
+    fontSize: 12,
+    color: color.tealDeeper,
+    textAlign: "right",
+  },
+  cashlessBox: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    paddingLeft: spacing.md,
+    borderLeftWidth: 2,
+    borderLeftColor: color.cyan100,
+  },
+  cashlessRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  cashlessName: { flex: 1, fontFamily: font.ui, fontSize: 13, color: color.textMuted },
+  cashlessInputGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: 140,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.card - 8,
+    borderWidth: 1.5,
+    borderColor: color.cyan200,
+    backgroundColor: color.cardBg,
+  },
+  cashlessYen: { fontFamily: font.uiBold, fontSize: 13, color: color.tealDeeper },
+  cashlessInput: {
+    flex: 1,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    textAlign: "right",
+    fontFamily: font.ui,
+    fontSize: 15,
+    color: color.textMain,
+  },
 });

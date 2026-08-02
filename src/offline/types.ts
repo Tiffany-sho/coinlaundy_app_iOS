@@ -3,6 +3,17 @@ export type FundEntry = {
   id: string;
   name: string;
   funds: number;
+  /**
+   * この機器で受け取ったキャッシュレス（機種別入力のときだけ）。
+   *
+   * ⚠️ **`amount` は「円」。** 同じ行の `funds` は硬貨の**枚数**なので単位が違う。
+   * ⚠️ **`undefined` になり得る**（この項目を足す前の下書き・キュー、および
+   *    合計入力で登録された集金）。読むときは `?? []` を通すこと。
+   * ⚠️ **サーバはこれを足し合わせて `collect_funds.cashless`（列）を組み直す。**
+   *    列のほうが「その集金の合計」で、月別売上・書き出し・支払方法別の集計は
+   *    すべて列を見ている。片方だけ足すと総額と内訳が食い違う。
+   */
+  cashless?: CashlessEntry[];
 };
 
 /**
@@ -56,7 +67,12 @@ export type OutboxItem = {
     storeId: string;
     store: string;
     date: number;
-    fundsArray: FundEntry[];
+    /**
+     * ⚠️ 機種別入力では各行に `cashless` が載る。合計入力では空配列。
+     */
+    fundsArray: (Omit<FundEntry, "cashless"> & {
+      cashless?: { methodId: string; amount: number }[];
+    })[];
     /**
      * ⚠️ **「現金ぶんの金額」であって総額ではない。** DB に入る `totalFunds` は
      *    現金 + キャッシュレスで、**サーバ（createData）が組み直す。**
@@ -64,6 +80,10 @@ export type OutboxItem = {
      */
     totalFunds: number;
     /**
+     * 集金レベルのキャッシュレス。**合計入力のときだけ使う。**
+     *
+     * ⚠️ **機種別入力では空配列を送る。** 機器ごとの入力があるとサーバは
+     *    そちらを正とし、ここは**黙って捨てられる**（二重計上を防ぐため）。
      * ⚠️ **`undefined` になり得る**（この項目を足す前にキューへ積まれた分）。
      *    サーバは未指定を空配列として扱うので、そのまま送ってよい。
      */

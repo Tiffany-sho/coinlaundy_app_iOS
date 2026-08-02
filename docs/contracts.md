@@ -452,7 +452,32 @@ id が安定したのは 2026-08-02 以降に保存された分だけ。
 ```
 collect_funds.totalFunds = 現金ぶん + sum(cashless[].amount)   ← DB に入るのは総額
 collect_funds.cashless   = [{ methodId, name, amount }]        ← amount は「円」
+collect_funds.fundsArray = [{ id, name, funds, cashless? }]    ← 機種別入力のとき機器ごとにも持つ
 ```
+
+### 機器ごとのキャッシュレス（機種別入力のとき）
+
+⚠️ **`cashless` の列は常に「その集金の合計」で不変。** 機器ごとに分けても、
+月別売上・書き出し・支払方法別の集計は**すべて列のほう**を見ている。
+`fundsArray[].cashless` は内訳を持つだけで、**サーバが必ず足し合わせて列を組み直す。**
+
+- ⚠️ **機器ごとの入力があるときは、集金レベルの `cashless` を使わない。**
+  両方足すと**二重計上**になる。`createData` / `updateData` は
+  `hasMachineCashless` を見て機器の側を正とする
+- ⚠️ **アプリは機種別入力のとき集金レベルの `cashless` に空配列を送る。**
+  下の入力欄も出さない（同じ金額を 2 か所に入れられるため）
+- ⚠️ **`cashless` キーが無い行は「据え置き」。空配列は「消す」。**
+  Web の編集画面（`MachineAndFundsList.jsx`）は `{ id, name, funds }` しか
+  送ってこないので、`updateData` が既存の行から **id → 名前**の順で
+  引き継いでいる。これが無いと**Web で金額を直した瞬間に機器ごとの内訳が消える**
+- ⚠️ **機器別内訳（`/funds/summary/machines`）では、機器ごとのぶんをその機器に足す。**
+  そのぶん `unattributed.cashless` から引くこと。引かないと**同じ金額を
+  機器と内訳なしの両方で数えて**不変条件（内訳の和 = total）が崩れる
+- ⚠️ **画面の合計に `calcTotalFunds` を使わない**（現金しか数えない）。
+  出すのは `calcDisplayTotal`。取り違えると**編集中だけ金額が減って見え、
+  保存すると戻る**
+- 書き出しは変更不要。設備の列は現金のみ、支払方法の列が集金レベルの `cashless` を
+  出すので、**設備 + 現金 + 支払方法 = 合計**は成り立ったまま
 
 ### 支払方法は「店舗ごと」（009 で組織ごとから移した）
 

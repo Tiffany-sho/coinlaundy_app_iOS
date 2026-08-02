@@ -46,7 +46,7 @@ import {
   cashlessTotal,
   toCashlessEntries,
 } from "@/components/collect/CashlessInputs";
-import type { Draft } from "@/offline/types";
+import type { CashlessEntry, Draft } from "@/offline/types";
 import { COIN_VALUE, weightToCoins } from "@/shared/collectMoney";
 import { nowInJst, toJstMidnightEpoch } from "@/shared/date";
 import { makeUuid } from "@/shared/uuid";
@@ -185,7 +185,18 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
     return rows.reduce((sum, r) => sum + (r.funds ?? 0), 0) * COIN_VALUE;
   }, [byMachine, totalInput, rows]);
 
-  const cashlessSum = useMemo(() => cashlessTotal(cashless), [cashless]);
+  /**
+   * キャッシュレスの合計。
+   * ⚠️ **機種別入力では機器ごとの欄の和**、合計入力では下の 1 か所の和。
+   *    片方だけ見ると、方式を切り替えたときに総額が合わなくなる。
+   */
+  const cashlessSum = useMemo(
+    () =>
+      byMachine
+        ? rows.reduce((sum, r) => sum + cashlessTotal(r.cashless ?? {}), 0)
+        : cashlessTotal(cashless),
+    [byMachine, rows, cashless]
+  );
 
   /** 画面に出す総額。⚠️ こちらは足す（利用者が見るのは受け取った合計） */
   const total = cashTotal + cashlessSum;
@@ -209,7 +220,13 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
       storeName: store!.store,
       date: epoch,
       method: byMachine ? "byMachine" : "total",
-      fundsArray: rows.map((r) => ({ id: r.id, name: r.name, funds: r.funds ?? 0 })),
+      fundsArray: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        funds: r.funds ?? 0,
+        // ⚠️ 機器ごとのキャッシュレスも下書きに残す。落とすと復元で消える
+        cashless: toCashlessEntries(activeMethods, r.cashless ?? {}),
+      })),
       totalInput: Number(totalInput) || 0,
       cashless: toCashlessEntries(activeMethods, cashless),
       clientRequestId: requestId,
@@ -323,17 +340,24 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
       ⚠️ 使用停止になった支払方法が下書きに残っていることがあるので、
          **今も使えるものだけ**戻す（送っても弾かれる）。
     */
-    const restored: Record<string, string> = {};
-    for (const entry of pendingDraft.cashless ?? []) {
-      if (activeMethods.some((m) => m.id === entry.methodId)) {
-        restored[entry.methodId] = String(entry.amount);
+    const toAmounts = (entries: CashlessEntry[] | undefined) => {
+      const out: Record<string, string> = {};
+      for (const entry of entries ?? []) {
+        if (activeMethods.some((m) => m.id === entry.methodId)) {
+          out[entry.methodId] = String(entry.amount);
+        }
       }
-    }
-    setCashless(restored);
+      return out;
+    };
+
+    setCashless(toAmounts(pendingDraft.cashless));
     setRows((prev) =>
       prev.map((r) => {
         const saved = pendingDraft.fundsArray.find((f) => f.id === r.id);
-        return saved ? { ...r, funds: saved.funds || null } : r;
+        // ⚠️ 機器ごとのキャッシュレスも戻す。落とすと復元したのに金額が消える
+        return saved
+          ? { ...r, funds: saved.funds || null, cashless: toAmounts(saved.cashless) }
+          : r;
       })
     );
     // 下書きに入っている方式へ戻す。ここを changeMethod に通しておかないと
@@ -364,8 +388,23 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
           storeId: store!.id,
           store: store!.store,
           date: epoch,
+          /*
+            ⚠️ **機種別入力ではキャッシュレスも機器ごとに載せる。**
+               サーバ（createData）が機器ぶんを足し合わせて集金レコードの
+               `cashless` 列を組み直す。⚠️ **そのとき集金レベルの `cashless` は
+               無視される**ので、ここで両方送っても二重計上にはならないが、
+               紛らわしいので機種別では送らない。
+          */
           fundsArray: byMachine
-            ? rows.map((r) => ({ id: r.id, name: r.name, funds: r.funds ?? 0 }))
+            ? rows.map((r) => ({
+                id: r.id,
+                name: r.name,
+                funds: r.funds ?? 0,
+                cashless: toCashlessEntries(activeMethods, r.cashless ?? {}).map((e) => ({
+                  methodId: e.methodId,
+                  amount: e.amount,
+                })),
+              }))
             : [],
           /*
             ⚠️ **現金ぶんだけを送る。** DB の totalFunds は現金 + キャッシュレスの
@@ -373,10 +412,12 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
                `total` を送ると**キャッシュレスが二重に計上される。**
           */
           totalFunds: cashTotal,
-          cashless: toCashlessEntries(activeMethods, cashless).map((e) => ({
-            methodId: e.methodId,
-            amount: e.amount,
-          })),
+          cashless: byMachine
+            ? []
+            : toCashlessEntries(activeMethods, cashless).map((e) => ({
+                methodId: e.methodId,
+                amount: e.amount,
+              })),
         },
         requestId
       );
@@ -485,17 +526,25 @@ function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
 
           <SectionHead icon="cash-outline" label={byMachine ? "機種別金額" : "合計金額"} />
           {byMachine ? (
-            <MachineAmountRows rows={rows} onChange={updateRow} onToggle={toggleRow} />
+            <MachineAmountRows
+              rows={rows}
+              methods={activeMethods}
+              onChange={updateRow}
+              onToggle={toggleRow}
+            />
           ) : (
             <TotalAmountInput value={totalInput} onChange={setTotalInput} />
           )}
 
           {/*
-            ⚠️ **支払方法が 1 件も無い組織では節ごと出さない。** 案内だけの空欄が
-               毎回挟まると、現金しか扱わない組織の入力が 1 画面ぶん長くなる。
+            ⚠️ **支払方法が 1 件も無い店舗では節ごと出さない。** 案内だけの空欄が
+               毎回挟まると、現金しか扱わない店舗の入力が 1 画面ぶん長くなる。
+            ⚠️ **機種別入力のときも出さない。** あちらは機器ごとに欄があるので、
+               ここにも出すと同じ金額を 2 か所へ入れられてしまう
+               （サーバは機器ぶんを正とするので、ここの入力は黙って捨てられる）。
             ⚠️ 単位は「円」。すぐ上の機種別入力は**枚数**なので混ぜないこと。
           */}
-          {activeMethods.length > 0 && (
+          {!byMachine && activeMethods.length > 0 && (
             <>
               <Divider />
               <SectionHead icon="card-outline" label="キャッシュレス" />
