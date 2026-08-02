@@ -126,6 +126,11 @@ stock_thresholds: stock_thresholds ?? { detergent: 1, softener: 1 },
 
 - **投稿は Supabase の Table Editor から手で行う。** 管理画面も書き込み API も無い
   （作ると、アプリのトークンでお知らせを捏造できる経路が生まれる）
+- **文面は `../coin-laundry-app/docs/ios/announcements/<日付>_<件名>.sql` に残す。**
+  Table Editor に直接打つと、下の禁止事項を毎回思い出す必要があり、
+  **何を出したかの記録もどこにも残らない**。ファイルなら `db query --linked -f` で流せる。
+  ⚠️ **タイトルで `NOT EXISTS` を見て二重投稿を防ぐこと**（同じお知らせが 2 行並ぶと、
+  未読の線が 1 つしか無いので既読にしても片方が残っているように見える）
 - ⚠️ **`published` の既定は false。** 書き終えてから true にする
 - ⚠️ **RLS に書き込みポリシーを足さない。** 読めるのは「公開中かつ期限内」だけで、
   書けるのは service role のみ。Table Editor は service role なので素通りする
