@@ -13,11 +13,11 @@ import { CASH_METHOD_KEY, methodKeyOf } from "@/api/types";
 import { color, font, radius, spacing, STORE_COLORS } from "@/theme/tokens";
 import type { StoreRevenue } from "@/api/types";
 
-/**
- * 支払方法を絞らないことを表す値。
- * ⚠️ 空文字にしない（`||` で誤って falsy 扱いされる）。
- */
-export const ALL_METHODS = "__all__";
+/*
+  ⚠️ **「すべて」を表す番兵の文字列は持たない。** 支払方法は複数選べるので、
+     絞らない状態は**空配列**で表す（`length === 0` の 1 か所で判定できる）。
+     番兵を混ぜると「すべて + PayPay」という無意味な組み合わせが作れてしまう。
+*/
 
 /**
  * 直接選べる範囲の下限（今月から何か月前まで）。
@@ -75,7 +75,7 @@ export function FilterSheet({
   range,
   selectedIds,
   methodNames = [],
-  method = ALL_METHODS,
+  methods = [],
   onApply,
 }: {
   open: boolean;
@@ -89,8 +89,9 @@ export function FilterSheet({
    * ⚠️ 渡さない画面（機器別の内訳）では支払方法の絞り込み自体が出ない。
    */
   methodNames?: string[];
-  method?: string;
-  onApply: (range: Range, selectedIds: string[], method: string) => void;
+  /** 選択中の支払方法のキー。⚠️ **空配列 = 絞り込まない**（複数選択できる） */
+  methods?: string[];
+  onApply: (range: Range, selectedIds: string[], methods: string[]) => void;
 }) {
   const current = currentMonthIndex();
   const oldest = current - (MAX_MONTHS_BACK - 1);
@@ -98,7 +99,7 @@ export function FilterSheet({
   const [draftRange, setDraftRange] = useState<Range>(range);
   /** ドラフトでは「全店舗」も全 id を並べた状態で持つ（Web の draftStores と同じ） */
   const [draftIds, setDraftIds] = useState<string[]>([]);
-  const [draftMethod, setDraftMethod] = useState<string>(ALL_METHODS);
+  const [draftMethods, setDraftMethods] = useState<string[]>([]);
   /** 開いている月のパネル。⚠️ 同時に 1 つだけ（両方開くとシートが画面より高くなる） */
   const [expanded, setExpanded] = useState<"start" | "end" | null>(null);
 
@@ -107,10 +108,12 @@ export function FilterSheet({
     if (!open) return;
     setDraftRange(range);
     setDraftIds(selectedIds.length > 0 ? [...selectedIds] : stores.map((s) => s.laundryId));
-    setDraftMethod(method);
+    setDraftMethods([...methods]);
     // ⚠️ たたんだ状態から始める。前回開いたパネルが残ると開いた瞬間に縦長になる
     setExpanded(null);
-  }, [open, range, selectedIds, stores, method]);
+    // ⚠️ methods は毎レンダー新しい配列になり得るので、中身を畳んだ文字列で比べる
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, range, selectedIds, stores, methods.join(",")]);
 
   const allSelected = draftIds.length === stores.length;
   /*
@@ -119,7 +122,17 @@ export function FilterSheet({
        黙って無視すると「絞ったのに数字が変わらない」ので、
        **店舗の選択を触れなくして理由を出す。**
   */
-  const methodActive = draftMethod !== ALL_METHODS;
+  const methodActive = draftMethods.length > 0;
+
+  /** ⚠️ もう一度押したら外す。「すべて」に戻す手段を必ず残すこと */
+  function toggleMethod(key: string) {
+    setDraftMethods((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      // 方法で絞る間は店舗の内訳が出せないので、選択をすべてに戻す
+      if (next.length > 0) setDraftIds(stores.map((s) => s.laundryId));
+      return next;
+    });
+  }
 
   /** ⚠️ 選んだら閉じる。集金画面の集金日と同じ挙動（開いたままにしない） */
   function setStart(index: MonthIndex) {
@@ -227,23 +240,22 @@ export function FilterSheet({
                 <>
                   <View style={sheetStyles.divider} />
                   <Text style={styles.filterLabel}>支払方法</Text>
+                  {/* ⚠️ 複数選べる。選んだものの合計が出る */}
                   <View style={styles.chipRow}>
+                    <Chip
+                      label="すべて"
+                      selected={!methodActive}
+                      onPress={() => setDraftMethods([])}
+                    />
                     {[
-                      { key: ALL_METHODS, label: "すべて" },
                       { key: CASH_METHOD_KEY, label: "現金" },
                       ...methodNames.map((name) => ({ key: methodKeyOf(name), label: name })),
                     ].map((option) => (
                       <Chip
                         key={option.key}
                         label={option.label}
-                        selected={option.key === draftMethod}
-                        onPress={() => {
-                          setDraftMethod(option.key);
-                          // 方法で絞る間は店舗の内訳が出せないので、選択をすべてに戻す
-                          if (option.key !== ALL_METHODS) {
-                            setDraftIds(stores.map((s) => s.laundryId));
-                          }
-                        }}
+                        selected={draftMethods.includes(option.key)}
+                        onPress={() => toggleMethod(option.key)}
                       />
                     ))}
                   </View>
@@ -306,7 +318,7 @@ export function FilterSheet({
                 onApply(
                   draftRange,
                   allSelected || methodActive ? [] : draftIds,
-                  draftMethod
+                  draftMethods
                 )
               }
               style={({ pressed }) => [

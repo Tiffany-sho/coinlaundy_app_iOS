@@ -49,7 +49,7 @@ export function buildStackedPoints(
 }
 
 /**
- * 支払方法 1 つに絞った棒を組み立てる。
+ * 選んだ支払方法だけの棒を組み立てる。**複数選べる**（積み上げになる）。
  *
  * ⚠️ **店舗別の内訳とは両立しない。** 応答の `byStore`（金額）と `byMethod` は
  *    それぞれ独立した畳み方で、「この店舗の PayPay」は**データとして存在しない。**
@@ -66,20 +66,29 @@ export function buildStackedPoints(
 export function buildMethodPoints(
   rows: MonthlyChartPoint[] | undefined,
   range: MonthRange,
-  methodKey: string
+  methodKeys: string[]
 ): StackedPoint[] {
   const byMonth = new Map((rows ?? []).map((point) => [point.month, point]));
   const out: StackedPoint[] = [];
 
   for (let i = range.start; i <= range.end; i += 1) {
     const key = monthKey(i);
-    const amount = byMonth.get(key)?.byMethod?.[methodKey] ?? 0;
-    out.push({
-      month: key,
-      total: amount,
-      count: 0,
-      parts: amount === 0 ? {} : { [methodKey]: amount },
-    });
+    const byMethod = byMonth.get(key)?.byMethod ?? {};
+    const parts: Record<string, number> = {};
+    let total = 0;
+
+    /*
+      ⚠️ **選んだぶんだけを足す。** 複数選べるので、棒は選んだ方法の
+         積み上げになる。`total` を応答の `total` にしないこと
+         （絞っていない方法まで含んでしまう）。
+    */
+    for (const methodKey of methodKeys) {
+      const amount = byMethod[methodKey] ?? 0;
+      if (amount !== 0) parts[methodKey] = amount;
+      total += amount;
+    }
+
+    out.push({ month: key, total, count: 0, parts });
   }
   return out;
 }

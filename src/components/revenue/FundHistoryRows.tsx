@@ -1,9 +1,11 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Card, MoneyText } from "@/components/common/ui";
+import { CASH_METHOD_KEY } from "@/api/types";
+import { methodBreakdown } from "@/components/revenue/methodFilter";
 import { collecterName, type HistoryRow } from "@/components/revenue/historyRows";
 import { formatJstDate } from "@/shared/date";
-import { color, font, radius, spacing } from "@/theme/tokens";
+import { color, font, numeric, radius, spacing } from "@/theme/tokens";
 import type { FundListItem } from "@/api/types";
 
 /** 売上履歴の行。組み立ては historyRows.ts、ここは見た目だけ */
@@ -40,6 +42,16 @@ export function MonthHeaderRow({
 
 /** 履歴の 1 件。タップで集金の詳細（機種ごとの金額・日付・削除）へ */
 export function FundRow({ item, onPress }: { item: FundListItem; onPress: () => void }) {
+  /*
+    支払方法の内訳。
+    ⚠️ **現金だけの集金では出さない。** 「現金 ¥3,000」と総額が同じ数字で
+       2 回並ぶだけになる。現金以外が 1 つでもあるときだけ出す。
+    ⚠️ 内訳を出すのは、**絞り込んでも行の金額が総額のまま**だから
+       （`matchesMethods` は「含む」で判定する）。数字の根拠を必ず添える。
+  */
+  const breakdown = methodBreakdown(item);
+  const showBreakdown = breakdown.some((row) => row.key !== CASH_METHOD_KEY);
+
   return (
     <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.7 }}>
       <Card style={{ marginBottom: spacing.md }}>
@@ -59,6 +71,19 @@ export function FundRow({ item, onPress }: { item: FundListItem; onPress: () => 
             style={{ marginLeft: spacing.sm }}
           />
         </View>
+
+        {showBreakdown && (
+          <View style={styles.methodRow}>
+            {breakdown.map((row) => (
+              <View key={row.key} style={styles.methodTag}>
+                <Text style={styles.methodName} numberOfLines={1}>
+                  {row.label}
+                </Text>
+                <Text style={styles.methodAmount}>¥{row.amount.toLocaleString()}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </Card>
     </Pressable>
   );
@@ -119,6 +144,29 @@ export function ListEndRow({ fundCount }: { fundCount: number }) {
 }
 
 const styles = StyleSheet.create({
+  /* 支払方法の内訳。⚠️ 折り返す（方法が増えると横に収まらない） */
+  methodRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: color.divider,
+  },
+  methodTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    maxWidth: "100%",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: color.gray50,
+  },
+  methodName: { fontFamily: font.ui, fontSize: 11, color: color.textMuted, flexShrink: 1 },
+  /* ⚠️ numeric を丸ごと展開する。fontFamily だけだと桁が揃わない */
+  methodAmount: { ...numeric, fontSize: 11, color: color.tealDeeper },
   row: { flexDirection: "row", alignItems: "center" },
   storeName: { fontFamily: font.uiBold, fontSize: 15, color: color.textMain },
   metaRow: { flexDirection: "row", gap: spacing.sm, marginTop: 2 },

@@ -161,7 +161,16 @@ export type FundListItem = {
   laundryId: string;
   laundryName: string;
   date: number;
+  /** ⚠️ 現金 + キャッシュレスの**総額**。現金だけの額ではない */
   totalFunds: number;
+  /**
+   * 支払方法ごとの内訳。
+   * ⚠️ **`undefined` になり得る**（この項目を返す前の応答が react-query の
+   *    永続キャッシュから最大 7 日復元される）。`?? []` を通すこと。
+   * ⚠️ **現金の行は入っていない。** 現金額は `totalFunds − sum(cashless)`
+   *    で出す（`methodBreakdown()` を通すこと）。
+   */
+  cashless?: CashlessEntry[] | null;
   collecter: string | null;
   profiles?: { username: string | null } | null;
 };

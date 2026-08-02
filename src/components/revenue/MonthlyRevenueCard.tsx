@@ -6,9 +6,9 @@ import { MonthlyStackedBarChart, type StackSeries } from "@/components/revenue/c
 import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
 import { buildMethodPoints, buildStackedPoints } from "@/components/revenue/monthlySeries";
 import { paymentMethodNames, useStores } from "@/api/queries";
-import { CASH_METHOD_KEY, methodKeyOf } from "@/api/types";
 import { usePeriodPager } from "@/components/revenue/usePeriodPager";
-import { ALL_METHODS, FilterSheet } from "@/components/revenue/PeriodFilterSheet";
+import { FilterSheet } from "@/components/revenue/PeriodFilterSheet";
+import { methodLabel, methodsLabel } from "@/components/revenue/methodFilter";
 import { monthLabel } from "@/components/revenue/monthIndex";
 import { Card, MoneyText, Muted } from "@/components/common/ui";
 import { color, font, radius, spacing, STORE_COLORS } from "@/theme/tokens";
@@ -60,8 +60,8 @@ export function MonthlyRevenueCard({
   /** 空配列 = 全店舗（Web の selectedStores と同じ意味づけ） */
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
-  /** 支払方法の絞り込み。ALL_METHODS = 絞らない */
-  const [method, setMethod] = useState<string>(ALL_METHODS);
+  /** 支払方法の絞り込み。⚠️ **空配列 = 絞らない**（複数選べる） */
+  const [methods, setMethods] = useState<string[]>([]);
 
   /*
     ⚠️ **支払方法は店舗ごと**（009）なので、店舗一覧から名前を集めて畳む。
@@ -70,12 +70,7 @@ export function MonthlyRevenueCard({
   */
   const storeList = useStores();
   const methodNames = paymentMethodNames(storeList.data);
-  const byMethodActive = method !== ALL_METHODS;
-
-  const methodName =
-    method === CASH_METHOD_KEY
-      ? "現金"
-      : methodNames.find((name) => methodKeyOf(name) === method) ?? "支払方法";
+  const byMethodActive = methods.length > 0;
 
   const visible = stores
     // 色は stores の並び（＝売上の多い順）で決める。店舗別タブのグラフと同じ色になる
@@ -85,10 +80,14 @@ export function MonthlyRevenueCard({
   /*
     ⚠️ **支払方法で絞ると店舗別の内訳は出せない。** 応答の byStore（金額）と
        byMethod はそれぞれ独立した畳み方で、「この店舗の PayPay」は
-       データとして存在しない。方法を選んだら 1 色の棒に切り替える。
+       データとして存在しない。方法を選んだら**方法ごとの積み上げ**に切り替える。
   */
   const series: StackSeries[] = byMethodActive
-    ? [{ key: method, name: methodName, color: STORE_COLORS[0] }]
+    ? methods.map((key, i) => ({
+        key,
+        name: methodLabel(key),
+        color: STORE_COLORS[i % STORE_COLORS.length],
+      }))
     : visible.map(({ store, color: dot }) => ({
         key: store.laundryId,
         name: store.laundryName,
@@ -101,9 +100,17 @@ export function MonthlyRevenueCard({
   */
   const withCount = selectedIds.length === 0 && !byMethodActive;
 
+  /*
+    棒の下に内訳を出すか。
+    ⚠️ **1 系列しか無いときは出さない。** 棒の合計と内訳の金額が同じになり、
+       同じ数字が縦に 2 回並ぶだけになる（店舗が 1 軒の収益ページがこれ）。
+       支払方法で絞ったときも同じで、1 つだけ選んだ場合は出さない。
+  */
+  const showBreakdown = byMethodActive ? methods.length > 1 : stores.length > 1;
+
   const buildPoints = (rows: typeof chart.data, r: typeof range) =>
     byMethodActive
-      ? buildMethodPoints(rows, r, method)
+      ? buildMethodPoints(rows, r, methods)
       : buildStackedPoints(rows, r, visible, withCount);
 
   const stacked = buildPoints(chart.data, range);
@@ -146,7 +153,7 @@ export function MonthlyRevenueCard({
         <View style={styles.periodBody}>
           <Muted style={styles.totalLabel}>
             集金総額（{monthLabel(range.start)} 〜 {monthLabel(range.end)}
-            {storeLabel}）{byMethodActive ? ` ・${methodName}` : ""}
+            {storeLabel}）{byMethodActive ? ` ・${methodsLabel(methods)}` : ""}
           </Muted>
           <MoneyText value={total} size={26} tone="deeper" />
         </View>
@@ -160,11 +167,11 @@ export function MonthlyRevenueCard({
         range={range}
         selectedIds={selectedIds}
         methodNames={methodNames}
-        method={method}
-        onApply={(nextRange, nextIds, nextMethod) => {
+        methods={methods}
+        onApply={(nextRange, nextIds, nextMethods) => {
           setRange(nextRange);
           setSelectedIds(nextIds);
-          setMethod(nextMethod);
+          setMethods(nextMethods);
           setFilterOpen(false);
         }}
       />
@@ -191,7 +198,7 @@ export function MonthlyRevenueCard({
               <MonthlyStackedBarChart
                 data={buildPoints(prevChart.data, prevRange)}
                 series={series}
-                showBreakdown={!byMethodActive && stores.length > 1}
+                showBreakdown={showBreakdown}
               />
             ) : null
           }
@@ -199,7 +206,7 @@ export function MonthlyRevenueCard({
             <MonthlyStackedBarChart
               data={stacked}
               series={series}
-              showBreakdown={!byMethodActive && stores.length > 1}
+              showBreakdown={showBreakdown}
             />
           }
           next={
@@ -207,7 +214,7 @@ export function MonthlyRevenueCard({
               <MonthlyStackedBarChart
                 data={buildPoints(nextChart.data, nextRange)}
                 series={series}
-                showBreakdown={!byMethodActive && stores.length > 1}
+                showBreakdown={showBreakdown}
               />
             ) : null
           }

@@ -15,7 +15,9 @@ import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
   useBootstrap,
+  paymentMethodNames,
   useFundHistory,
+  useStores,
   useMonthlySummary,
   useStoreRevenue,
 } from "@/api/queries";
@@ -42,6 +44,7 @@ import {
   limitStep,
   type HistoryRow,
 } from "@/components/revenue/historyRows";
+import { matchesMethods } from "@/components/revenue/methodFilter";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { useToast } from "@/components/common/toast";
 import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
@@ -89,6 +92,8 @@ export default function Revenue() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   /** null = 担当者で絞り込まない */
   const [collecter, setCollecter] = useState<string | null>(null);
+  /** 支払方法の絞り込み。⚠️ **空配列 = 絞らない**（複数選べる） */
+  const [methods, setMethods] = useState<string[]>([]);
   /** 折りたたんだ月の見出し。Web の CoinManyDataTable も月ごとに畳める */
   const [collapsed, setCollapsed] = useState<string[]>([]);
   /**
@@ -114,6 +119,8 @@ export default function Revenue() {
   });
   const monthly = useMonthlySummary();
   const byStore = useStoreRevenue();
+  /* ⚠️ 支払方法の名前を集めるためだけ。収益サマリ（byStore）は支払方法を持たない */
+  const storeList = useStores();
   const bootstrap = useBootstrap();
 
   /**
@@ -168,8 +175,12 @@ export default function Revenue() {
    */
   const visible = useMemo(
     () =>
-      collecter === null ? rows : rows.filter((item) => collecterName(item) === collecter),
-    [rows, collecter]
+      rows.filter(
+        (item) =>
+          (collecter === null || collecterName(item) === collecter) &&
+          matchesMethods(item, methods)
+      ),
+    [rows, collecter, methods]
   );
 
   const listRows = useMemo<HistoryRow[]>(
@@ -219,7 +230,14 @@ export default function Revenue() {
       return;
     }
     listRef.current?.scrollToOffset({ offset: historyOffset.current, animated: false });
-  }, [sortField, sortDirection, collecter, isGrouped]);
+    /*
+      ⚠️ **支払方法も依存に入れる。** 絞り込むと行数が変わるので、
+         「さらに表示」の残量が実態とずれたまま残る（3 か月ぶん出した状態で
+         絞ると 1 か月しか無いのに「残り 2 か月」と出る）。
+      ⚠️ methods は毎レンダー新しい配列になり得るので、中身を畳んだ文字列で比べる。
+    */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortField, sortDirection, collecter, methods.join(","), isGrouped]);
 
   /**
    * 書き出したファイルを端末に置いて共有シートへ渡す。
@@ -381,6 +399,10 @@ export default function Revenue() {
                   collecter={collecter}
                   collecterOptions={collecterOptions}
                   onCollecterChange={setCollecter}
+                  /* ⚠️ 支払方法は店舗ごと（009）。店舗一覧から名前を集めて畳む */
+                  methodNames={paymentMethodNames(storeList.data)}
+                  methods={methods}
+                  onMethodsChange={setMethods}
                 />
               </Appear>
             </View>

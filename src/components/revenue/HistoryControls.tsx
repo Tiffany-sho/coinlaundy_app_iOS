@@ -5,7 +5,10 @@ import {
   type SortAxis,
   type SortDirection,
 } from "@/components/common/SortControls";
+import * as Haptics from "expo-haptics";
+import { Chip } from "@/components/common/Chip";
 import { useDialog } from "@/components/common/dialog";
+import { CASH_METHOD_KEY, methodKeyOf } from "@/api/types";
 import { color, font, radius, spacing } from "@/theme/tokens";
 
 /**
@@ -47,6 +50,9 @@ export function HistoryControls({
   collecter,
   collecterOptions,
   onCollecterChange,
+  methodNames = [],
+  methods = [],
+  onMethodsChange,
 }: {
   sortField: HistorySortField;
   sortDirection: SortDirection;
@@ -56,6 +62,14 @@ export function HistoryControls({
   /** 実際に集金した人の名前。メンバー一覧ではなく実績から作る */
   collecterOptions: string[];
   onCollecterChange: (next: string | null) => void;
+  /**
+   * 支払方法の名前（現金は含めない。ここで先頭に足す）。
+   * ⚠️ **空なら行ごと出さない。** 現金しか扱わない組織で 1 段無駄に伸びるだけ。
+   */
+  methodNames?: string[];
+  /** 選択中のキー。⚠️ **空配列 = 絞らない**（複数選べる） */
+  methods?: string[];
+  onMethodsChange?: (next: string[]) => void;
 }) {
   const dialog = useDialog();
 
@@ -76,7 +90,17 @@ export function HistoryControls({
     onCollecterChange(picked === ALL_COLLECTERS ? null : picked);
   }
 
+  /** ⚠️ もう一度押したら外す。「すべて」に戻す手段を必ず残すこと */
+  function toggleMethod(key: string) {
+    if (!onMethodsChange) return;
+    Haptics.selectionAsync().catch(() => {});
+    onMethodsChange(
+      methods.includes(key) ? methods.filter((k) => k !== key) : [...methods, key]
+    );
+  }
+
   return (
+    <>
     <View style={styles.row}>
       <SortControls
         axes={SORT_AXES}
@@ -112,11 +136,46 @@ export function HistoryControls({
         />
       </Pressable>
     </View>
+
+    {/*
+      支払方法の絞り込み。**複数選べる。**
+      ⚠️ **「含む」で絞る（一致ではない）。** 現金と PayPay の両方で受け取った
+         集金は、どちらで絞っても出る。**行の金額は総額のまま**なので、
+         絞り込んだ結果を足しても選んだ方法の合計にはならない。
+         だから行に内訳を出している（`methodFilter.ts` の `matchesMethods`）。
+      ⚠️ 支払方法が 1 つも無い組織ではこの行ごと出さない。
+    */}
+    {methodNames.length > 0 && onMethodsChange && (
+      <View style={styles.methodRow}>
+        <Chip label="すべて" selected={methods.length === 0} onPress={() => onMethodsChange([])} />
+        <Chip
+          label="現金"
+          selected={methods.includes(CASH_METHOD_KEY)}
+          onPress={() => toggleMethod(CASH_METHOD_KEY)}
+        />
+        {methodNames.map((name) => (
+          <Chip
+            key={name}
+            label={name}
+            selected={methods.includes(methodKeyOf(name))}
+            onPress={() => toggleMethod(methodKeyOf(name))}
+          />
+        ))}
+      </View>
+    )}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
+  /* ⚠️ 折り返す。方法が増えると横に収まらない（横スクロールにすると気づかれない） */
+  methodRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
   control: {
     flexDirection: "row",
     alignItems: "center",
