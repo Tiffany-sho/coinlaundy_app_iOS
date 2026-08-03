@@ -537,6 +537,45 @@
 - **Server Actions のモジュールを触ったら `npm run build` まで通すこと。**
   型チェックとテストだけでは足りない
 
+## 列を足したときに「権限が下がる」「組織が消える」
+
+⚠️ **`getMyOrganization` の select に新しい列を混ぜない。**
+マイグレーション未適用の環境で PostgREST が **42703** を返し、
+**この Server Action ごと失敗する。** 症状が原因からとても遠い:
+
+| 見え方 | なぜそうなるか |
+|---|---|
+| **店舗管理者なのに閲覧者になる**（Web） | 呼び出し側が全部 `orgResult.data?.myRole ?? "viewer"` |
+| **組織に入っていない扱いになる**（アプリ） | `bootstrap` が `organization: null` を返し、組織参加画面へ飛ばされる |
+
+2026-08-03 に 012（`expenses_enabled`）で実際に踏んだ。
+**エラーは画面のどこにも出ない**（`{ error }` を返しているだけ）ので、
+「権限の設定を間違えたのでは」と別の場所を疑うことになる。
+
+**新しい列は必ず別のクエリで取り、失敗しても既定値で続行する:**
+
+```js
+// ✗ 未適用の環境で組織情報ごと落ちる＝全員 viewer
+.select("role, organizations(id, name, expenses_enabled)")
+
+// ✓ 落ちるのはこの 1 項目だけ。既定（使う）で続行できる
+.select("role, organizations(id, name)")
+const { data: settings } = await createServiceClient()
+  .from("organizations").select("expenses_enabled").eq("id", org.id).maybeSingle();
+expensesEnabled: settings?.expenses_enabled !== false,
+```
+
+⚠️ **`insert` に混ぜるのも同じ理由で駄目。** `createOrganization` が失敗して
+**初期設定を最後まで進められなくなる。** 作ってから別に書き、失敗は握りつぶす。
+
+⚠️ **これは 003（`plan_source`）で一度学んでいる。** `getOrgPlan` に
+その対策コメントが残っているのに、隣の関数で同じことをした。
+**`organizations` に列を足すときは `getOrgPlan` の形を真似ること。**
+
+⚠️ 順序（マイグレーション → Web → アプリ）を守れば起きないが、
+**守れなかったときの壊れ方が「静かに権限が下がる」なのが問題。**
+順序に頼らず、コード側でも耐えられる形にしておく。
+
 ## BFF のルートを足したとき
 
 - ⚠️ **新しい静的ルートを本番に出す前にアプリから叩くと、404 ではなく 405 が返る。**
