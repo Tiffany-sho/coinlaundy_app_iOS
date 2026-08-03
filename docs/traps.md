@@ -792,6 +792,22 @@ expensesEnabled: settings?.expenses_enabled !== false,
 - ⚠️ **dev server を動かしたままビルドすると `.next` の書き込みが競合する。**
   `ENOENT: … _buildManifest.js.tmp.xxxx` はこれ。撃ち直せば通ることが多いが、
   繰り返すなら dev server を止める
+- ⚠️ **`Error: spawn UNKNOWN`（`errno: -4094`）はコードのせいではない。**
+  「Collecting page data using 15 workers」の直後に出て、**コンパイルは成功している**
+  のに exit 1 になる。Windows で**子プロセスを起こせなくなった**という意味で、
+  原因は**node のプロセスが溜まっていること。**
+  2026-08-03 に、型の再生成用に上げた `expo start` を落とし忘れて 2 本残していて踏んだ。
+
+  ```powershell
+  Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+    ForEach-Object { "{0} | {1}" -f $_.ProcessId, $_.CommandLine }
+  ```
+
+  ⚠️ **自分が上げたものだけ落とすこと。** 同じ PC で
+  **実機用の `expo start --dev-client`** と**別プロジェクトの dev server**が
+  動いている。まとめて殺すと、ユーザーの実機が繋がらなくなる。
+  ⚠️ 撃ち直す前に `.next/diagnostics/build-diagnostics.json` も消す
+  （中断したビルドの跡が残っていると次が「既に走っている」で落ちる）
 
 ## 検証
 
