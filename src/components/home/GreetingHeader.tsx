@@ -18,12 +18,9 @@ function getGreeting(hour: number): string {
 /**
  * Web の GreetingHeader.jsx を移植。
  *
- * あいさつ + 歯車 / 今日の日付 / 集金までのカウントダウン（横幅いっぱい）。
- *
- * ⚠️ **カウントダウンを日付の右に戻さない**（2026-08-03）。幅が足りず
- *    **小さすぎて気づかれなかった。** 集金を促すのが役目なので目立たせる。
+ * 日付の右に集金までのカウントダウンを並べる。
  * ⚠️ **同じ日数を出すカードを画面内にもう 1 枚置かないこと。**
- *    集金予定（毎月◯日）もあのカードが右側に持っている。
+ *    集金予定（毎月◯日）もこのカードが下段に持っている。
  */
 export function GreetingHeader({
   username = "集金担当者",
@@ -64,23 +61,19 @@ export function GreetingHeader({
           </Pressable>
         )}
       </View>
-      <View style={styles.dateRow}>
-        <Ionicons name="calendar-outline" size={16} color={color.teal} />
-        <Text style={styles.date} numberOfLines={1}>
-          {today.getFullYear()}年{today.getMonth() + 1}月{today.getDate()}日
-        </Text>
-        <Text style={[styles.day, { color: DAY_COLOR[dayIndex] ?? color.textMuted }]}>
-          （{DAYS[dayIndex]}）
-        </Text>
+      <View style={styles.headRow}>
+        {/* ⚠️ shrink を付けないと、日付が長い月にカウントダウンが画面外へ押し出される */}
+        <View style={styles.dateRow}>
+          <Ionicons name="calendar-outline" size={16} color={color.teal} />
+          <Text style={styles.date} numberOfLines={1}>
+            {today.getFullYear()}年{today.getMonth() + 1}月{today.getDate()}日
+          </Text>
+          <Text style={[styles.day, { color: DAY_COLOR[dayIndex] ?? color.textMuted }]}>
+            （{DAYS[dayIndex]}）
+          </Text>
+        </View>
+        <CollectCountdown schedule={schedule} />
       </View>
-
-      {/*
-        ⚠️ **日付の右に戻さない**（2026-08-03 に横幅いっぱいへ戻した）。
-           日付の残り幅しか無く、**小さすぎて気づかれなかった。**
-        ⚠️ **`schedule` が無いときは中で null を返す。** ここで条件を書くと、
-           「設定しない」と「未取得」の区別がこの 2 か所に散る。
-      */}
-      <CollectCountdown schedule={schedule} />
     </View>
   );
 }
@@ -91,15 +84,13 @@ const styles = StyleSheet.create({
   greeting: { flex: 1, fontFamily: font.uiBold, fontSize: 22, color: color.textMain },
   /* ⚠️ 44x44 を確保する。アイコンだけだと指で押しにくい */
   gear: { width: 44, height: 44, alignItems: "center", justifyContent: "center", marginRight: -10 },
-  /* ⚠️ カウントダウンとの間隔はここで持つ（カード側に marginTop を持たせない。
-        カードは他の場所からも使える形にしておく） */
-  dateRow: {
+  headRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    flexShrink: 1,
-    marginBottom: spacing.md,
+    justifyContent: "space-between",
+    gap: spacing.sm,
   },
+  dateRow: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1 },
   date: { fontFamily: font.uiBold, fontSize: 16, color: color.textMain },
   day: { fontFamily: font.uiBold, fontSize: 16 },
 });
