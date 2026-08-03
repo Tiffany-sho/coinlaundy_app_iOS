@@ -636,7 +636,14 @@ export function useRecurringExpenses(enabled = true) {
 
 export type RecurringInput = {
   storeId: string | null;
-  name: string;
+  /**
+   * 表示名。
+   * ⚠️ **アプリに入力欄は無い**（2026-08-03 に外した。カテゴリで足りるため）。
+   *    送らなければサーバがカテゴリで埋める。**列は NOT NULL のまま。**
+   * ⚠️ **編集のときは既存の値をそのまま返すこと。** Web には名前の欄が
+   *    残っているので、空で上書きすると**Web で付けた名前が消える。**
+   */
+  name?: string;
   amount: number;
   category: string;
   dayOfMonth: number;

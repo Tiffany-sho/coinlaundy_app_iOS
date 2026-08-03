@@ -5,7 +5,9 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useExpenses, useStores } from "@/api/queries";
 import { ApiError } from "@/api/client";
+import { AddExpenseSheet } from "@/components/expenses/AddExpenseSheet";
 import { categoryColor } from "@/components/expenses/categories";
+import { ExpenseCategoryPie } from "@/components/expenses/ExpenseCategoryPie";
 import { expensesEnabled } from "@/components/expenses/expensesEnabled";
 import {
   ExpenseScopeFilter,
@@ -13,9 +15,11 @@ import {
   scopeLabel,
   type ExpenseScope,
 } from "@/components/expenses/ExpenseScopeFilter";
-import { PagerArrow } from "@/components/revenue/ChartPager";
+import { RecurringFormSheet } from "@/components/expenses/RecurringFormSheet";
+import { RecurringSection } from "@/components/expenses/RecurringSection";
 import {
   currentMonthIndex,
+  monthIndexFromEpoch,
   monthLabel,
   monthStartEpoch,
 } from "@/components/revenue/monthIndex";
@@ -25,47 +29,74 @@ import { color, font, numeric, radius, spacing } from "@/theme/tokens";
 import type { Expense, Store } from "@/api/types";
 
 /**
- * 経費の一覧。月単位で見る。
+ * 経費。**単発と毎月の固定費を 1 枚にまとめてある**（2026-08-03）。
+ * それまでは `expenses/recurring` が別ページで、同じ「経費」なのに
+ * 行き先が 2 つに分かれていた。
  *
- * ⚠️ **毎月の固定費を展開したものが混ざって返る。**（`recurring: true`）
- *    実体が無いので**編集・削除の導線を出さない。** 変更は「固定費の設定」から行う。
+ *   期間の合計 + カテゴリの円グラフ → 絞り込み → 一覧 → さらに見る
+ *   → 毎月の固定費（設定）
+ *
+ * ⚠️ **一覧には毎月の固定費を展開したものが混ざる**（`recurring: true`）。
+ *    実体が無いので**編集・削除の導線を出さない。** 変更は下の「毎月の固定費」から。
  *
  * ⚠️ **期間は必ず切って取る。** 経費は増え続けるので、切らないとサーバ側で
  *    1000 行の上限に当たって古い順から黙って欠ける。
  */
+
+/** 最初に出す月数。⚠️ 当月だけ */
+const INITIAL_MONTHS = 1;
+/** 「さらに見る」1 回で伸ばす月数 */
+const MONTH_STEP = 3;
+
 export default function ExpensesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const current = currentMonthIndex();
-  const [month, setMonth] = useState(current);
+  /**
+   * 直近この月数ぶんを見る。⚠️ **月の行き来ではなく「伸ばす」**にしてある。
+   *    経費は当月だけ見たい日と、まとめて見返したい日の両方があるため。
+   */
+  const [months, setMonths] = useState(INITIAL_MONTHS);
   /** ⚠️ "all" が「絞らない」。"org" は `laundry_id` が NULL の行だけ（別物） */
   const [scope, setScope] = useState<ExpenseScope>("all");
+  const [addOpen, setAddOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
 
   const stores = useStores();
   const bootstrap = useBootstrap();
 
+  const from = monthStartEpoch(current - (months - 1));
   /*
     ⚠️ **`to` は「含む」。** `/funds/chart` の to は排他なので**向きが逆**。
        翌月 1 日を渡すと**翌月 1 日の経費が 1 件だけ混ざる**ので、その 1 ミリ秒前にする。
   */
-  const from = monthStartEpoch(month);
-  const to = monthStartEpoch(month + 1) - 1;
+  const to = monthStartEpoch(current + 1) - 1;
 
   /*
-    ⚠️ **絞り込みはサーバに投げず、取ってきた月ぶんを手元で分ける。**
+    ⚠️ **絞り込みはサーバに投げず、取ってきた期間ぶんを手元で分ける。**
        API の `storeId` は「その店舗のものだけ」を返すので、
        **「組織全体（laundry_id が NULL）だけ」を取る手段が無い。**
-       1 か月ぶんは高々数十件なので、まとめて取ってから分けるほうが確実。
   */
   const { data, isLoading, isRefetching, refetch, error } = useExpenses(from, to);
 
   const all = data ?? [];
   const items = useMemo(() => all.filter((e) => matchesScope(e, scope)), [all, scope]);
-  /* ⚠️ 合計も絞り込みに追従させる。全体の合計のまま残すと行と数字が食い違う */
+  /* ⚠️ 合計も円グラフも絞り込みに追従させる。全体のまま残すと行と数字が食い違う */
   const total = useMemo(() => items.reduce((sum, e) => sum + (e.amount ?? 0), 0), [items]);
+  /** 月の見出しを挟んだ行。⚠️ 複数月を出すので、区切りが無いと日付を読むまで分からない */
+  const rows = useMemo(() => buildRows(items), [items]);
+
   const isOffline = error instanceof ApiError && error.code === "OFFLINE";
   const enabled = expensesEnabled(bootstrap.data?.organization);
+  const myRole = bootstrap.data?.organization?.myRole;
+  /* ⚠️ 表示の出し分けだけ。実際の可否はサーバが判定して 403 を返す */
+  const canEdit = myRole === "admin" || myRole === "collecter";
+
+  const periodLabel =
+    months === 1
+      ? monthLabel(current)
+      : `${monthLabel(current - (months - 1))} 〜 ${monthLabel(current)}`;
 
   return (
     <Screen>
@@ -74,20 +105,8 @@ export default function ExpensesScreen() {
           <Ionicons name="chevron-back" size={24} color={color.teal} />
         </Pressable>
         <Text style={styles.headerTitle}>経費</Text>
-        {/* ⚠️ 記録しない設定のときは入口を出さない（押せるのに使えない状態にしない） */}
-        {enabled ? (
-          <Pressable
-            onPress={() => router.push("/revenue/expenses/recurring")}
-            hitSlop={12}
-            style={styles.headerButton}
-            accessibilityRole="button"
-            accessibilityLabel="毎月の固定費の設定"
-          >
-            <Ionicons name="repeat" size={22} color={color.teal} />
-          </Pressable>
-        ) : (
-          <View style={styles.headerButton} />
-        )}
+        {/* ⚠️ 固定費の専用ページは畳んだので、ここにアイコンは置かない */}
+        <View style={styles.headerButton} />
       </View>
 
       {/*
@@ -95,7 +114,9 @@ export default function ExpensesScreen() {
            開いている画面は閉じない）。空の一覧を出すと壊れたように見えるので明示する。
       */}
       {!enabled ? (
-        <CenterMessage text={"この組織では経費を記録しない設定です。\n設定 → 組織 から変更できます。"} />
+        <CenterMessage
+          text={"この組織では経費を記録しない設定です。\n設定 → 組織 から変更できます。"}
+        />
       ) : isLoading && !data ? (
         <CenterMessage text="読み込み中…" />
       ) : isOffline && !data ? (
@@ -111,18 +132,10 @@ export default function ExpensesScreen() {
           }
         >
           <Card>
-            <View style={styles.monthRow}>
-              <PagerArrow direction={-1} disabled={false} onPress={() => setMonth((m) => m - 1)} />
-              <View style={{ flex: 1 }}>
-                <Muted style={styles.monthLabel}>{monthLabel(month)}</Muted>
-                <Text style={styles.monthTotal}>¥{total.toLocaleString()}</Text>
-              </View>
-              {/* ⚠️ 未来の月は見せない。空の月を無限にめくれてしまう */}
-              <PagerArrow
-                direction={1}
-                disabled={month >= current}
-                onPress={() => setMonth((m) => m + 1)}
-              />
+            <Muted style={styles.periodLabel}>{periodLabel}</Muted>
+            {/* ⚠️ 合計は円の中央にも出る。ここでは期間の見出しだけにして重複させない */}
+            <View style={{ marginTop: spacing.md }}>
+              <ExpenseCategoryPie expenses={items} total={total} />
             </View>
           </Card>
 
@@ -133,41 +146,69 @@ export default function ExpensesScreen() {
             </View>
           )}
 
-          {items.length === 0 ? (
+          {rows.length === 0 ? (
             <Card style={{ marginTop: spacing.lg }}>
               <Muted>
                 {scope === "all"
-                  ? "この月の経費はまだありません"
+                  ? "この期間の経費はまだありません"
                   : "この絞り込みに合う経費はありません"}
               </Muted>
             </Card>
           ) : (
             <Card style={{ marginTop: spacing.lg, paddingVertical: spacing.sm }}>
-              {items.map((expense, i) => (
-                <ExpenseRow
-                  key={expense.id}
-                  expense={expense}
-                  stores={stores.data}
-                  last={i === items.length - 1}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/revenue/expenses/[id]",
-                      params: { id: expense.id },
-                    })
-                  }
-                />
-              ))}
+              {rows.map((row, i) =>
+                row.kind === "month" ? (
+                  <View key={row.key} style={[styles.monthHead, i === 0 && { marginTop: 0 }]}>
+                    <Text style={styles.monthHeadLabel}>{row.label}</Text>
+                    <Text style={styles.monthHeadTotal}>¥{row.total.toLocaleString()}</Text>
+                  </View>
+                ) : (
+                  <ExpenseRow
+                    key={row.key}
+                    expense={row.expense}
+                    stores={stores.data}
+                    last={row.last}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/revenue/expenses/[id]",
+                        params: { id: row.expense.id },
+                      })
+                    }
+                  />
+                )
+              )}
             </Card>
           )}
+
+          {/*
+            ⚠️ **「さらに見る」で期間を伸ばす。** 月の行き来（前へ / 次へ）だと
+               古い経費に辿り着くまで何度も押すことになり、**まとめて見返せない。**
+            ⚠️ 押した位置に留まりたい操作なので、スクロール位置は動かさない。
+          */}
+          <Pressable
+            onPress={() => setMonths((m) => m + MONTH_STEP)}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.more, pressed && { opacity: 0.7 }]}
+          >
+            <Ionicons name="chevron-down" size={15} color={color.teal} />
+            <Text style={styles.moreLabel}>
+              さらに見る（もう{MONTH_STEP}か月）
+            </Text>
+          </Pressable>
+
+          <RecurringSection
+            stores={stores.data}
+            canEdit={canEdit}
+            onAdd={() => setRecurringOpen(true)}
+          />
         </ScrollView>
       )}
 
       {/* ⚠️ 下端の余白（insets.bottom）を足す。ホームインジケータに重なる。
-             ⚠️ **条件の中に入れること。** 外に置いていたので、記録しない設定でも
-                「＋」だけが浮いて残っていた */}
-      {enabled && (
+             ⚠️ **条件の中に入れること。** 外に置くと、記録しない設定でも「＋」が残る */}
+      {enabled && canEdit && (
         <Pressable
-          onPress={() => router.push("/revenue/expenses/new")}
+          onPress={() => setAddOpen(true)}
           accessibilityRole="button"
           accessibilityLabel="経費を追加"
           style={({ pressed }) => [
@@ -179,8 +220,56 @@ export default function ExpensesScreen() {
           <Ionicons name="add" size={26} color="#FFFFFF" />
         </Pressable>
       )}
+
+      <AddExpenseSheet
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onChoose={(choice) => {
+          if (choice === "once") router.push("/revenue/expenses/new");
+          else setRecurringOpen(true);
+        }}
+      />
+
+      <RecurringFormSheet open={recurringOpen} onClose={() => setRecurringOpen(false)} />
     </Screen>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* 行の組み立て                                                        */
+/* ------------------------------------------------------------------ */
+
+type Row =
+  | { kind: "month"; key: string; label: string; total: number }
+  | { kind: "item"; key: string; expense: Expense; last: boolean };
+
+/**
+ * 月の見出しを挟んで並べる。
+ *
+ * ⚠️ **サーバは新しい順で返す。並べ直さないこと**（`getExpenses` が
+ *    展開した固定費と実体を混ぜてから日付で並べている）。
+ * ⚠️ **月の合計は見出しに出す。** 複数月を出すので、画面上の合計だけだと
+ *    どの月がいくらか分からない。
+ */
+function buildRows(items: Expense[]): Row[] {
+  const out: Row[] = [];
+  let currentKey: number | null = null;
+
+  items.forEach((expense, i) => {
+    const index = monthIndexFromEpoch(expense.date);
+    if (index !== currentKey) {
+      currentKey = index;
+      const total = items
+        .filter((e) => monthIndexFromEpoch(e.date) === index)
+        .reduce((sum, e) => sum + (e.amount ?? 0), 0);
+      out.push({ kind: "month", key: `m:${index}`, label: monthLabel(index), total });
+    }
+    const nextIsSameMonth =
+      i + 1 < items.length && monthIndexFromEpoch(items[i + 1]!.date) === index;
+    out.push({ kind: "item", key: expense.id, expense, last: !nextIsSameMonth });
+  });
+
+  return out;
 }
 
 function ExpenseRow({
@@ -217,7 +306,9 @@ function ExpenseRow({
           {/* ⚠️ 対象（店舗 / 組織全体）を必ず出す。同じ金額・同じカテゴリの行が
                  店舗ごとに並ぶので、無いとどれがどの店舗か区別が付かない */}
           {formatJstDate(expense.date)}　{scopeLabel(expense.laundryId, stores)}
-          {expense.note ? `　${expense.note}` : ""}
+          {/* ⚠️ 固定費の note には名前が入るが、名前を付けなければカテゴリと同じ。
+                 同じ語が 2 回並ばないよう、一致するときは出さない */}
+          {expense.note && expense.note !== expense.category ? `　${expense.note}` : ""}
         </Text>
       </View>
       <Text style={styles.rowAmount}>¥{(expense.amount ?? 0).toLocaleString()}</Text>
@@ -250,15 +341,19 @@ const styles = StyleSheet.create({
     color: color.tealDeeper,
   },
 
-  monthRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  monthLabel: { fontSize: 12, textAlign: "center" },
-  monthTotal: {
-    ...numeric,
-    fontSize: 26,
-    color: color.tealDeeper,
-    textAlign: "center",
-    marginTop: 2,
+  periodLabel: { fontSize: 12, textAlign: "center" },
+
+  monthHead: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    marginTop: spacing.md,
+    paddingBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: color.cyan100,
   },
+  monthHeadLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
+  monthHeadTotal: { ...numeric, fontSize: 12, color: color.textMuted },
 
   row: {
     flexDirection: "row",
@@ -283,6 +378,16 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   recurringBadgeText: { fontFamily: font.uiBold, fontSize: 10, color: color.tealDeeper },
+
+  more: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    minHeight: 44,
+    marginTop: spacing.sm,
+  },
+  moreLabel: { fontFamily: font.uiBold, fontSize: 13, color: color.teal },
 
   fab: {
     position: "absolute",
