@@ -291,6 +291,16 @@ export type Expense = {
    */
   id: string;
   laundryId: string | null;
+  /**
+   * 対象の店名。**null = 組織全体**（店舗に紐づかない支出）。
+   *
+   * ⚠️ **サーバが組織の全店舗から引いて焼き込む。** 店舗一覧（`useStores`）は
+   *    担当店舗（011）で絞られるので、集金担当者・閲覧者では**担当外の店舗が
+   *    落ちる。** そちらから引くと「（削除された店舗）」と出てしまう。
+   * ⚠️ **`undefined` になり得る**（この項目を返す前の応答が永続キャッシュから
+   *    最大 7 日復元される）。`null`（組織全体）と区別すること。
+   */
+  laundryName?: string | null;
   date: number;
   amount: number;
   category: string;
@@ -315,6 +325,8 @@ export type Expense = {
 export type RecurringExpense = {
   id: string;
   laundryId: string | null;
+  /** 対象の店名。⚠️ 規約は `Expense.laundryName` と同じ */
+  laundryName?: string | null;
   name: string;
   amount: number;
   category: string;

@@ -122,7 +122,7 @@ export function RecurringSection({
                 <Text style={styles.rowName}>{item.category}</Text>
                 {/* ⚠️ Muted は numberOfLines を受け取らない。素の Text にする */}
                 <Text style={styles.rowMeta} numberOfLines={1}>
-                  毎月 {item.dayOfMonth} 日　{scopeLabel(item.laundryId, stores)}
+                  毎月 {item.dayOfMonth} 日　{scopeLabel(item, stores)}
                 </Text>
                 <Text style={styles.rowMeta}>
                   {item.startMonth} 〜 {item.endMonth ?? "継続中"}

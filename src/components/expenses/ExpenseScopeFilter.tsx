@@ -25,14 +25,32 @@ export function matchesScope(expense: Expense, scope: ExpenseScope): boolean {
   return expense.laundryId === scope.storeId;
 }
 
-/** 一覧の行に出す「対象」。⚠️ 削除された店舗も無言で消さない */
+/**
+ * 一覧の行に出す「対象」。
+ *
+ * ⚠️ **サーバが焼き込んだ `laundryName` を最優先する。** 店舗一覧（`useStores`）は
+ *    担当店舗（011）で絞られるので、集金担当者・閲覧者では**担当外の店舗が
+ *    落ちる。** 経費は担当店舗で絞っていないため、一覧から引くと
+ *    **担当外の店舗が全部「（削除された店舗）」になる**（実際にそうなっていた）。
+ *
+ * ⚠️ **`laundryName` を返す前のサーバ・キャッシュでは `undefined`。**
+ *    そのときだけ店舗一覧に落として、見つからなければ
+ *    **「（削除された店舗）」ではなく「他の店舗」**と出す
+ *    （消えたのか担当外なのか区別が付かないので、消えたと言い切らない）。
+ */
 export function scopeLabel(
-  laundryId: string | null | undefined,
+  item: { laundryId?: string | null; laundryName?: string | null },
   stores: Store[] | undefined
 ): string {
-  if (!laundryId) return "組織全体";
-  const found = (stores ?? []).find((s) => s.id === laundryId);
-  return found ? `${found.store}店` : "（削除された店舗）";
+  if (!item.laundryId) return "組織全体";
+
+  // サーバが解決済み。null = その店舗はもう存在しない
+  if (item.laundryName !== undefined) {
+    return item.laundryName ? `${item.laundryName}店` : "（削除された店舗）";
+  }
+
+  const found = (stores ?? []).find((s) => s.id === item.laundryId);
+  return found ? `${found.store}店` : "他の店舗";
 }
 
 /**

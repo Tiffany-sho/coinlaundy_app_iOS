@@ -302,7 +302,7 @@ function ExpenseRow({
         <Text style={styles.rowMeta} numberOfLines={1}>
           {/* ⚠️ 対象（店舗 / 組織全体）を必ず出す。同じ金額・同じカテゴリの行が
                  店舗ごとに並ぶので、無いとどれがどの店舗か区別が付かない */}
-          {formatJstDate(expense.date)}　{scopeLabel(expense.laundryId, stores)}
+          {formatJstDate(expense.date)}　{scopeLabel(expense, stores)}
           {/* ⚠️ 固定費の note には名前が入るが、名前を付けなければカテゴリと同じ。
                  同じ語が 2 回並ばないよう、一致するときは出さない */}
           {expense.note && expense.note !== expense.category ? `　${expense.note}` : ""}
