@@ -4,13 +4,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Appear } from "@/components/common/Appear";
+import { ScreenTitleRow } from "@/components/common/SettingsButton";
 import { useBootstrap, useLaundryStates } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { useOutbox } from "@/offline/OutboxProvider";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
 import { brokenMachines, isLowStock, stockDisplayItems } from "@/components/manage/laundryState";
-import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
+import { Card, CenterMessage, Muted, OfflineBanner, Screen } from "@/components/common/ui";
 import { color, font, radius, spacing } from "@/theme/tokens";
 import type { LaundryState } from "@/api/types";
 
@@ -70,7 +71,7 @@ export default function Manage() {
     <Screen>
       {!isOnline && <OfflineBanner />}
       <View style={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg }}>
-        <Title style={{ marginBottom: spacing.md, fontSize: 22 }}>管理</Title>
+        <ScreenTitleRow title="管理" style={{ marginBottom: spacing.md }} />
         <SegmentedTabs options={SEGMENTS} value={segment} onChange={setSegment} />
       </View>
 

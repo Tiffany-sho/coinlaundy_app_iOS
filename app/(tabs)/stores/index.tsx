@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { Appear } from "@/components/common/Appear";
+import { ScreenTitleRow } from "@/components/common/SettingsButton";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useScrollToTop } from "expo-router";
@@ -25,7 +26,7 @@ import {
   UNKNOWN_REGION,
 } from "@/components/stores/prefecture";
 import { needsAttention } from "@/components/manage/laundryState";
-import { CenterMessage, Card, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
+import { CenterMessage, Card, Muted, OfflineBanner, Screen } from "@/components/common/ui";
 import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { LaundryState, Store } from "@/api/types";
 
@@ -206,7 +207,7 @@ export default function Stores() {
            スクロールのたびに古い行が「現れ直す」ように見える（Appear のコメント参照）。
       */}
       <Appear index={0} style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
-        <Title style={{ fontSize: 22 }}>店舗一覧</Title>
+        <ScreenTitleRow title="店舗一覧" />
 
         {hasStores && (
           <>

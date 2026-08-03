@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { Appear } from "@/components/common/Appear";
+import { ScreenTitleRow } from "@/components/common/SettingsButton";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -47,7 +48,7 @@ import { matchesMethods } from "@/components/revenue/methodFilter";
 import { expensesEnabled } from "@/components/expenses/expensesEnabled";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { useToast } from "@/components/common/toast";
-import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
+import { Card, CenterMessage, Muted, OfflineBanner, Screen } from "@/components/common/ui";
 import { planAtLeast } from "@/billing/products";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 import type { ExportFile } from "@/api/types";
@@ -327,9 +328,7 @@ export default function Revenue() {
         ListHeaderComponent={
           <View>
             <Appear index={0}>
-              <View style={styles.titleRow}>
-                <Title style={{ fontSize: 22 }}>収益</Title>
-              </View>
+              <ScreenTitleRow title="収益" style={styles.titleRow} />
             </Appear>
 
             {pendingCount > 0 && (

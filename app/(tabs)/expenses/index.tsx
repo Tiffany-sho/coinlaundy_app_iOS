@@ -17,6 +17,7 @@ import {
 } from "@/components/expenses/ExpenseScopeFilter";
 import { RecurringFormSheet } from "@/components/expenses/RecurringFormSheet";
 import { RecurringSection } from "@/components/expenses/RecurringSection";
+import { ScreenTitleRow } from "@/components/common/SettingsButton";
 import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
 import {
   currentMonthIndex,
@@ -117,14 +118,17 @@ export default function ExpensesScreen() {
 
   return (
     <Screen>
-      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerButton}>
-          <Ionicons name="chevron-back" size={24} color={color.teal} />
-        </Pressable>
-        <Text style={styles.headerTitle}>経費</Text>
-        {/* ⚠️ 固定費の専用ページは畳んだので、ここにアイコンは置かない */}
-        <View style={styles.headerButton} />
-      </View>
+      {/*
+        ⚠️ **「戻る」を置かない。** 2026-08-03 にタブの先頭画面になったので
+           戻り先が無い（それまでは収益から push される画面で、
+           `router.back()` を持っていた）。押しても何も起きないか、
+           直前に見ていた別のタブへ飛ぶ。
+        ⚠️ 見出しは他のタブと揃えて 22px（`ScreenTitleRow`）。
+      */}
+      <ScreenTitleRow
+        title="経費"
+        style={[styles.header, { paddingTop: insets.top + spacing.lg }]}
+      />
 
       {/*
         ⚠️ 設定で経費を切った直後にこの画面に留まっていることがある（入口は消えるが
@@ -365,14 +369,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
-  },
-  headerButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  headerTitle: {
-    flex: 1,
-    textAlign: "center",
-    fontFamily: font.uiBold,
-    fontSize: 17,
-    color: color.tealDeeper,
   },
 
   monthNav: {
