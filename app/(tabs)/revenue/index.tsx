@@ -329,19 +329,6 @@ export default function Revenue() {
             <Appear index={0}>
               <View style={styles.titleRow}>
                 <Title style={{ fontSize: 22 }}>収益</Title>
-                {/* ⚠️ 経費は「設定」ではなく日常の記録なので、収益と同じタブに置く。
-                       ⚠️ 経費を使わない組織では入口ごと出さない（012） */}
-                {useExpenses && (
-                  <Pressable
-                    onPress={() => router.push("/revenue/expenses")}
-                    accessibilityRole="button"
-                    accessibilityLabel="経費を見る"
-                    style={({ pressed }) => [styles.expensesButton, pressed && { opacity: 0.75 }]}
-                  >
-                    <Ionicons name="receipt-outline" size={15} color={color.tealDeeper} />
-                    <Text style={styles.expensesLabel}>経費</Text>
-                  </Pressable>
-                )}
               </View>
             </Appear>
 
@@ -364,9 +351,39 @@ export default function Revenue() {
               />
             </Appear>
 
+            {/*
+              経費の入口。**総額収益のすぐ下に幅いっぱいで置く。**
+
+              ⚠️ **タイトルの横の小さなピルに戻さない**（2026-08-03 に移した）。
+                 目が総額収益の大きな数字へ行くので、隣の小さなボタンは見落とされる。
+              ⚠️ 経費は「設定」ではなく**日常の記録**なので、収益と同じタブに置く。
+              ⚠️ **経費を使わない組織では入口ごと出さない**（012）。
+            */}
+            {useExpenses && (
+              <Appear index={2}>
+                <Pressable
+                  onPress={() => router.push("/revenue/expenses")}
+                  accessibilityRole="button"
+                  accessibilityLabel="経費を見る"
+                  style={({ pressed }) => [styles.expensesCard, pressed && styles.expensesPressed]}
+                >
+                  <View style={styles.expensesIcon}>
+                    <Ionicons name="receipt-outline" size={20} color={color.teal} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.expensesTitle}>経費</Text>
+                    <Muted style={styles.expensesNote}>
+                      家賃・仕入れなどの支出を記録すると利益が出せます
+                    </Muted>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={color.cyan300} />
+                </Pressable>
+              </Appear>
+            )}
+
             {/* ⚠️ タブとグラフはまとめて 1 つの Appear に入れる。分けると
                    タブを切り替えるたびにグラフだけが出直す */}
-            <Appear index={2}>
+            <Appear index={3}>
               <SegmentedTabs options={visibleTabs} value={activeTab} onChange={setTab} />
 
               {activeTab === "store" && (
@@ -396,7 +413,7 @@ export default function Revenue() {
                     **包むと親が変わること**は別の話。
             */}
             <View onLayout={onHistoryLayout}>
-              <Appear index={3}>
+              <Appear index={4}>
                 <Text style={styles.sectionTitle}>売上履歴</Text>
 
                 <HistoryControls
@@ -544,18 +561,32 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: spacing.md,
   },
-  expensesButton: {
+  /* 経費の入口。⚠️ 総額収益カードと同じ幅・同じ角丸にして「並ぶもの」に見せる */
+  expensesCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    minHeight: 34,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
+    gap: spacing.md,
+    minHeight: 64,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.lg,
+    borderRadius: radius.card,
     borderWidth: 1,
     borderColor: color.cyan100,
-    backgroundColor: color.cyan50,
+    backgroundColor: color.cardBg,
+    ...shadow.sm,
   },
-  expensesLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.tealDeeper },
+  expensesPressed: { opacity: 0.9, backgroundColor: color.cyan50 },
+  expensesIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: color.cyan50,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  expensesTitle: { fontFamily: font.uiBold, fontSize: 15, color: color.textMain },
+  expensesNote: { fontSize: 11, marginTop: 1 },
   /* 右下に固定する書き出しボタン。店舗一覧の「追加」と同じ寸法・同じ影。
      ⚠️ タブバーは重ならず下に並ぶので insets.bottom は足さない（contentContainerStyle と同じ理由） */
   fab: {
