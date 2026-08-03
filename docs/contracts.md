@@ -849,6 +849,12 @@ collect_funds.fundsArray = [{ id, name, funds, cashless? }]    ← 機種別入�
   `src/functions/expenseSummary.js` の `buildProfitPoints`、アプリは
   `src/components/revenue/profitSeries.ts`）。**片方だけ直すと同じ月の利益が
   Web とアプリで食い違う。** 型エラーは出ない
+- **経費の入口はこのカードの中に置く**（アプリ、2026-08-03）。棒が「売上 − 経費」
+  なので、経費を足したくなるのはここを見た瞬間。
+  ⚠️ **`MonthlyProfitCard` は店舗別の収益ページにも出る**ので、ここに置けば
+  両方に一度で乗る。⚠️ **店舗タブから収益タブへまたぐ遷移**になるので、
+  `(tabs)/_layout.tsx` の `backToTabRoot("/revenue")` を外さないこと
+  （外すと収益タブが経費の 1 枚だけになり、**収益ページに戻れなくなる**）
 
 ## 担当店舗（011）
 

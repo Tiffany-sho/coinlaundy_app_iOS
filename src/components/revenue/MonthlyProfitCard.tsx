@@ -1,4 +1,4 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useExpenses } from "@/api/queries";
@@ -8,7 +8,7 @@ import { usePeriodPager } from "@/components/revenue/usePeriodPager";
 import { buildProfitPoints, profitMargin, sumProfitPoints } from "@/components/revenue/profitSeries";
 import { monthLabel, monthStartEpoch, type MonthRange } from "@/components/revenue/monthIndex";
 import { Card, Muted } from "@/components/common/ui";
-import { color, font, numeric, spacing } from "@/theme/tokens";
+import { color, font, numeric, radius, spacing } from "@/theme/tokens";
 import type { StoreRevenue } from "@/api/types";
 
 /**
@@ -118,27 +118,45 @@ export function MonthlyProfitCard({
             ⚠️ **店舗別では「組織全体の経費」が入らないことを必ず書く。**
                書かないと、経費画面の合計と店舗ページの経費が合わない理由が分からない。
           */}
-          {storeId ? (
-            <Muted style={styles.note}>
-              この店舗に紐づけた経費だけを引いています。組織全体の経費は含まれません。
-            </Muted>
-          ) : (
-            <Muted style={styles.note}>
-              毎月の固定費も計上されます。
-              {totals.expense === 0 && "　経費を登録すると利益が出ます。"}
-            </Muted>
-          )}
+          <Muted style={styles.note}>
+            {storeId
+              ? "この店舗に紐づけた経費だけを引いています。組織全体の経費は含まれません。"
+              : "毎月の固定費も計上されます。"}
+          </Muted>
 
-          {/* ⚠️ 経費が 1 円も無いと「利益＝売上」の棒になる。入口をその場に出す */}
-          {totals.expense === 0 && !storeId && (
-            <Text
-              style={styles.link}
-              onPress={() => router.push("/revenue/expenses")}
-              accessibilityRole="link"
-            >
-              <Ionicons name="receipt-outline" size={12} color={color.teal} /> 経費を登録する
-            </Text>
-          )}
+          {/*
+            経費の入口。**このカードの中に置く**（2026-08-03）。
+
+            ⚠️ **利益のグラフのすぐ下が唯一まともな置き場所。** 棒が「売上 − 経費」
+               なので、経費を足したり直したりしたくなるのはここを見た瞬間。
+               収益ページの上のほうに置いていたときは、グラフを見てから
+               画面を遡ることになっていた。
+            ⚠️ **店舗別の収益ページにも同じカードが出る**ので、ここに置けば
+               両方に一度で乗る（`StoreChartTabs` の「月別利益」タブ）。
+            ⚠️ **タブをまたぐ遷移になる**（店舗タブ → 収益タブ）。
+               `(tabs)/_layout.tsx` の `backToTabRoot("/revenue")` が
+               「収益タブを押したら先頭へ」を持っているので戻れる。**外さないこと。**
+          */}
+          <Pressable
+            onPress={() => router.push("/revenue/expenses")}
+            accessibilityRole="button"
+            accessibilityLabel="経費を見る"
+            style={({ pressed }) => [styles.expensesRow, pressed && styles.expensesPressed]}
+          >
+            <View style={styles.expensesIcon}>
+              <Ionicons name="receipt-outline" size={18} color={color.teal} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.expensesTitle}>経費</Text>
+              {/* ⚠️ 経費が 1 円も無いと「利益＝売上」の棒になる。その理由をここで言う */}
+              <Muted style={styles.expensesNote}>
+                {totals.expense === 0
+                  ? "まだ登録がありません。登録すると利益が出ます"
+                  : "登録・修正はこちら"}
+              </Muted>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={color.cyan300} />
+          </Pressable>
         </>
       )}
     </Card>
@@ -201,11 +219,30 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 11 },
   summaryValue: { ...numeric, fontSize: 15, color: color.textMain, marginTop: 2 },
   note: { fontSize: 11, lineHeight: 16, marginTop: spacing.sm },
-  link: {
-    fontFamily: font.uiBold,
-    fontSize: 12,
-    color: color.teal,
-    marginTop: spacing.xs,
+
+  /* 経費の入口。⚠️ カードの中なので影は付けない（外枠の Card が持っている） */
+  expensesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    minHeight: 56,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: color.cyan100,
+    backgroundColor: color.appBg,
   },
+  expensesPressed: { opacity: 0.85, backgroundColor: color.cyan50 },
+  expensesIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    backgroundColor: color.cyan50,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  expensesTitle: { fontFamily: font.uiBold, fontSize: 14, color: color.textMain },
+  expensesNote: { fontSize: 11, marginTop: 1 },
   fallbackNote: { fontSize: 11, marginVertical: spacing.xl, textAlign: "center" },
 });
