@@ -16,6 +16,8 @@ import { useDialog } from "@/components/common/dialog";
 import { useToast } from "@/components/common/toast";
 import { INVITABLE_ROLES, ROLE_INFO, orgStyles } from "@/components/settings/orgShared";
 import { OrgNameSection } from "@/components/settings/OrgNameSection";
+import { ExpensesSection } from "@/components/settings/ExpensesSection";
+import { expensesEnabled } from "@/components/expenses/expensesEnabled";
 import { MemberRow } from "@/components/settings/MemberRow";
 import { MemberStoreSheet } from "@/components/settings/MemberStoreSheet";
 import { InviteSection, PendingInvitation } from "@/components/settings/InviteSection";
@@ -146,6 +148,15 @@ export default function Organization() {
 
           <View style={orgStyles.card}>
             <OrgNameSection name={bootstrap.data?.organization?.name ?? ""} canEdit={isAdmin} />
+
+            <View style={orgStyles.separator} />
+
+            {/* ⚠️ 初期設定で聞いた「経費を記録するか」をここで変えられる（012）。
+                   判定は必ず expensesEnabled() を通す（未指定＝使う） */}
+            <ExpensesSection
+              enabled={expensesEnabled(bootstrap.data?.organization)}
+              canEdit={isAdmin}
+            />
 
             <View style={orgStyles.separator} />
 

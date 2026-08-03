@@ -83,6 +83,16 @@ export type Organization = {
   id: string;
   name: string;
   myRole: Role;
+  /**
+   * 経費の機能を使うか（012）。初期設定で聞き、設定 → 組織で変えられる。
+   *
+   * ⚠️ **`=== false` で判定すること。** この項目を返す前の応答が react-query の
+   *    永続キャッシュ（MMKV）から最大 7 日復元されるので `undefined` になり得る。
+   *    `Boolean(...)` で畳むと、**アップデート直後だけ経費が消えて見える。**
+   * ⚠️ **表示の設定であって認可ではない。** false でも経費のデータは残り、
+   *    API も 403 にしない（戻せば以前の記録がそのまま出る）。
+   */
+  expensesEnabled?: boolean;
 };
 
 /**

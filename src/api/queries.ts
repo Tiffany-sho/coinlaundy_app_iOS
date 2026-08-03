@@ -569,7 +569,18 @@ export const expenseKeys = {
  * ⚠️ **期間は必須。** 経費は増え続けるので、切らないとサーバ側で 1000 行の
  *    上限に当たって古い順から黙って欠ける。
  */
-export function useExpenses(fromEpoch: number, toEpoch: number, storeId?: string) {
+export function useExpenses(
+  fromEpoch: number,
+  toEpoch: number,
+  storeId?: string,
+  /**
+   * 取りに行くか。
+   * ⚠️ 月別利益カードが前後の期間を先読みするので、端では止める必要がある
+   *    （`usePeriodPager` の `fetchCharts` と同じ考え方）。
+   * ⚠️ 経費を使わない組織（`expensesEnabled` が false）でも false にする。
+   */
+  enabled = true
+) {
   return useQuery({
     queryKey: expenseKeys.list(fromEpoch, toEpoch, storeId),
     queryFn: () =>
@@ -577,7 +588,7 @@ export function useExpenses(fromEpoch: number, toEpoch: number, storeId?: string
         `/expenses?from=${fromEpoch}&to=${toEpoch}` +
           (storeId ? `&storeId=${encodeURIComponent(storeId)}` : "")
       ),
-    enabled: toEpoch >= fromEpoch,
+    enabled: enabled && toEpoch >= fromEpoch,
   });
 }
 
@@ -939,6 +950,27 @@ export function useUpdateOrgName() {
       queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap });
       queryClient.invalidateQueries({ queryKey: settingsKeys.members });
     },
+  });
+}
+
+/**
+ * 経費を記録するかの切り替え（012）。**admin だけが通る。**
+ *
+ * ⚠️ **bootstrap を必ず取り直す。** 収益タブのタブ構成と経費ボタンの出し分けが
+ *    `organization.expensesEnabled` を見ているので、取り直さないと
+ *    **設定を変えても収益ページが前のままになる。**
+ * ⚠️ 経費のキャッシュは消さない。切っても行は残り、戻せばそのまま出るのが正しい。
+ */
+export function useUpdateOrgExpensesEnabled() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (expensesEnabled: boolean) =>
+      apiFetch<{ expensesEnabled: boolean }>("/org", {
+        method: "PATCH",
+        body: { expensesEnabled },
+      }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap, refetchType: "all" }),
   });
 }
 

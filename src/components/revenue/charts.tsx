@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { color, font, radius, spacing, STORE_COLORS, numeric } from "@/theme/tokens";
+import type { ProfitPoint } from "@/components/revenue/profitSeries";
 
 /**
  * グラフは素の View だけで描く。
@@ -318,6 +319,142 @@ export function MonthlyStackedBarChart({
   );
 }
 
+/**
+ * 月別利益（売上 − 経費）の棒。
+ *
+ * ⚠️ **他の棒グラフと決定的に違うのは「負の値がある」こと。** 赤字の月は
+ *    0 の線より下へ伸ばす。`Math.max(value, 0)` で潰すと**赤字が黒字に見える。**
+ *    そのために 0 の線の位置を計算して、上下に別々の器を積んでいる。
+ *
+ * ⚠️ **0 の線は必ず描く。** 全部プラスの月でも、線が無いと「どこが 0 か」が
+ *    分からず、下に伸びた棒が出たときだけ突然基準が現れることになる。
+ *
+ * 組み立て（金額の作り方）は `profitSeries.ts`。ここは描くだけ。
+ */
+export function ProfitBarChart({
+  data,
+  onSelect,
+}: {
+  data: ProfitPoint[];
+  /** 押した月を親へ知らせる（カード側の読み上げに使う）。省略可 */
+  onSelect?: (month: string) => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  if (data.length === 0) {
+    return <Text style={styles.empty}>表示できるデータがありません</Text>;
+  }
+
+  const active = data.find((p) => p.month === selected) ?? data[data.length - 1]!;
+
+  /*
+    ⚠️ **上下の幅は「実際に出た最大／最小」から取る。** 0 を必ず含めるので、
+       全部プラスなら下は 0 幅、全部マイナスなら上が 0 幅になる。
+  */
+  const highest = Math.max(0, ...data.map((p) => p.profit));
+  const lowest = Math.min(0, ...data.map((p) => p.profit));
+  const span = highest - lowest;
+  /** 0 の線が上から何 % か。⚠️ span が 0（全部 0 円）のときは下端に置く */
+  const zeroPct = span > 0 ? (highest / span) * 100 : 100;
+
+  const gap = barGap(data.length);
+  const negative = active.profit < 0;
+
+  return (
+    <View>
+      <View style={styles.readout}>
+        <Text style={styles.readoutMonth}>{formatMonthLabel(active.month)}</Text>
+        {/* ⚠️ 赤字は色でも分かるようにする。符号だけだと見落とす */}
+        <Text style={[styles.readoutValue, negative && { color: color.red400 }]}>
+          {negative ? "−" : ""}¥{Math.abs(active.profit).toLocaleString()}
+        </Text>
+      </View>
+      <View style={styles.profitLegend}>
+        <Text style={styles.profitLegendItem}>売上 ¥{active.revenue.toLocaleString()}</Text>
+        <Text style={styles.profitLegendItem}>経費 ¥{active.expense.toLocaleString()}</Text>
+      </View>
+
+      <View style={styles.plotRow}>
+        <View style={styles.yAxis}>
+          <Text style={styles.axisLabel}>{formatAxisValue(highest)}</Text>
+          {/* 0 の線に合わせて絶対配置。⚠️ 上下に等分できないので space-between は使えない */}
+          <Text
+            style={[styles.axisLabel, styles.zeroAxisLabel, { top: `${zeroPct}%` }]}
+            pointerEvents="none"
+          >
+            0
+          </Text>
+          {lowest < 0 && (
+            <Text style={styles.axisLabel}>−{formatAxisValue(Math.abs(lowest))}</Text>
+          )}
+        </View>
+
+        <View style={styles.plot}>
+          <View style={[styles.gridLine, { top: 0 }]} />
+          {lowest < 0 && <View style={[styles.gridLine, { bottom: 0 }]} />}
+          {/* ⚠️ 0 の線は他の目盛りより濃くする。基準線だと分かる必要がある */}
+          <View style={[styles.gridLine, styles.zeroLine, { top: `${zeroPct}%` }]} />
+
+          <View style={[styles.bars, { gap }]}>
+            {data.map((point) => {
+              const isActive = point.month === active.month;
+              const up = point.profit > 0 ? (point.profit / (highest || 1)) * 100 : 0;
+              const down = point.profit < 0 ? (-point.profit / (-lowest || 1)) * 100 : 0;
+              return (
+                <Pressable
+                  key={point.month}
+                  style={styles.profitSlot}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${formatMonthLabel(point.month)}の利益 ${point.profit < 0 ? "マイナス" : ""}${Math.abs(point.profit).toLocaleString()}円`}
+                  accessibilityState={{ selected: isActive }}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setSelected(point.month);
+                    onSelect?.(point.month);
+                  }}
+                >
+                  {/* 0 の線から上。⚠️ 高さを % で持つので親に確定した高さが要る */}
+                  <View style={[styles.profitUp, { height: `${zeroPct}%` }]}>
+                    {point.profit > 0 && (
+                      <View
+                        style={[
+                          styles.profitBarUp,
+                          {
+                            height: `${Math.max(up, 2)}%`,
+                            backgroundColor: color.teal,
+                            opacity: isActive ? 1 : 0.55,
+                          },
+                        ]}
+                      />
+                    )}
+                  </View>
+                  {/* 0 の線から下（赤字）。⚠️ 角丸は下側に付ける */}
+                  <View style={[styles.profitDown, { height: `${100 - zeroPct}%` }]}>
+                    {point.profit < 0 && (
+                      <View
+                        style={[
+                          styles.profitBarDown,
+                          {
+                            height: `${Math.max(down, 2)}%`,
+                            backgroundColor: color.red400,
+                            opacity: isActive ? 1 : 0.55,
+                          },
+                        ]}
+                      />
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+
+      <MonthAxis months={data.map((p) => p.month)} />
+    </View>
+  );
+}
+
 type StorePoint = { laundryId: string; laundryName: string; total: number };
 
 /**
@@ -496,6 +633,25 @@ const styles = StyleSheet.create({
   xAxis: { flexDirection: "row", gap: 3, marginTop: spacing.xs, paddingLeft: 34 },
   xLabel: { flex: 1, fontFamily: font.ui, fontSize: 9, color: color.textFaint, textAlign: "center" },
   axisCaption: { fontFamily: font.ui, fontSize: 9, color: color.textFaint, textAlign: "right", marginTop: 2 },
+  // ── 月別利益（0 の線をまたぐ棒） ──
+  /* 売上・経費の内訳。⚠️ readout の下に置く（利益の数字より小さく） */
+  profitLegend: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.md, marginTop: -6 },
+  profitLegendItem: { fontFamily: font.ui, fontSize: 11, color: color.textFaint },
+  /* ⚠️ 上下 2 つの器を積むので justifyContent は使わない（barSlot とは別物） */
+  profitSlot: { flex: 1, height: "100%" },
+  profitUp: { width: "100%", justifyContent: "flex-end" },
+  profitDown: { width: "100%", justifyContent: "flex-start" },
+  profitBarUp: { width: "100%", borderTopLeftRadius: 3, borderTopRightRadius: 3, minHeight: 2 },
+  profitBarDown: {
+    width: "100%",
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+    minHeight: 2,
+  },
+  /* 0 の基準線。⚠️ 他の目盛りより濃くする */
+  zeroLine: { backgroundColor: color.textFaint, height: 1 },
+  /* ⚠️ 0 のラベルは線に合わせて絶対配置する（上下が等分でないため） */
+  zeroAxisLabel: { position: "absolute", right: spacing.xs, marginTop: -5 },
   // ── 積み上げ棒 ──
   stack: { width: "100%", borderTopLeftRadius: 3, borderTopRightRadius: 3, overflow: "hidden", minHeight: 2 },
   /* ⚠️ ラベルを絶対配置にしたので、行の高さはここで確保する（中身が無い列があるため） */

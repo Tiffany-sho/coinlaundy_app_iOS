@@ -18,7 +18,6 @@ import {
   paymentMethodNames,
   useFundHistory,
   useStores,
-  useMonthlySummary,
   useStoreRevenue,
 } from "@/api/queries";
 import { useOutbox } from "@/offline/OutboxProvider";
@@ -27,7 +26,7 @@ import { errorMessage } from "@/components/funds/fundCache";
 import { ExportSheet } from "@/components/revenue/ExportSheet";
 import { StoreRankBars } from "@/components/revenue/charts";
 import { MonthlyRevenueCard } from "@/components/revenue/MonthlyRevenueCard";
-import { MonthlySummaryTable } from "@/components/revenue/MonthlySummaryTable";
+import { MonthlyProfitCard } from "@/components/revenue/MonthlyProfitCard";
 import { TotalRevenueCard } from "@/components/revenue/TotalRevenueCard";
 import { HistoryControls, type HistorySortField } from "@/components/revenue/HistoryControls";
 import type { SortDirection } from "@/components/common/SortControls";
@@ -45,6 +44,7 @@ import {
   type HistoryRow,
 } from "@/components/revenue/historyRows";
 import { matchesMethods } from "@/components/revenue/methodFilter";
+import { expensesEnabled } from "@/components/expenses/expensesEnabled";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { useToast } from "@/components/common/toast";
 import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
@@ -52,13 +52,20 @@ import { planAtLeast } from "@/billing/products";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 import type { ExportFile } from "@/api/types";
 
-/** グラフカードの切り替えタブ。既定は「月別」（Web も月別売上カードが主役） */
-type ChartTab = "store" | "monthly" | "summary";
+/**
+ * グラフカードの切り替えタブ。既定は「月別」（Web も月別売上カードが主役）。
+ *
+ * ⚠️ **「月次サマリー」は 2026-08-03 に「月別利益」へ差し替えた。**
+ *    前月比・前年同月比の表より、売上 − 経費のほうが日々の判断に効くため。
+ * ⚠️ **経費を使わない組織では「月別利益」を出さない。** 経費が常に 0 で
+ *    利益＝売上になり、月別売上と同じ形の棒が 2 枚並ぶだけになる。
+ */
+type ChartTab = "store" | "monthly" | "profit";
 
 const CHART_TABS: { value: ChartTab; label: string }[] = [
   { value: "store", label: "店舗別" },
   { value: "monthly", label: "月別" },
-  { value: "summary", label: "月次サマリー" },
+  { value: "profit", label: "月別利益" },
 ];
 
 /** 右下に固定する書き出しボタンの直径。店舗一覧の「追加」と同じ */
@@ -118,7 +125,6 @@ export default function Revenue() {
     order: sortField === "amount" ? "totalFunds" : "date",
     asc: sortDirection === "asc",
   });
-  const monthly = useMonthlySummary();
   const byStore = useStoreRevenue();
   /* ⚠️ 支払方法の名前を集めるためだけ。収益サマリ（byStore）は支払方法を持たない */
   const storeList = useStores();
@@ -133,9 +139,15 @@ export default function Revenue() {
   /* ⚠️ プラン名を並べない。足すたびに直し漏れる（products.ts の planAtLeast を参照） */
   const canExport = planAtLeast(plan ?? "free", "pro");
 
+  /* ⚠️ 判定は必ず expensesEnabled() を通す（`?? true` などを画面に書かない） */
+  const useExpenses = expensesEnabled(bootstrap.data?.organization);
+  /* ⚠️ 経費を切っている間に「月別利益」を選んだままにしない。タブごと消えるので
+        何も描かれないカードが残る。既定の「月別」へ戻す */
+  const activeTab: ChartTab = tab === "profit" && !useExpenses ? "monthly" : tab;
+  const visibleTabs = useExpenses ? CHART_TABS : CHART_TABS.filter((t) => t.value !== "profit");
+
   const rows = list.data ?? [];
   const stores = byStore.data ?? [];
-  const points = monthly.data ?? [];
 
   /**
    * 総額収益と、その集計期間。
@@ -262,14 +274,14 @@ export default function Revenue() {
   }
 
   async function refreshAll() {
-    const results = await Promise.all([list.refetch(), monthly.refetch(), byStore.refetch()]);
+    const results = await Promise.all([list.refetch(), byStore.refetch()]);
     // 引っ張って更新したのに古い数字のままだと気づけないので、失敗だけ知らせる
     if (results.some((result) => result.isError)) {
       toast.error("最新のデータを取得できませんでした");
     }
   }
 
-  if (list.isLoading && rows.length === 0 && monthly.isLoading) {
+  if (list.isLoading && rows.length === 0 && byStore.isLoading) {
     return (
       <Screen>
         <CenterMessage text="読み込み中…" />
@@ -317,16 +329,19 @@ export default function Revenue() {
             <Appear index={0}>
               <View style={styles.titleRow}>
                 <Title style={{ fontSize: 22 }}>収益</Title>
-                {/* ⚠️ 経費は「設定」ではなく日常の記録なので、収益と同じタブに置く */}
-                <Pressable
-                  onPress={() => router.push("/revenue/expenses")}
-                  accessibilityRole="button"
-                  accessibilityLabel="経費を見る"
-                  style={({ pressed }) => [styles.expensesButton, pressed && { opacity: 0.75 }]}
-                >
-                  <Ionicons name="receipt-outline" size={15} color={color.tealDeeper} />
-                  <Text style={styles.expensesLabel}>経費</Text>
-                </Pressable>
+                {/* ⚠️ 経費は「設定」ではなく日常の記録なので、収益と同じタブに置く。
+                       ⚠️ 経費を使わない組織では入口ごと出さない（012） */}
+                {useExpenses && (
+                  <Pressable
+                    onPress={() => router.push("/revenue/expenses")}
+                    accessibilityRole="button"
+                    accessibilityLabel="経費を見る"
+                    style={({ pressed }) => [styles.expensesButton, pressed && { opacity: 0.75 }]}
+                  >
+                    <Ionicons name="receipt-outline" size={15} color={color.tealDeeper} />
+                    <Text style={styles.expensesLabel}>経費</Text>
+                  </Pressable>
+                )}
               </View>
             </Appear>
 
@@ -352,29 +367,22 @@ export default function Revenue() {
             {/* ⚠️ タブとグラフはまとめて 1 つの Appear に入れる。分けると
                    タブを切り替えるたびにグラフだけが出直す */}
             <Appear index={2}>
-              <SegmentedTabs options={CHART_TABS} value={tab} onChange={setTab} />
+              <SegmentedTabs options={visibleTabs} value={activeTab} onChange={setTab} />
 
-              {tab === "store" && (
+              {activeTab === "store" && (
                 <Card style={{ marginBottom: spacing.lg }}>
                   <Text style={styles.cardTitle}>店舗別の売上</Text>
                   <StoreRankBars data={stores} />
                 </Card>
               )}
 
-              {tab === "monthly" && (
+              {activeTab === "monthly" && (
                 <MonthlyRevenueCard stores={stores} isLoading={byStore.isLoading && !byStore.data} />
               )}
 
-              {/* 月次サマリーはデータが無いと何も描かない（カードごと消える）ので、代わりを出す */}
-              {tab === "summary" &&
-                (points.length > 0 ? (
-                  <MonthlySummaryTable data={points} />
-                ) : (
-                  <Card style={{ marginBottom: spacing.lg }}>
-                    <Text style={styles.cardTitle}>月次サマリー</Text>
-                    <Muted>集計できる月がありません</Muted>
-                  </Card>
-                ))}
+              {activeTab === "profit" && (
+                <MonthlyProfitCard stores={stores} isLoading={byStore.isLoading && !byStore.data} />
+              )}
             </Appear>
 
             {/*

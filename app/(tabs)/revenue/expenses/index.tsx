@@ -3,9 +3,16 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useExpenses } from "@/api/queries";
+import { useBootstrap, useExpenses, useStores } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { categoryColor } from "@/components/expenses/categories";
+import { expensesEnabled } from "@/components/expenses/expensesEnabled";
+import {
+  ExpenseScopeFilter,
+  matchesScope,
+  scopeLabel,
+  type ExpenseScope,
+} from "@/components/expenses/ExpenseScopeFilter";
 import { PagerArrow } from "@/components/revenue/ChartPager";
 import {
   currentMonthIndex,
@@ -15,7 +22,7 @@ import {
 import { Card, CenterMessage, Muted, Screen } from "@/components/common/ui";
 import { formatJstDate } from "@/shared/date";
 import { color, font, numeric, radius, spacing } from "@/theme/tokens";
-import type { Expense } from "@/api/types";
+import type { Expense, Store } from "@/api/types";
 
 /**
  * 経費の一覧。月単位で見る。
@@ -32,6 +39,11 @@ export default function ExpensesScreen() {
 
   const current = currentMonthIndex();
   const [month, setMonth] = useState(current);
+  /** ⚠️ "all" が「絞らない」。"org" は `laundry_id` が NULL の行だけ（別物） */
+  const [scope, setScope] = useState<ExpenseScope>("all");
+
+  const stores = useStores();
+  const bootstrap = useBootstrap();
 
   /*
     ⚠️ **`to` は「含む」。** `/funds/chart` の to は排他なので**向きが逆**。
@@ -40,11 +52,20 @@ export default function ExpensesScreen() {
   const from = monthStartEpoch(month);
   const to = monthStartEpoch(month + 1) - 1;
 
+  /*
+    ⚠️ **絞り込みはサーバに投げず、取ってきた月ぶんを手元で分ける。**
+       API の `storeId` は「その店舗のものだけ」を返すので、
+       **「組織全体（laundry_id が NULL）だけ」を取る手段が無い。**
+       1 か月ぶんは高々数十件なので、まとめて取ってから分けるほうが確実。
+  */
   const { data, isLoading, isRefetching, refetch, error } = useExpenses(from, to);
 
-  const items = data ?? [];
+  const all = data ?? [];
+  const items = useMemo(() => all.filter((e) => matchesScope(e, scope)), [all, scope]);
+  /* ⚠️ 合計も絞り込みに追従させる。全体の合計のまま残すと行と数字が食い違う */
   const total = useMemo(() => items.reduce((sum, e) => sum + (e.amount ?? 0), 0), [items]);
   const isOffline = error instanceof ApiError && error.code === "OFFLINE";
+  const enabled = expensesEnabled(bootstrap.data?.organization);
 
   return (
     <Screen>
@@ -53,18 +74,29 @@ export default function ExpensesScreen() {
           <Ionicons name="chevron-back" size={24} color={color.teal} />
         </Pressable>
         <Text style={styles.headerTitle}>経費</Text>
-        <Pressable
-          onPress={() => router.push("/revenue/expenses/recurring")}
-          hitSlop={12}
-          style={styles.headerButton}
-          accessibilityRole="button"
-          accessibilityLabel="毎月の固定費の設定"
-        >
-          <Ionicons name="repeat" size={22} color={color.teal} />
-        </Pressable>
+        {/* ⚠️ 記録しない設定のときは入口を出さない（押せるのに使えない状態にしない） */}
+        {enabled ? (
+          <Pressable
+            onPress={() => router.push("/revenue/expenses/recurring")}
+            hitSlop={12}
+            style={styles.headerButton}
+            accessibilityRole="button"
+            accessibilityLabel="毎月の固定費の設定"
+          >
+            <Ionicons name="repeat" size={22} color={color.teal} />
+          </Pressable>
+        ) : (
+          <View style={styles.headerButton} />
+        )}
       </View>
 
-      {isLoading && !data ? (
+      {/*
+        ⚠️ 設定で経費を切った直後にこの画面に留まっていることがある（入口は消えるが
+           開いている画面は閉じない）。空の一覧を出すと壊れたように見えるので明示する。
+      */}
+      {!enabled ? (
+        <CenterMessage text={"この組織では経費を記録しない設定です。\n設定 → 組織 から変更できます。"} />
+      ) : isLoading && !data ? (
         <CenterMessage text="読み込み中…" />
       ) : isOffline && !data ? (
         <CenterMessage text="オフラインです" />
@@ -94,9 +126,20 @@ export default function ExpensesScreen() {
             </View>
           </Card>
 
+          {/* ⚠️ 店舗が 1 軒も無いときは出さない（「すべて」と「組織全体」しか並ばない） */}
+          {(stores.data ?? []).length > 0 && (
+            <View style={{ marginTop: spacing.md }}>
+              <ExpenseScopeFilter stores={stores.data} value={scope} onChange={setScope} />
+            </View>
+          )}
+
           {items.length === 0 ? (
             <Card style={{ marginTop: spacing.lg }}>
-              <Muted>この月の経費はまだありません</Muted>
+              <Muted>
+                {scope === "all"
+                  ? "この月の経費はまだありません"
+                  : "この絞り込みに合う経費はありません"}
+              </Muted>
             </Card>
           ) : (
             <Card style={{ marginTop: spacing.lg, paddingVertical: spacing.sm }}>
@@ -104,6 +147,7 @@ export default function ExpensesScreen() {
                 <ExpenseRow
                   key={expense.id}
                   expense={expense}
+                  stores={stores.data}
                   last={i === items.length - 1}
                   onPress={() =>
                     router.push({
@@ -118,29 +162,35 @@ export default function ExpensesScreen() {
         </ScrollView>
       )}
 
-      {/* ⚠️ 下端の余白（insets.bottom）を足す。ホームインジケータに重なる */}
-      <Pressable
-        onPress={() => router.push("/revenue/expenses/new")}
-        accessibilityRole="button"
-        accessibilityLabel="経費を追加"
-        style={({ pressed }) => [
-          styles.fab,
-          { bottom: insets.bottom + spacing.lg },
-          pressed && { opacity: 0.85 },
-        ]}
-      >
-        <Ionicons name="add" size={26} color="#FFFFFF" />
-      </Pressable>
+      {/* ⚠️ 下端の余白（insets.bottom）を足す。ホームインジケータに重なる。
+             ⚠️ **条件の中に入れること。** 外に置いていたので、記録しない設定でも
+                「＋」だけが浮いて残っていた */}
+      {enabled && (
+        <Pressable
+          onPress={() => router.push("/revenue/expenses/new")}
+          accessibilityRole="button"
+          accessibilityLabel="経費を追加"
+          style={({ pressed }) => [
+            styles.fab,
+            { bottom: insets.bottom + spacing.lg },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <Ionicons name="add" size={26} color="#FFFFFF" />
+        </Pressable>
+      )}
     </Screen>
   );
 }
 
 function ExpenseRow({
   expense,
+  stores,
   last,
   onPress,
 }: {
   expense: Expense;
+  stores: Store[] | undefined;
   last: boolean;
   onPress: () => void;
 }) {
@@ -164,7 +214,9 @@ function ExpenseRow({
           )}
         </View>
         <Text style={styles.rowMeta} numberOfLines={1}>
-          {formatJstDate(expense.date)}
+          {/* ⚠️ 対象（店舗 / 組織全体）を必ず出す。同じ金額・同じカテゴリの行が
+                 店舗ごとに並ぶので、無いとどれがどの店舗か区別が付かない */}
+          {formatJstDate(expense.date)}　{scopeLabel(expense.laundryId, stores)}
           {expense.note ? `　${expense.note}` : ""}
         </Text>
       </View>

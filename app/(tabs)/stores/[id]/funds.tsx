@@ -8,7 +8,6 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   useBootstrap,
   useFundHistory,
-  useMonthlySummary,
   useStore,
   useStoreRevenue,
 } from "@/api/queries";
@@ -104,11 +103,9 @@ export default function StoreFunds() {
     order: sortField === "amount" ? "totalFunds" : "date",
     asc: sortDirection === "asc",
   });
-  const monthly = useMonthlySummary(id, Boolean(id));
   const revenue = useStoreRevenue();
 
   const rows = list.data ?? [];
-  const points = monthly.data ?? [];
 
   /**
    * 月別売上カードに渡す店舗。1 件だけ渡すと表示店舗の絞り込みが消え、
@@ -138,7 +135,7 @@ export default function StoreFunds() {
    *
    * ⚠️ **`rows` から出さない。** 担当者で絞ると総額まで動いてしまう。
    *    /funds/summary/stores は全件を店舗ごとに畳んだものなので、これが正。
-   * ⚠️ 月次サマリー（points）からも出さない。あちらは前年同月比のため
+   * ⚠️ `/funds/summary/monthly` からも出さない。あちらは前年同月比のため
    *    **過去 2 年に固定**されていて、それより前の集金が落ちる。
    */
   const summary = storeRevenue[0];
@@ -187,7 +184,7 @@ export default function StoreFunds() {
     }
   }
 
-  if (list.isLoading && rows.length === 0 && monthly.isLoading) {
+  if (list.isLoading && rows.length === 0 && revenue.isLoading) {
     return (
       <Screen>
         <CenterMessage text="読み込み中…" />
@@ -219,7 +216,6 @@ export default function StoreFunds() {
             refreshing={list.isRefetching}
             onRefresh={() => {
               list.refetch();
-              monthly.refetch();
               revenue.refetch();
             }}
             tintColor={color.teal}
@@ -258,7 +254,6 @@ export default function StoreFunds() {
               <StoreChartTabs
                 storeRevenue={storeRevenue}
                 revenueLoading={revenue.isLoading && !revenue.data}
-                points={points}
                 storeId={id}
               />
             </Appear>

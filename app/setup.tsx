@@ -10,6 +10,7 @@ import { Button, Screen } from "@/components/common/ui";
 import type { CollectMethod, SetupRole } from "@/components/setup/SetupParts";
 import {
   ConfirmStep,
+  ExpensesStep,
   MethodStep,
   OrgStep,
   ProfileStep,
@@ -38,12 +39,21 @@ export default function Setup() {
   const [collectMethod, setCollectMethod] = useState<CollectMethod>("machines");
   const [role, setRole] = useState<SetupRole>("admin");
   const [orgName, setOrgName] = useState("");
+  /**
+   * 経費を記録するか（012）。⚠️ **admin のときだけ聞く**（組織の設定なので）。
+   * ⚠️ 既定は true。迷った人が使えるほうへ倒しておく。
+   */
+  const [trackExpenses, setTrackExpenses] = useState(true);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // admin は「組織の作成」が挟まるので確認画面が 1 つ後ろにずれる（Web と同じ）
-  const confirmStep = role === "admin" ? 6 : 5;
+  /*
+    admin は「組織の作成」と「経費」が挟まるので確認画面が 2 つ後ろにずれる。
+    ⚠️ **番号を直したら getTitle も直すこと。** 分岐が 2 か所に分かれているので、
+       片方だけ直すと見出しと中身が 1 つずれる（型エラーは出ない）。
+  */
+  const confirmStep = role === "admin" ? 7 : 5;
   const isFinished = step > confirmStep;
 
   const next = () => setStep((s) => s + 1);
@@ -61,7 +71,11 @@ export default function Setup() {
         body: { fullname, username, collectMethod, role },
       });
       if (role === "admin") {
-        await apiFetch("/org", { method: "POST", body: { name: orgName.trim() } });
+        await apiFetch("/org", {
+          method: "POST",
+          /* ⚠️ 省略＝経費を使う。サーバも同じ既定なので、送り忘れても機能は消えない */
+          body: { name: orgName.trim(), expensesEnabled: trackExpenses },
+        });
       }
       // ⚠️ refetchType を省くと「古い」印を付けるだけで再取得しない。
       //    この画面は useBootstrap() を使っていないので bootstrap は非アクティブで、
@@ -118,6 +132,14 @@ export default function Setup() {
               {step === 5 && role === "admin" && (
                 <OrgStep value={orgName} onChange={setOrgName} onBack={back} onNext={next} />
               )}
+              {step === 6 && role === "admin" && (
+                <ExpensesStep
+                  value={trackExpenses}
+                  onChange={setTrackExpenses}
+                  onBack={back}
+                  onNext={next}
+                />
+              )}
               {step === confirmStep && (
                 <ConfirmStep
                   fullname={fullname}
@@ -125,6 +147,7 @@ export default function Setup() {
                   collectMethod={collectMethod}
                   role={role}
                   orgName={orgName}
+                  trackExpenses={trackExpenses}
                   error={error}
                   submitting={submitting}
                   onBack={back}
@@ -160,6 +183,8 @@ function getTitle(step: number, role: SetupRole, isFinished: boolean): string {
   if (step === 3) return "集金方法を設定";
   if (step === 4) return "権限設定";
   if (step === 5) return role === "admin" ? "組織の作成" : "設定内容確認";
+  // ⚠️ 6 は admin のときだけ「経費の記録」。非管理者はここまで来ない
+  if (step === 6 && role === "admin") return "経費の記録";
   return "設定内容確認";
 }
 

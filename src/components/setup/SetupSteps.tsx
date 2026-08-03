@@ -198,12 +198,67 @@ export function OrgStep({
   );
 }
 
+/**
+ * 経費を記録するか（012）。**管理者のときだけ聞く。**
+ *
+ * ⚠️ **これは組織の設定。** 非管理者は他人が作った組織に入るので、聞いても
+ *    自分では決められない（聞くと「選べたのに反映されない」ことになる）。
+ *
+ * ⚠️ **既定は「記録する」。** 経費を入れないと利益が出ないので、
+ *    迷った人が使えるほうへ倒しておく。後から設定 → 組織で変えられる。
+ */
+export function ExpensesStep({
+  value,
+  onChange,
+  onBack,
+  onNext,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <View style={{ gap: spacing.xl }}>
+      <View style={setupStyles.centerBlock}>
+        <View style={setupStyles.circleIcon}>
+          <Ionicons name="receipt-outline" size={28} color={color.teal} />
+        </View>
+        <Text style={setupStyles.lead}>
+          家賃・仕入れなどの支出も記録すると、{"\n"}売上から引いた利益が出せます。
+        </Text>
+      </View>
+
+      <RadioCardGroup
+        label="経費を記録しますか？"
+        hint="※設定後も変更できます"
+        value={value ? "yes" : "no"}
+        onChange={(v) => onChange(v === "yes")}
+        items={[
+          {
+            value: "yes",
+            title: "記録する",
+            description: "収益ページに「月別利益」が出ます",
+          },
+          {
+            value: "no",
+            title: "記録しない",
+            description: "売上だけを管理します",
+          },
+        ]}
+      />
+      <StepNav onBack={onBack} onNext={onNext} />
+    </View>
+  );
+}
+
 export function ConfirmStep({
   fullname,
   username,
   collectMethod,
   role,
   orgName,
+  trackExpenses,
   error,
   submitting,
   onBack,
@@ -214,6 +269,7 @@ export function ConfirmStep({
   collectMethod: CollectMethod;
   role: SetupRole;
   orgName: string;
+  trackExpenses: boolean;
   error: string | null;
   submitting: boolean;
   onBack: () => void;
@@ -240,6 +296,16 @@ export function ConfirmStep({
         badgeTone="cyan"
       />
       {role === "admin" && <InfoItem icon="business-outline" label="組織名" value={orgName} />}
+      {/* ⚠️ 組織の設定なので admin のときだけ。非管理者には聞いていない */}
+      {role === "admin" && (
+        <InfoItem
+          icon="receipt-outline"
+          label="経費"
+          value={trackExpenses ? "記録する" : "記録しない"}
+          badge={trackExpenses ? "利益を出す" : "売上のみ"}
+          badgeTone={trackExpenses ? "cyan" : "teal"}
+        />
+      )}
 
       {error && <FormError message={error} />}
 
