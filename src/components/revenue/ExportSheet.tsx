@@ -334,9 +334,11 @@ export function ExportSheet({
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.checkLabel}>経費と月別利益も書き出す</Text>
+                      {/* ⚠️ Excel は集金と**同じシート**（同じ分け方）に入る。
+                             「経費のシートが増える」ではないので書き換えないこと */}
                       <Text style={styles.checkNote}>
                         {format === "xlsx"
-                          ? "「経費」と「月別利益」のシートが増えます"
+                          ? "集金データと同じシートの下に経費が入ります"
                           : "同じファイルの下に経費と月別利益の表が続きます"}
                       </Text>
                     </View>
