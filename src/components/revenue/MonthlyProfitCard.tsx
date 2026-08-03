@@ -1,7 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useExpenses } from "@/api/queries";
+import { useBootstrap, useExpenses } from "@/api/queries";
 import { ProfitBarChart } from "@/components/revenue/charts";
 import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
 import { usePeriodPager } from "@/components/revenue/usePeriodPager";
@@ -37,6 +37,11 @@ export function MonthlyProfitCard({
   storeId?: string;
 }) {
   const router = useRouter();
+  const bootstrap = useBootstrap();
+  /* ⚠️ 表示の出し分けだけ。実際の可否はサーバが判定して 403 を返す */
+  const myRole = bootstrap.data?.organization?.myRole;
+  const canEdit = myRole === "admin" || myRole === "collecter";
+
   const { range, prevRange, nextRange, canPrev, canNext, onPage, pageKey, chart, prevChart, nextChart } =
     usePeriodPager({ stores, storeId });
 
@@ -137,26 +142,54 @@ export function MonthlyProfitCard({
                `(tabs)/_layout.tsx` の `backToTabRoot("/revenue")` が
                「収益タブを押したら先頭へ」を持っているので戻れる。**外さないこと。**
           */}
-          <Pressable
-            onPress={() => router.push("/revenue/expenses")}
-            accessibilityRole="button"
-            accessibilityLabel="経費を見る"
-            style={({ pressed }) => [styles.expensesRow, pressed && styles.expensesPressed]}
-          >
-            <View style={styles.expensesIcon}>
-              <Ionicons name="receipt-outline" size={18} color={color.teal} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.expensesTitle}>経費</Text>
-              {/* ⚠️ 経費が 1 円も無いと「利益＝売上」の棒になる。その理由をここで言う */}
-              <Muted style={styles.expensesNote}>
-                {totals.expense === 0
-                  ? "まだ登録がありません。登録すると利益が出ます"
-                  : "登録・修正はこちら"}
-              </Muted>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={color.cyan300} />
-          </Pressable>
+          <View style={styles.expensesRow}>
+            <Pressable
+              onPress={() => router.push("/revenue/expenses")}
+              accessibilityRole="button"
+              accessibilityLabel="経費を見る"
+              style={({ pressed }) => [styles.expensesOpen, pressed && styles.expensesPressed]}
+            >
+              <View style={styles.expensesIcon}>
+                <Ionicons name="receipt-outline" size={18} color={color.teal} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.expensesTitle}>経費</Text>
+                {/* ⚠️ 経費が 1 円も無いと「利益＝売上」の棒になる。その理由をここで言う */}
+                <Muted style={styles.expensesNote}>
+                  {totals.expense === 0
+                    ? "まだ登録がありません。登録すると利益が出ます"
+                    : "登録・修正はこちら"}
+                </Muted>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={color.cyan300} />
+            </Pressable>
+
+            {/*
+              経費を足す近道。
+              ⚠️ **店舗別のページでは `storeId` を載せる。** 載せないと、
+                 その店舗を見ているのに「対象」を自分で選び直すことになる。
+                 ⚠️ **初期値であって固定ではない**（フォームで変えられる）。
+              ⚠️ **viewer には出さない。** サーバが 403 を返すので、
+                 押せるボタンを出すと「押したのに失敗する」になる。
+            */}
+            {canEdit && (
+              <Pressable
+                onPress={() =>
+                  router.push(
+                    storeId
+                      ? { pathname: "/revenue/expenses/new", params: { storeId } }
+                      : "/revenue/expenses/new"
+                  )
+                }
+                accessibilityRole="button"
+                accessibilityLabel="経費を追加"
+                style={({ pressed }) => [styles.expensesAdd, pressed && { opacity: 0.85 }]}
+              >
+                <Ionicons name="add" size={18} color="#FFFFFF" />
+                <Text style={styles.expensesAddLabel}>追加</Text>
+              </Pressable>
+            )}
+          </View>
         </>
       )}
     </Card>
@@ -220,19 +253,32 @@ const styles = StyleSheet.create({
   summaryValue: { ...numeric, fontSize: 15, color: color.textMain, marginTop: 2 },
   note: { fontSize: 11, lineHeight: 16, marginTop: spacing.sm },
 
-  /* 経費の入口。⚠️ カードの中なので影は付けない（外枠の Card が持っている） */
-  expensesRow: {
+  /* 経費の入口。「一覧へ」と「追加」を横に並べる */
+  expensesRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.sm, marginTop: spacing.md },
+  /* ⚠️ カードの中なので影は付けない（外枠の Card が持っている） */
+  expensesOpen: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
     minHeight: 56,
-    marginTop: spacing.md,
     paddingHorizontal: spacing.md,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: color.cyan100,
     backgroundColor: color.appBg,
   },
+  /* ⚠️ 主操作なので塗る。枠だけだと隣の「一覧へ」と見分けが付かない */
+  expensesAdd: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 1,
+    minWidth: 64,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.lg,
+    backgroundColor: color.teal,
+  },
+  expensesAddLabel: { fontFamily: font.uiBold, fontSize: 11, color: "#FFFFFF" },
   expensesPressed: { opacity: 0.85, backgroundColor: color.cyan50 },
   expensesIcon: {
     width: 34,
