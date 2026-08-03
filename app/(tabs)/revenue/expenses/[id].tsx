@@ -25,9 +25,13 @@ import { currentMonthIndex, monthStartEpoch } from "@/components/revenue/monthIn
  * ⚠️ **毎月の固定費（`recurring:` で始まる id）はここへ来ない。** 一覧側で
  *    行ごと押せなくしてある。万一来てもサーバが 400 で弾く。
  *
- * ⚠️ **編集・削除は admin だけ**（2026-08-03）。一覧の行を押せなくしてあるので
- *    普通は辿り着かないが、**ディープリンクと「戻る」で直接来られる**ので
- *    ここでも見る。正はサーバ（`updateExpense` / `deleteExpense` が 403）。
+ * ⚠️ **編集と削除で条件が違う**（2026-08-03）。
+ *    - 編集 … サーバが行ごとに返す `editable`（admin は全部、集金担当者は
+ *      **自分が登録した当月の分だけ**）
+ *    - 削除 … **admin だけ**
+ *    一覧の行を押せなくしてあるので普通は辿り着かないが、
+ *    **ディープリンクと「戻る」で直接来られる**のでここでも見る。
+ *    正はサーバ（`updateExpense` / `deleteExpense` が 403）。
  */
 export default function EditExpenseScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -58,18 +62,6 @@ export default function EditExpenseScreen() {
   const list = useExpenses(from, to);
   const expense = (list.data ?? []).find((e) => e.id === id);
 
-  /*
-    ⚠️ **`bootstrap.data` が来てから判定する。** 読み込み中に false へ倒すと、
-       管理者にも一瞬「権限がありません」が出る。
-  */
-  if (bootstrap.data && !isAdmin) {
-    return (
-      <Screen>
-        <CenterMessage text="経費を編集できるのは管理者だけです" />
-      </Screen>
-    );
-  }
-
   if (list.isLoading && !list.data) {
     return (
       <Screen>
@@ -82,6 +74,18 @@ export default function EditExpenseScreen() {
     return (
       <Screen>
         <CenterMessage text="この経費は見つかりませんでした" />
+      </Screen>
+    );
+  }
+
+  /*
+    ⚠️ **`editable` はサーバの判定。** 古い応答（永続キャッシュ）には無いので、
+       そのときだけ「管理者か」に倒す。**true に倒さないこと。**
+  */
+  if (!(expense.editable ?? isAdmin)) {
+    return (
+      <Screen>
+        <CenterMessage text={"この経費は編集できません。\n自分が登録した今月の分だけ編集できます。"} />
       </Screen>
     );
   }
@@ -125,7 +129,8 @@ export default function EditExpenseScreen() {
           : null
       }
       onCancel={() => router.back()}
-      onDelete={() => void onDelete()}
+      /* ⚠️ **削除は管理者だけ。** 編集できても消せるとは限らない（渡さなければ出ない） */
+      onDelete={isAdmin ? () => void onDelete() : undefined}
       onSubmit={(value) =>
         update.mutate(
           { id: String(id), ...value },

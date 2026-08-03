@@ -105,12 +105,13 @@ export default function ExpensesScreen() {
       loading={query.isLoading && !query.data}
       stores={stores.data}
       emptyNote={emptyNote}
-      /* ⚠️ 編集できない人には行を押させない（押しても 403 になる画面へ行くだけ） */
-      onPressItem={
-        isAdmin
-          ? (id) => router.push({ pathname: "/revenue/expenses/[id]", params: { id } })
-          : null
-      }
+      /*
+        ⚠️ **押せるかは行ごとに違う**（`expense.editable`）。集金担当者は
+           自分が登録した当月の分だけ直せるので、画面全体では出し分けられない。
+        ⚠️ 判定はサーバが返す。**ここで「自分か」「当月か」を組み立てないこと。**
+      */
+      canEditRow={(e) => e.editable ?? isAdmin}
+      onPressItem={(id) => router.push({ pathname: "/revenue/expenses/[id]", params: { id } })}
     />
   );
 
@@ -266,14 +267,16 @@ function MonthPane({
   loading,
   stores,
   emptyNote,
+  canEditRow,
   onPressItem,
 }: {
   items: Expense[];
   loading: boolean;
   stores: Store[] | undefined;
   emptyNote: string;
-  /** ⚠️ `null` = 編集できない人。行を押せなくする（403 の画面へ送らないため） */
-  onPressItem: ((id: string) => void) | null;
+  /** ⚠️ **行ごとに変わる。** 直せない行は押せなくする（403 の画面へ送らないため） */
+  canEditRow: (expense: Expense) => boolean;
+  onPressItem: (id: string) => void;
 }) {
   if (loading) return <Muted style={styles.paneNote}>読み込み中…</Muted>;
   if (items.length === 0) return <Muted style={styles.paneNote}>{emptyNote}</Muted>;
@@ -291,7 +294,7 @@ function MonthPane({
           expense={expense}
           stores={stores}
           last={i === items.length - 1}
-          onPress={onPressItem ? () => onPressItem(expense.id) : null}
+          onPress={canEditRow(expense) ? () => onPressItem(expense.id) : null}
         />
       ))}
     </View>
@@ -312,8 +315,9 @@ function ExpenseRow({
   /*
     ⚠️ **展開された固定費は押しても編集画面へ行かない。** id が実在せず、
        サーバも 400 で弾く。行ごと押せなくして「押したのに何も起きない」を防ぐ。
-    ⚠️ **集金担当者・閲覧者も同じく押せない**（`onPress` が null）。
-       編集は admin だけなので、押せると 403 になる画面へ送ることになる。
+    ⚠️ **直せない行も押せない**（`onPress` が null）。集金担当者は
+       **自分が登録した当月の分だけ**なので、**同じ画面に押せる行と押せない行が
+       混ざる。** 押せると 403 になる画面へ送ることになる。
   */
   const isRecurring = expense.recurring === true;
   const pressable = !isRecurring && onPress !== null;
