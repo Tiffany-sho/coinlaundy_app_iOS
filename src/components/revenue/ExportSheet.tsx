@@ -68,6 +68,7 @@ export function ExportSheet({
   onDismiss,
   stores,
   canExport,
+  canExportExpenses,
   lockedStoreId,
 }: {
   open: boolean;
@@ -79,6 +80,11 @@ export function ExportSheet({
   stores: StoreRevenue[];
   /** Pro 以上か。⚠️ 表示の出し分けだけ。実際の可否はサーバが判定する */
   canExport: boolean;
+  /**
+   * 経費を記録する組織か（`expensesEnabled`）。
+   * ⚠️ **切っている組織には選択肢ごと出さない。** 出しても中身が必ず 0 件になる。
+   */
+  canExportExpenses: boolean;
   /**
    * この店舗だけを書き出す（店舗別の収益ページから開いたとき）。
    *
@@ -97,6 +103,12 @@ export function ExportSheet({
   const [split, setSplit] = useState<Split>("period");
   /** 空 = 全店舗 */
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  /**
+   * 経費と月別利益も書き出すか。⚠️ **既定は off。**
+   * CSV では 1 ファイルに表が 3 つ縦に並ぶ形になり、会計ソフトへ
+   * そのまま取り込めなくなるので、これまでの書き出しの形を既定に保つ。
+   */
+  const [withExpenses, setWithExpenses] = useState(false);
   const [expanded, setExpanded] = useState<"start" | "end" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,6 +168,8 @@ export function ExportSheet({
             ? selectedIds
             : undefined,
         splitMethod: effectiveSplit,
+        /* ⚠️ 経費を記録しない組織では常に false（選択肢を出していないので） */
+        includeExpenses: canExportExpenses && withExpenses,
       });
       onDone(file);
     } catch (e) {
@@ -305,9 +319,59 @@ export function ExportSheet({
                 </>
               )}
 
+              {/* ⚠️ 経費を記録しない組織には出さない（中身が必ず 0 件になる） */}
+              {canExportExpenses && (
+                <>
+                  <View style={styles.divider} />
+                  <Pressable
+                    onPress={() => setWithExpenses((v) => !v)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: withExpenses }}
+                    style={({ pressed }) => [styles.checkRow, pressed && { opacity: 0.75 }]}
+                  >
+                    <View style={[styles.checkBox, withExpenses && styles.checkBoxOn]}>
+                      {withExpenses && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.checkLabel}>経費と月別利益も書き出す</Text>
+                      <Text style={styles.checkNote}>
+                        {format === "xlsx"
+                          ? "「経費」と「月別利益」のシートが増えます"
+                          : "同じファイルの下に経費と月別利益の表が続きます"}
+                      </Text>
+                    </View>
+                  </Pressable>
+
+                  {/* ⚠️ CSV は表が 3 つ縦に並ぶ＝会計ソフトへそのまま取り込めない。
+                         押す前に伝える（開いてから気づくと書き出し直しになる） */}
+                  {withExpenses && format === "csv" && (
+                    <View style={styles.planNote}>
+                      <Ionicons
+                        name="information-circle-outline"
+                        size={14}
+                        color={color.orange500}
+                      />
+                      <Text style={styles.planNoteLabel}>
+                        CSV は 1 つの表として読めなくなります。表ごとに分けたいときは Excel を選んでください
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* ⚠️ 店舗を絞ると組織全体の経費は入らない。按分の規則が無いため */}
+                  {withExpenses && (lockedStoreId || selectedIds.length > 0) && (
+                    <Text style={[styles.note, { marginTop: spacing.sm }]}>
+                      店舗を絞っているため、店舗に紐づかない「組織全体」の経費は含まれません。
+                    </Text>
+                  )}
+                </>
+              )}
+
+              <View style={styles.divider} />
+
               <Text style={styles.note}>
                 {lockedStoreName ? `${lockedStoreName}店の` : ""}
-                {monthLabel(range.start)}〜{monthLabel(range.end)}の集金データを
+                {monthLabel(range.start)}〜{monthLabel(range.end)}の
+                {canExportExpenses && withExpenses ? "集金データと経費を" : "集金データを"}
                 {format !== "xlsx"
                   ? "1 つの CSV ファイルに書き出します"
                   : effectiveSplit === "none"
@@ -404,6 +468,20 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   planNoteLabel: { flex: 1, fontFamily: font.ui, fontSize: 11, color: color.orange500 },
+  checkRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm, minHeight: 44 },
+  checkBox: {
+    width: 20,
+    height: 20,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: color.textFaint,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  checkBoxOn: { backgroundColor: color.teal, borderColor: color.teal },
+  checkLabel: { fontFamily: font.uiBold, fontSize: 13, color: color.textMain },
+  checkNote: { fontFamily: font.ui, fontSize: 11, color: color.textFaint, marginTop: 2 },
   errorBar: {
     flexDirection: "row",
     alignItems: "center",

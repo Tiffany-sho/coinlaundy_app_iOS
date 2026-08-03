@@ -111,7 +111,7 @@ export default function ExpensesScreen() {
         ⚠️ 判定はサーバが返す。**ここで「自分か」「当月か」を組み立てないこと。**
       */
       canEditRow={(e) => e.editable ?? isAdmin}
-      onPressItem={(id) => router.push({ pathname: "/revenue/expenses/[id]", params: { id } })}
+      onPressItem={(id) => router.push({ pathname: "/expenses/[id]", params: { id } })}
     />
   );
 
@@ -210,7 +210,7 @@ export default function ExpensesScreen() {
           */
           onPress={() => {
             if (isAdmin) setAddOpen(true);
-            else router.push("/revenue/expenses/new");
+            else router.push("/expenses/new");
           }}
           accessibilityRole="button"
           accessibilityLabel="経費を追加"
@@ -231,7 +231,7 @@ export default function ExpensesScreen() {
             open={addOpen}
             onClose={() => setAddOpen(false)}
             onChoose={(choice) => {
-              if (choice === "once") router.push("/revenue/expenses/new");
+              if (choice === "once") router.push("/expenses/new");
               else setRecurringOpen(true);
             }}
           />

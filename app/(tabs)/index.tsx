@@ -68,6 +68,17 @@ export default function Home() {
 
   const username = bootstrap.data?.profile?.username ?? "集金担当者";
 
+  /**
+   * 設定を開く。**アプリで唯一の入口**（2026-08-03 にタブから外して経費と入れ替えた）。
+   *
+   * ⚠️ **組織未所属の分岐にも渡すこと。** そちらはタブがホーム 1 本だけで、
+   *    **組織に参加する導線とサインアウトが設定の中にしか無い。**
+   * ⚠️ `navigate` ではなく `push`。設定はタブではなくなったので、戻れる形で積む。
+   */
+  function openSettings() {
+    router.push("/settings");
+  }
+
   function onRefresh() {
     queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap });
     queryClient.invalidateQueries({ queryKey: queryKeys.home });
@@ -79,7 +90,7 @@ export default function Home() {
     return (
       <Screen>
         <ScrollView contentContainerStyle={[styles.body, { paddingTop: insets.top + spacing.lg }]}>
-          <GreetingHeader username={username} />
+          <GreetingHeader username={username} onOpenSettings={openSettings} />
           <Card style={{ marginTop: spacing.lg }}>
             <Muted>組織に所属すると、集金データや店舗の情報が表示されます。</Muted>
           </Card>
@@ -112,7 +123,11 @@ export default function Home() {
       >
         {/* ⚠️ 上から順に index を振る。飛ばすと出る順が入れ替わって不自然に見える */}
         <Appear index={0}>
-          <GreetingHeader username={username} schedule={bootstrap.data.collectSchedule} />
+          <GreetingHeader
+            username={username}
+            schedule={bootstrap.data.collectSchedule}
+            onOpenSettings={openSettings}
+          />
         </Appear>
 
         {outbox.items.length > 0 && (

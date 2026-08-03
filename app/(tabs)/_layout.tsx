@@ -2,6 +2,7 @@ import { Tabs, router, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap } from "@/api/queries";
+import { expensesEnabled } from "@/components/expenses/expensesEnabled";
 import { color, font } from "@/theme/tokens";
 
 /**
@@ -42,13 +43,25 @@ function backToTabRoot(href: Href) {
 }
 
 /**
- * Web の FooterNavbar と同じタブ構成にする。
- * 組織未所属は RESTRICTED_NAV_ITEMS と同じくホーム / 設定の 2 つだけ表示する。
+ * タブは ホーム / 店舗 / 収益 / 管理 / 経費。
+ *
+ * ⚠️ **設定はタブに無い**（2026-08-03 に経費と入れ替えた）。入口は
+ *    **ホームのヘッダ右上の歯車**（`app/(tabs)/index.tsx`）。
+ *    ⚠️ **ホームから歯車を消さないこと。** 消すと**設定へ二度と辿り着けない**
+ *       — サインアウト・組織参加・プラン・通知の設定がすべてこの奥にある。
+ *    ⚠️ **組織未所属のときはタブがホーム 1 本だけになる。** そのときこそ
+ *       設定（＝組織に参加する導線とサインアウト）が要るので、
+ *       歯車は `hasOrg` で隠さないこと。
+ *
+ * ⚠️ **`/settings` の URL は変えていない**（`app/settings/index.tsx` へ移しただけ）。
+ *    各所の `router.push("/settings")` はそのまま動く。
  */
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const { data } = useBootstrap();
   const hasOrg = Boolean(data?.organization);
+  /* ⚠️ 判定は必ず `expensesEnabled()` を通す（理由は経費タブのコメント） */
+  const useExpenses = expensesEnabled(data?.organization);
 
   /**
    * ⚠️ 高さを固定値にすると、ホームインジケータのある端末でラベルが下端に張り付く。
@@ -152,12 +165,28 @@ export default function TabsLayout() {
           ),
         }}
       />
+      {/*
+        経費。⚠️ **2026-08-03 に設定タブと入れ替えた。**
+           それまでは収益タブの中（`revenue/expenses/`）にあり、
+           経費を 1 件入れるのに 収益 → 経費 の 2 タップが要った。
+           毎日触る記録なので一等地に出し、設定はホームの歯車へ移した。
+
+        ⚠️ **経費を記録しない組織では出さない**（`expensesEnabled`）。
+           ⚠️ **`href: null` はタブを隠すだけで画面は残る。** 設定で切った直後に
+              この画面に留まっていることがあり、そのときは画面側が
+              「記録しない設定です」と出す（403 にはしない）。
+        ⚠️ **判定は `expensesEnabled()` を通す。** 永続キャッシュから
+           この項目を持たない応答が復元されるので `Boolean(...)` では駄目
+           （アップデート直後だけタブが消える）。
+      */}
       <Tabs.Screen
-        name="settings"
+        name="expenses"
+        listeners={backToTabRoot("/expenses")}
         options={{
-          title: "設定",
+          title: "経費",
+          href: hasOrg && useExpenses ? undefined : null,
           tabBarIcon: ({ color: c, focused }) => (
-            <Ionicons name={focused ? "settings" : "settings-outline"} color={c} size={22} />
+            <Ionicons name={focused ? "receipt" : "receipt-outline"} color={c} size={22} />
           ),
         }}
       />

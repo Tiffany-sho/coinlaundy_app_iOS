@@ -14,6 +14,7 @@ import {
 import { EXPORT_MIME_TYPE, saveAndShareBase64 } from "@/export/saveFile";
 import { planAtLeast } from "@/billing/products";
 import { ExportSheet } from "@/components/revenue/ExportSheet";
+import { expensesEnabled } from "@/components/expenses/expensesEnabled";
 import { errorMessage } from "@/components/funds/fundCache";
 import { useToast } from "@/components/common/toast";
 import { StoreChartTabs } from "@/components/revenue/StoreChartTabs";
@@ -346,6 +347,7 @@ export default function StoreFunds() {
         onClose={() => setExportOpen(false)}
         stores={storeRevenue}
         canExport={canExport}
+        canExportExpenses={expensesEnabled(bootstrap.data?.organization)}
         lockedStoreId={id}
         onDone={(file) => {
           setExportOpen(false);

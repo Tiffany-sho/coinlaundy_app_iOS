@@ -1,8 +1,7 @@
-import { useRef } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, useScrollToTop, type Href } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAnnouncements, useBootstrap } from "@/api/queries";
 import { Appear } from "@/components/common/Appear";
@@ -34,9 +33,6 @@ export default function Settings() {
   /** ⚠️ 既読は端末ローカル（MMKV）。機種変更やアプリの入れ直しでリセットされる */
   const announcements = useAnnouncements();
   const unreadNews = useUnreadAnnouncementCount(announcements.data);
-  /** 設定タブをもう一度押したら先頭へ戻す */
-  const scrollRef = useRef<ScrollView>(null);
-  useScrollToTop(scrollRef);
 
   async function onSignOut() {
     await signOut();
@@ -46,16 +42,33 @@ export default function Settings() {
   return (
     <Screen>
       <ScrollView
-        ref={scrollRef}
         contentContainerStyle={{
           padding: spacing.md,
           paddingTop: insets.top + spacing.lg,
-          paddingBottom: spacing.xxl,
+          /* ⚠️ タブバーが無い画面になったので、下端の余白を自分で持つ
+                （2026-08-03 にタブから外した。ホームインジケータに重なる） */
+          paddingBottom: insets.bottom + spacing.xxl,
         }}
       >
-        {/* ⚠️ 上から順に index を振る。飛ばすと出る順が入れ替わって不自然に見える */}
+        {/* ⚠️ 上から順に index を振る。飛ばすと出る順が不自然に入れ替わる */}
         <Appear index={0}>
-          <Title style={{ marginBottom: spacing.lg, fontSize: 22 }}>設定</Title>
+          <View style={styles.head}>
+            {/*
+              ⚠️ **戻るを必ず出す。** 2026-08-03 にタブから外してホームから push する
+                 画面になった。iOS の左端スワイプでも戻れるが、
+                 **それだけに頼らないこと**（気づかれない）。
+            */}
+            <Pressable
+              onPress={() => router.back()}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="戻る"
+              style={({ pressed }) => [styles.backButton, pressed && { opacity: 0.6 }]}
+            >
+              <Ionicons name="chevron-back" size={24} color={color.teal} />
+            </Pressable>
+            <Title style={{ fontSize: 22 }}>設定</Title>
+          </View>
         </Appear>
 
         {/*
@@ -247,6 +260,15 @@ function LinkRow({
 }
 
 const styles = StyleSheet.create({
+  head: { flexDirection: "row", alignItems: "center", marginBottom: spacing.lg },
+  /* ⚠️ タイトルの左に置くので、見出しが中央からずれないよう負のマージンで詰める */
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: -spacing.sm,
+  },
   value: { fontFamily: font.ui, fontSize: 15, color: color.textMain, flexShrink: 1, textAlign: "right" },
   linkLabel: { fontFamily: font.ui, fontSize: 15, color: color.textMain },
   linkRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },

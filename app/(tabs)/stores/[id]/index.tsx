@@ -325,7 +325,7 @@ export default function StoreDetail() {
             <Pressable
               onPress={() =>
                 router.push({
-                  pathname: "/revenue/expenses/new",
+                  pathname: "/expenses/new",
                   params: { storeId: data.id },
                 })
               }

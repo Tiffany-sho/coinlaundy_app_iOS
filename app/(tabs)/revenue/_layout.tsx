@@ -4,14 +4,17 @@ import { color } from "@/theme/tokens";
 /**
  * 収益タブの中に置く Stack。
  *
- * 経費（`revenue/expenses/`）を収益と同じタブに入れるために足した。設定配下ではなく
- * ここに置くのは、経費が「設定」ではなく**日常の記録**だから。
+ * ⚠️ **今は `index.tsx` 1 枚しか無いが、単体ファイル（`revenue.tsx`）に戻さないこと。**
+ *    経費を独立したタブへ移した（2026-08-03）あとも Stack を残しているのは、
+ *    下の `fullScreenGestureEnabled: false` を**自前で持つため**。
+ *    タブの葉に戻すと、この設定はルートの
+ *    `<Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />`
+ *    という**別の理由で入っている 1 行**に頼ることになる（偶然の防波堤）。
  *
  * ⚠️ **`app/(tabs)/revenue.tsx` と共存できない。** 単体ファイルはディレクトリ化と
  *    同時に消してある（`stores` のときと同じ）。
  */
 export const unstable_settings = {
-  // /revenue/expenses へ直接来たときも、戻る先が収益になるようにする
   anchor: "index",
 };
 

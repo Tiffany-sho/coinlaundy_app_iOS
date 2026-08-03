@@ -369,6 +369,14 @@ export type ExportFile = {
   base64: string;
   /** 書き出した集金レコードの件数。完了トーストに出す */
   recordCount: number;
+  /**
+   * 書き出した経費の件数。**含めなかったときは null。**
+   * ⚠️ **0 と null を区別すること。** 0 は「含めたが 1 件も無かった」で、
+   *    null は「含めていない」。まとめると、経費を選んだのに 0 件だったときに
+   *    **失敗したのか本当に無いのか分からなくなる。**
+   * ⚠️ 古い応答では `undefined`（この項目を返す前のサーバ）。
+   */
+  expenseCount?: number | null;
 };
 
 /** laundry_state.machines の 1 要素 */

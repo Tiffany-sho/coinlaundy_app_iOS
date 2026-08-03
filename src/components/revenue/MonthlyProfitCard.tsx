@@ -142,7 +142,7 @@ export function MonthlyProfitCard({
                「利益を見る」から曖昧になる。
           */}
           <Pressable
-            onPress={() => router.push("/revenue/expenses")}
+            onPress={() => router.push("/expenses")}
             accessibilityRole="button"
             accessibilityLabel="経費を見る"
             style={({ pressed }) => [styles.expensesOpen, pressed && styles.expensesPressed]}

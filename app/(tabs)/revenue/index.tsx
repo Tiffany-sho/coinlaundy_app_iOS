@@ -481,6 +481,7 @@ export default function Revenue() {
         onClose={() => setExportOpen(false)}
         stores={stores}
         canExport={canExport}
+        canExportExpenses={expensesEnabled(bootstrap.data?.organization)}
         onDone={(file) => {
           setExportOpen(false);
           /* ⚠️ onDismiss は iOS 専用。それ以外では発火しないので、
