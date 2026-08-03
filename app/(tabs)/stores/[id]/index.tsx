@@ -31,6 +31,7 @@ import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEdi
 import { useDialog } from "@/components/common/dialog";
 import { useDeleteStoreAction } from "@/components/stores/useDeleteStoreAction";
 import { CenterMessage, Screen } from "@/components/common/ui";
+import { expensesEnabled } from "@/components/expenses/expensesEnabled";
 import { color, font, radius, shadow, spacing, numeric } from "@/theme/tokens";
 
 const NO_IMAGE =
@@ -77,6 +78,8 @@ export default function StoreDetail() {
 
   const myRole = bootstrap.data?.organization?.myRole;
   const canEdit = myRole !== "viewer";
+  /* ⚠️ 判定は必ず expensesEnabled() を通す（`?? true` などを画面に書かない） */
+  const useExpenses = expensesEnabled(bootstrap.data?.organization);
   // 権限は UI の出し分けにだけ使う。正は Server Action 側（admin 以外は updateStore / deleteStore が弾く）
   const isAdmin = myRole === "admin";
 
@@ -306,6 +309,34 @@ export default function StoreDetail() {
               </LinearGradient>
             </Pressable>
           )}
+
+          {/*
+            経費の追加。**集金の下に副操作として置く。**
+
+            ⚠️ **`storeId` を載せる。** この店舗を見ているのに「対象」を
+               選び直させない（フォームでは変えられる＝初期値であって固定ではない）。
+            ⚠️ **主操作（集金）と同じ塗りにしない。** 並べると押し間違える。
+            ⚠️ **経費を使わない組織では出さない**（012）。
+            ⚠️ **viewer には出さない**（サーバが 403 を返すため）。
+            ⚠️ **店舗タブ → 収益タブのまたぐ遷移。** `(tabs)/_layout.tsx` の
+               `backToTabRoot("/revenue")` が戻り道を作っている。外さないこと。
+          */}
+          {canEdit && useExpenses && (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/revenue/expenses/new",
+                  params: { storeId: data.id },
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel="この店舗の経費を追加"
+              style={({ pressed }) => [styles.expenseButton, pressed && { opacity: 0.85 }]}
+            >
+              <Ionicons name="receipt-outline" size={18} color={color.tealDeeper} />
+              <Text style={styles.expenseLabel}>経費を追加</Text>
+            </Pressable>
+          )}
         </View>
       </ScrollView>
 
@@ -444,4 +475,18 @@ const styles = StyleSheet.create({
     ...shadow.hero,
   },
   collectLabel: { fontFamily: font.uiBold, fontSize: 17, color: "#FFFFFF" },
+  /* 経費の追加。⚠️ 副操作なので塗らない（集金と並べたときに押し間違えないように） */
+  expenseButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    minHeight: 48,
+    marginTop: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.cyan200,
+    backgroundColor: color.cardBg,
+  },
+  expenseLabel: { fontFamily: font.uiBold, fontSize: 14, color: color.tealDeeper },
 });
