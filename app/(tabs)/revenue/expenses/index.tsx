@@ -84,8 +84,17 @@ export default function ExpensesScreen() {
     currentQuery.error instanceof ApiError && currentQuery.error.code === "OFFLINE";
   const enabled = expensesEnabled(bootstrap.data?.organization);
   const myRole = bootstrap.data?.organization?.myRole;
-  /* ⚠️ 表示の出し分けだけ。実際の可否はサーバが判定して 403 を返す */
-  const canEdit = myRole === "admin" || myRole === "collecter";
+  /*
+    ⚠️ **表示の出し分けだけ。実際の可否はサーバが判定して 403 を返す。**
+
+    ⚠️ **「足せる人」と「直せる人」が違う**（2026-08-03）。
+       - 単発の登録 … admin + 集金担当者（現場で出た支出をその場で記録するため）
+       - 編集・削除・固定費の管理 … **admin だけ**
+       まとめて 1 つの `canEdit` にしないこと。**混ぜると集金担当者に
+       押しても 403 になるボタンが出る。**
+  */
+  const isAdmin = myRole === "admin";
+  const canAdd = isAdmin || myRole === "collecter";
 
   const emptyNote =
     scope === "all" ? "この月の経費はありません" : "この絞り込みに合う経費はありません";
@@ -96,7 +105,12 @@ export default function ExpensesScreen() {
       loading={query.isLoading && !query.data}
       stores={stores.data}
       emptyNote={emptyNote}
-      onPressItem={(id) => router.push({ pathname: "/revenue/expenses/[id]", params: { id } })}
+      /* ⚠️ 編集できない人には行を押させない（押しても 403 になる画面へ行くだけ） */
+      onPressItem={
+        isAdmin
+          ? (id) => router.push({ pathname: "/revenue/expenses/[id]", params: { id } })
+          : null
+      }
     />
   );
 
@@ -175,9 +189,10 @@ export default function ExpensesScreen() {
             />
           </Card>
 
+          {/* ⚠️ 固定費の管理は admin だけ（追加・終了・削除。理由はサーバの requireAdmin） */}
           <RecurringSection
             stores={stores.data}
-            canEdit={canEdit}
+            canEdit={isAdmin}
             onAdd={() => setRecurringOpen(true)}
           />
         </ScrollView>
@@ -185,9 +200,17 @@ export default function ExpensesScreen() {
 
       {/* ⚠️ 下端の余白（insets.bottom）を足す。ホームインジケータに重なる。
              ⚠️ **条件の中に入れること。** 外に置くと、記録しない設定でも「＋」が残る */}
-      {enabled && canEdit && (
+      {enabled && canAdd && (
         <Pressable
-          onPress={() => setAddOpen(true)}
+          /*
+            ⚠️ **集金担当者には 2 択を出さない。** 固定費は admin だけなので、
+               出すと片方が必ず 403 になる。選ぶものが 1 つしか無いなら
+               シートを挟まず単発の入力へ直行させる。
+          */
+          onPress={() => {
+            if (isAdmin) setAddOpen(true);
+            else router.push("/revenue/expenses/new");
+          }}
           accessibilityRole="button"
           accessibilityLabel="経費を追加"
           style={({ pressed }) => [
@@ -200,16 +223,21 @@ export default function ExpensesScreen() {
         </Pressable>
       )}
 
-      <AddExpenseSheet
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onChoose={(choice) => {
-          if (choice === "once") router.push("/revenue/expenses/new");
-          else setRecurringOpen(true);
-        }}
-      />
+      {/* ⚠️ どちらも admin 専用。開く経路が無くても、置いたままにしない */}
+      {isAdmin && (
+        <>
+          <AddExpenseSheet
+            open={addOpen}
+            onClose={() => setAddOpen(false)}
+            onChoose={(choice) => {
+              if (choice === "once") router.push("/revenue/expenses/new");
+              else setRecurringOpen(true);
+            }}
+          />
 
-      <RecurringFormSheet open={recurringOpen} onClose={() => setRecurringOpen(false)} />
+          <RecurringFormSheet open={recurringOpen} onClose={() => setRecurringOpen(false)} />
+        </>
+      )}
     </Screen>
   );
 }
@@ -244,7 +272,8 @@ function MonthPane({
   loading: boolean;
   stores: Store[] | undefined;
   emptyNote: string;
-  onPressItem: (id: string) => void;
+  /** ⚠️ `null` = 編集できない人。行を押せなくする（403 の画面へ送らないため） */
+  onPressItem: ((id: string) => void) | null;
 }) {
   if (loading) return <Muted style={styles.paneNote}>読み込み中…</Muted>;
   if (items.length === 0) return <Muted style={styles.paneNote}>{emptyNote}</Muted>;
@@ -262,7 +291,7 @@ function MonthPane({
           expense={expense}
           stores={stores}
           last={i === items.length - 1}
-          onPress={() => onPressItem(expense.id)}
+          onPress={onPressItem ? () => onPressItem(expense.id) : null}
         />
       ))}
     </View>
@@ -278,13 +307,16 @@ function ExpenseRow({
   expense: Expense;
   stores: Store[] | undefined;
   last: boolean;
-  onPress: () => void;
+  onPress: (() => void) | null;
 }) {
   /*
     ⚠️ **展開された固定費は押しても編集画面へ行かない。** id が実在せず、
        サーバも 400 で弾く。行ごと押せなくして「押したのに何も起きない」を防ぐ。
+    ⚠️ **集金担当者・閲覧者も同じく押せない**（`onPress` が null）。
+       編集は admin だけなので、押せると 403 になる画面へ送ることになる。
   */
   const isRecurring = expense.recurring === true;
+  const pressable = !isRecurring && onPress !== null;
 
   const body = (
     <View style={[styles.row, last && { borderBottomWidth: 0 }]}>
@@ -309,14 +341,15 @@ function ExpenseRow({
         </Text>
       </View>
       <Text style={styles.rowAmount}>¥{(expense.amount ?? 0).toLocaleString()}</Text>
-      {!isRecurring && <Ionicons name="chevron-forward" size={14} color={color.cyan300} />}
+      {/* ⚠️ 矢印は押せる行にだけ出す。出したまま押せなくすると壊れて見える */}
+      {pressable && <Ionicons name="chevron-forward" size={14} color={color.cyan300} />}
     </View>
   );
 
-  if (isRecurring) return body;
+  if (!pressable) return body;
 
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.7 }}>
+    <Pressable onPress={onPress ?? undefined} style={({ pressed }) => pressed && { opacity: 0.7 }}>
       {body}
     </Pressable>
   );

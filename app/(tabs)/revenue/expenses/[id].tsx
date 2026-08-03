@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  useBootstrap,
   useDeleteExpense,
   useExpenses,
   useUpdateExpense,
@@ -23,12 +24,19 @@ import { currentMonthIndex, monthStartEpoch } from "@/components/revenue/monthIn
  *
  * ⚠️ **毎月の固定費（`recurring:` で始まる id）はここへ来ない。** 一覧側で
  *    行ごと押せなくしてある。万一来てもサーバが 400 で弾く。
+ *
+ * ⚠️ **編集・削除は admin だけ**（2026-08-03）。一覧の行を押せなくしてあるので
+ *    普通は辿り着かないが、**ディープリンクと「戻る」で直接来られる**ので
+ *    ここでも見る。正はサーバ（`updateExpense` / `deleteExpense` が 403）。
  */
 export default function EditExpenseScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const dialog = useDialog();
   const toast = useToast();
+
+  const bootstrap = useBootstrap();
+  const isAdmin = bootstrap.data?.organization?.myRole === "admin";
 
   const update = useUpdateExpense();
   const remove = useDeleteExpense();
@@ -49,6 +57,18 @@ export default function EditExpenseScreen() {
 
   const list = useExpenses(from, to);
   const expense = (list.data ?? []).find((e) => e.id === id);
+
+  /*
+    ⚠️ **`bootstrap.data` が来てから判定する。** 読み込み中に false へ倒すと、
+       管理者にも一瞬「権限がありません」が出る。
+  */
+  if (bootstrap.data && !isAdmin) {
+    return (
+      <Screen>
+        <CenterMessage text="経費を編集できるのは管理者だけです" />
+      </Screen>
+    );
+  }
 
   if (list.isLoading && !list.data) {
     return (

@@ -24,6 +24,10 @@ import type { RecurringExpense, Store } from "@/api/types";
  *
  * ⚠️ **金額を変えると過去の月まで遡って変わる。削除すると過去の月からも消える。**
  *    「今月から上がった」は**終了月を入れて終わらせ、新しく追加する。**
+ *
+ * ⚠️ **`canEdit` に渡すのは「admin か」。**「admin か集金担当者か」ではない
+ *    （2026-08-03）。固定費は追加・編集・削除とも admin だけで、
+ *    サーバも 403 を返す。**単発の経費の登録とは条件が違う。**
  */
 export function RecurringSection({
   stores,
@@ -109,8 +113,11 @@ export function RecurringSection({
         </Card>
       ) : items.length === 0 ? (
         <Card style={{ marginTop: spacing.sm }}>
+          {/* ⚠️ 登録できない人に「登録しておくと」と言わない（できない操作を勧めることになる） */}
           <Muted style={{ fontSize: 12, lineHeight: 18 }}>
-            家賃や水道光熱費のように毎月かかるものを登録しておくと、経費の一覧に自動で計上されます。
+            {canEdit
+              ? "家賃や水道光熱費のように毎月かかるものを登録しておくと、経費の一覧に自動で計上されます。"
+              : "毎月の固定費はまだ登録されていません。登録できるのは管理者だけです。"}
           </Muted>
         </Card>
       ) : (

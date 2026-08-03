@@ -773,6 +773,23 @@ expensesEnabled: settings?.expenses_enabled !== false,
 
 - 型チェックは `npx tsc --noEmit`
 - **バンドルを grep して日本語を探すと false negative になる。** JSX の属性値と子要素の文字列は `\uXXXX` エスケープで出力されるため。反映確認はソース側で行う
+  - ⚠️ **同じファイルの中でも escaped と raw が混ざる。** エスケープされるのは
+    **JSX のリテラル**（`text="…"` / `<Text>…</Text>`）だけで、`title: "…"` のような
+    素の JS 文字列や `{"…"}` の式は**そのまま出る。**「1 つ見つかったから
+    このファイルは反映済み」と判断しないこと
+  - ⚠️ **16 進は大文字**（`経`）。小文字で grep すると 0 件になる
+  - ⚠️ 確認したいときは escaped 側で引く。`node -e` で組み立てるのが速い:
+
+    ```bash
+    P=$(node -e 'process.stdout.write([..."経費を編集"].map(c=>"\\u"+c.codePointAt(0).toString(16).toUpperCase().padStart(4,"0")).join(""))')
+    grep -c -- "$P" /tmp/bundle.js
+    ```
+- ⚠️ **`/index.bundle` は 404 になる**（`Unable to resolve module ./index`）。
+  エントリは expo-router なので **`/node_modules/expo-router/entry.bundle`** を叩く:
+
+  ```bash
+  curl -s "http://localhost:8081/node_modules/expo-router/entry.bundle?platform=ios&dev=true&minify=false&transform.engine=hermes&transform.routerRoot=app" -o /tmp/bundle.js -w "%{http_code}\n"
+  ```
 
 ## 開発環境
 
