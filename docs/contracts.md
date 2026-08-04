@@ -1078,11 +1078,24 @@ collect_funds.fundsArray = [{ id, name, funds, cashless? }]    ← 機種別入�
 | 店舗数（`PLAN_LIMITS`） | 3 | 5 | **10** | 無制限 |
 | メンバー数（`PLAN_MEMBER_LIMITS`） | **1** | 無制限 | 無制限 | 無制限 |
 
-⚠️ **プランのキーは Apple の商品 ID の中身と同じ綴りにしてある**
-（`proplus` ↔ `com.collecie.app.proplus.monthly`）。`PLAN_BY_PRODUCT_ID` の引きを
-`organizations.plan` にそのまま入れるので、**片方だけ直すと購入は成立するのに
+⚠️ **プランのキーと商品 ID の綴りは一致しない。**
+`PLAN_BY_PRODUCT_ID` の引きを
+`organizations.plan` にそのまま入れるので、**対応表を間違えると購入は成立するのに
 プランが上がらない**（引きが `undefined` になり free 扱い）。010 の CHECK 制約が
 DB 側の防波堤になっている。
+
+| プランのキー | 商品 ID |
+|---|---|
+| `pro` | `com.collecie.app.pronormal.monthly` ⚠️ **ここだけ綴りが違う** |
+| `proplus` | `com.collecie.app.proplus.monthly` |
+| `max` | `com.collecie.app.max.monthly` |
+
+⚠️ **`com.collecie.app.${plan}.monthly` の形で組み立てないこと。** `pro` だけ
+綴りが違う（2026-08-04 に順位（Level）の設定を直すため ID を起こし直した。
+**商品 ID は変更も再利用もできない**ので、元の `pro` は二度と使えない）。
+⚠️ **旧 `com.collecie.app.pro.monthly` を対応表から落とさない。** 既存の取引と
+App Store Server Notification は今も古い ID を名乗ってくるので、引けなくなると
+**「未知の商品です」で 400 になる**（`LEGACY_PRODUCT_IDS`）。
 
 ⚠️ **有料機能の出し分けに `plan === "pro" || plan === "max"` と書かない。**
 `planAtLeast(plan, "pro")` を通すこと（Web は `plans.js`、アプリは `products.ts`）。
@@ -1126,6 +1139,14 @@ Pro+ を弾いていた。⚠️ **サーバは `plan === "free"` で判定し�
 - ⚠️ **検証（200）が返ってから `finishTransaction()` を呼ぶ。** 先に閉じると StoreKit が
   その取引を二度と返さなくなり、検証に失敗した購入が復元不能になる
 - ⚠️ **復元では `finishTransaction()` を呼ばない。** 対象は既に完了済みの取引
+- ⚠️ **順位（Level）の設定を間違えると、コードが正しくてもプランが変わらない。**
+  同じ購読グループの中で **Max が最上位 / Pro+ が中位 / Pro が最下位**。
+  Apple は**上位への変更を即時、下位・同位への変更を次回更新まで持ち越す**ので、
+  順位が揃っていないと Pro → Pro+ が「ダウングレード」と判定され、
+  **購入は成立してトーストも出るのに `organizations.plan` が変わらない。**
+  2026-08-04 に実際に踏んだ。**アプリ側を疑う前に ASC の Level を見ること**
+  - ⚠️ **持ち越しは正常な挙動でもある**（Pro+ → Pro など本物の下位変更）。
+    その場合に「次回の更新時に切り替わります」と出す作りにはまだなっていない
 - 購入時に `appAccountToken` へ**組織 ID**（uuid）を載せている。初回購入の Server Notification が
   verify より先に届いたとき、サーバが組織を特定できる唯一の手掛かりになる
 - `organizations.plan_source` は `'stripe' | 'apple' | null`。**null = 有料契約なし。**
