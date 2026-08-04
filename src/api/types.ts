@@ -142,7 +142,20 @@ export type CollectSchedule =
   | { type: "monthly"; days: number[] };
 
 export type Bootstrap = {
-  user: { id: string; email: string | null };
+  user: {
+    id: string;
+    email: string | null;
+    /**
+     * アカウントを作った時刻の epoch（ミリ秒）。
+     *
+     * ⚠️ **`undefined` になり得る。** この項目を返す前の応答が react-query の
+     *    永続キャッシュ（MMKV）から最大 7 日復元されるため。型は必須に見えるが
+     *    実体は無いことがあるので、**必ず既定値を用意すること。**
+     * ⚠️ `null` は「サーバが時刻を読めなかった」。どちらも 0 に倒してよい
+     *    （＝登録時刻で絞らない＝これまでどおりの挙動）。
+     */
+    createdAt?: number | null;
+  };
   /** 未登録なら null → 初回セットアップへ */
   profile: Profile | null;
   /** 未所属なら null → 組織参加画面へ */

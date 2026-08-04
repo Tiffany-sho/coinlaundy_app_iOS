@@ -57,16 +57,43 @@ export function markAnnouncementsSeen(latestPublishedAt: number) {
 }
 
 /**
+ * 未読とみなす下限。**既読の線と「アカウントを作った時刻」の新しいほう。**
+ *
+ * ⚠️ **登録より前に公開されたお知らせを未読にしない**（2026-08-05）。
+ *    既読の線は端末ローカルで、新規登録した直後は必ず 0。そのままだと
+ *    **過去のお知らせが全部未読**になり、初めて開いた画面にいきなり
+ *    バッジが付いた状態で始まる。自分が使い始める前の告知なので、
+ *    「まだ読んでいない」と言われても意味が無い。
+ *
+ * ⚠️ **`createdAt` は無いことがある**（古い応答が永続キャッシュから復元される／
+ *    サーバが時刻を読めなかった）。そのときは 0 に倒す＝**これまでどおり全部未読**。
+ *    ここで「今」に倒すと、無い間に公開されたお知らせが**永久に未読にならない。**
+ */
+export function unreadSince(
+  lastSeenAt: number,
+  accountCreatedAt: number | null | undefined
+): number {
+  const created = Number.isFinite(accountCreatedAt) ? (accountCreatedAt as number) : 0;
+  return Math.max(lastSeenAt, created);
+}
+
+/**
  * 未読の件数。0 ならバッジを出さない。
  *
  * ⚠️ MMKV は変更通知を持たないので `useSyncExternalStore` に自前の購読者を渡している。
  *    これが無いと、お知らせを読んだあと設定タブに戻ってもバッジが消えない
  *    （設定タブはマウントされたまま残るので再描画が起きない）。
  */
-export function useUnreadAnnouncementCount(items: Announcement[] | undefined): number {
+export function useUnreadAnnouncementCount(
+  items: Announcement[] | undefined,
+  /** `bootstrap.data?.user?.createdAt`。⚠️ 渡さないと登録前のお知らせも未読になる */
+  accountCreatedAt?: number | null
+): number {
   const lastSeenAt = useSyncExternalStore(subscribe, getLastSeenAt, getLastSeenAt);
-  return (items ?? []).filter((item) => item.publishedAt > lastSeenAt).length;
+  const since = unreadSince(lastSeenAt, accountCreatedAt);
+  return (items ?? []).filter((item) => item.publishedAt > since).length;
 }
+
 
 /** 一覧の中で一番新しい公開日時。空なら 0 */
 export function latestPublishedAt(items: Announcement[] | undefined): number {

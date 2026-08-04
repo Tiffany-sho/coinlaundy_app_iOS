@@ -3,7 +3,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useAnnouncements } from "@/api/queries";
+import { useAnnouncements, useBootstrap } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import {
   AnnouncementEmpty,
@@ -13,6 +13,7 @@ import {
   getLastSeenAt,
   latestPublishedAt,
   markAnnouncementsSeen,
+  unreadSince,
 } from "@/components/settings/announcementsRead";
 import { Card, CenterMessage, Muted, Screen, Title } from "@/components/common/ui";
 import { color, font, spacing } from "@/theme/tokens";
@@ -39,6 +40,18 @@ export default function News() {
    */
   const seenOnEnter = useRef<number | null>(null);
   if (seenOnEnter.current === null) seenOnEnter.current = getLastSeenAt();
+
+  /**
+   * 「新着」の印を出す下限。
+   *
+   * ⚠️ **登録より前のお知らせには印を付けない**（設定画面のバッジと同じ規約）。
+   *    片方だけ直すと「バッジは 0 なのに一覧には新着の印が残る」ずれ方をする。
+   * ⚠️ 既読の線だけ ref で凍らせ、登録時刻は毎回読む。あちらは
+   *    この画面にいる間に動くが、登録時刻はアカウントの固定値なので凍らせる必要が無い
+   *    （bootstrap が後から届いても正しい向きにしか動かない）。
+   */
+  const bootstrap = useBootstrap();
+  const since = unreadSince(seenOnEnter.current, bootstrap.data?.user?.createdAt);
 
   /**
    * 開いたら既読にする。
@@ -93,7 +106,7 @@ export default function News() {
             <AnnouncementRow
               key={item.id}
               item={item}
-              unread={item.publishedAt > (seenOnEnter.current ?? 0)}
+              unread={item.publishedAt > since}
               /* 先頭だけ開いて出す。全部閉じていると何も読めない画面になる */
               defaultOpen={i === 0}
             />

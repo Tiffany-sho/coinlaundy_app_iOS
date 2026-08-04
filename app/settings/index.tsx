@@ -30,9 +30,13 @@ export default function Settings() {
   const router = useRouter();
   const { signOut } = useAuth();
   const { data } = useBootstrap();
-  /** ⚠️ 既読は端末ローカル（MMKV）。機種変更やアプリの入れ直しでリセットされる */
+  /**
+   * ⚠️ 既読は端末ローカル（MMKV）。機種変更やアプリの入れ直しでリセットされる。
+   * ⚠️ **登録時刻を必ず渡す。** 渡さないと、新規登録した人の画面が
+   *    最初から未読バッジ付きで始まる（使い始める前の告知まで未読になる）。
+   */
   const announcements = useAnnouncements();
-  const unreadNews = useUnreadAnnouncementCount(announcements.data);
+  const unreadNews = useUnreadAnnouncementCount(announcements.data, data?.user?.createdAt);
 
   async function onSignOut() {
     await signOut();
