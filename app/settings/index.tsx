@@ -206,6 +206,17 @@ export default function Settings() {
             <LinkRow
               label="プライバシーポリシー"
               onPress={() => router.push("/settings/legal?page=privacy" as Href)}
+            />
+            {/*
+              ⚠️ **アプリ専用に書き下ろした版を出している**（`src/content/legal/tokushoho.ts`）。
+                 Web の `/tokushoho` は Stripe 決済前提で販売価格と決済条件を書いており、
+                 そちらへ誘導すると外部での購入条件の提示になる（Guideline 3.1.3(a)）。
+              ⚠️ **販売価格を円で固定している＝配信地域が日本のみであることが前提。**
+                 地域を広げるときは必ず tokushoho.ts の先頭を読むこと。
+            */}
+            <LinkRow
+              label="特定商取引法に基づく表記"
+              onPress={() => router.push("/settings/legal?page=tokushoho" as Href)}
               last
             />
           </ListCard>
