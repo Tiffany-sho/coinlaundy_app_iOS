@@ -25,10 +25,26 @@ export type CapturedError = {
 };
 
 let captured: CapturedError | null = null;
+const listeners = new Set<() => void>();
 
-/** 捕まえた起動時エラー。無ければ null */
+/**
+ * 捕まえた起動時エラー。無ければ null。
+ * ⚠️ **参照を変えない**（`useSyncExternalStore` が無限ループする）。
+ */
 export function getCapturedError(): CapturedError | null {
   return captured;
+}
+
+/**
+ * ⚠️ **購読が要る。** 例外は最初の描画より後に捕まることがあり、
+ *    描画時に 1 回見るだけだと**握り潰したまま普通に動いてしまう**
+ *    （実際に preview ビルドでそうなった）。
+ */
+export function subscribeCapturedError(onChange: () => void): () => void {
+  listeners.add(onChange);
+  return () => {
+    listeners.delete(onChange);
+  };
 }
 
 const globals = globalThis as unknown as {
@@ -49,6 +65,14 @@ if (!__DEV__ && globals.ErrorUtils?.setGlobalHandler) {
       .join("\n");
 
     captured = { message, stack, fatal: Boolean(isFatal) };
+    // ⚠️ 先に通知する。Alert が投げても画面表示は生き残るように
+    listeners.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        /* 購読側の失敗で元のエラーを隠さない */
+      }
+    });
 
     // ⚠️ ブリッジが立っていれば出る。立っていなければ黙って失敗するので、
     //    そのときは _layout 側の表示に賭ける（両方用意しておく）

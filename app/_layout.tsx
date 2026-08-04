@@ -2,8 +2,8 @@
 //    ここより下の queryClient（MMKV）や supabase（createClient）が module スコープで
 //    投げた例外を捕まえるには、先にハンドラを入れておく必要がある。
 //    ⚠️ **一時的な診断コード。原因が分かったら import ごと消すこと。**
-import { getCapturedError } from "@/debug/crashReporter";
-import { useEffect } from "react";
+import { getCapturedError, subscribeCapturedError } from "@/debug/crashReporter";
+import { useEffect, useSyncExternalStore } from "react";
 import { Stack } from "expo-router";
 import { ScrollView, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -34,7 +34,11 @@ export default function RootLayout() {
        ⚠️ フックより前に return しない（フックの数が変わるとエラーになる）ので、
           描画の直前で見る。
   */
-  const startupError = getCapturedError();
+  const startupError = useSyncExternalStore(
+    subscribeCapturedError,
+    getCapturedError,
+    getCapturedError
+  );
 
   // 日本語フォントは容量が大きいので Regular / Bold の 2 ウェイトのみ
   const [fontsLoaded, fontError] = useFonts({
