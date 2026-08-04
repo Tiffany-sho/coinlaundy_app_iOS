@@ -17,6 +17,7 @@ import {
 } from "@/components/common/SortControls";
 import { RegionFilter } from "@/components/stores/RegionFilter";
 import { NoStoresNotice } from "@/components/stores/NoStoresNotice";
+import { PLAN_STORE_LIMIT } from "@/billing/products";
 import {
   CollectScopeSheet,
   useCollectLauncher,
@@ -99,6 +100,28 @@ export default function Stores() {
   const isOffline = error instanceof ApiError && error.code === "OFFLINE";
   // 店舗の作成は admin だけ（Web の createStore も myRole !== "admin" を弾く）
   const canAddStore = bootstrap.data?.organization?.myRole === "admin";
+
+  /**
+   * 店舗数が上限に達しているか。**「追加」の行き先をプラン画面に切り替える**のに使う。
+   *
+   * ⚠️ **表示の出し分けだけ。** 実際に弾くのは Server Action（`PLAN_LIMITS`）。
+   *    ここを緩めてもサーバが 1 件も余分に作らせない。
+   * ⚠️ **`data.length` を使ってよいのは admin のときだけ。** `getStores()` は
+   *    担当店舗（011）で絞るので、非管理者では組織の実際の店舗数より少なくなる。
+   *    このボタン自体が admin 限定（`canAddStore`）なので成立している。
+   *    **判定を非管理者にも使い回さないこと。**
+   * ⚠️ **`null` は無制限**（Max）。`?? 0` のような既定値に倒すと、
+   *    Max の組織が「上限」と表示されて店舗を追加できなくなる。
+   * ⚠️ **プランが分からないうちは「上限なし」に倒す**（開くほうへ）。
+   *    `?? "free"` で埋めないこと。bootstrap の読み込み中や綴り違いのときに
+   *    **Max の組織が一瞬「上限」と表示され、押すとプラン画面へ飛ぶ。**
+   *    サーバが必ず弾くので開くほうに倒しても実害が無く、逆に倒すと
+   *    登録できるはずの人が止まる。
+   */
+  const planKey = bootstrap.data?.plan?.plan;
+  const storeLimit = planKey ? PLAN_STORE_LIMIT[planKey] : null;
+  const atStoreLimit =
+    typeof storeLimit === "number" && (data?.length ?? 0) >= storeLimit;
 
   /** laundryId は laundry_store.id と同じ値。店舗 ID から状態を引けるようにしておく */
   const stateById = useMemo(() => {
@@ -334,16 +357,19 @@ export default function Stores() {
       <CollectScopeSheet {...collect.sheetProps} />
 
       {/* 店舗の追加。Web の AddBtn と同じ右下固定の丸ボタン。admin だけに出す。
-          ⚠️ Web の AddBtn は上限到達時にプラン画面へ誘導するが、そちらは移植しない
-             （App Store Guideline 3.1.3(a)：課金への導線・言及を置かない） */}
+          ⚠️ **上限に達していたらプラン画面へ送る**（2026-08-05。書き出しと同じ扱い）。
+             それまでは「移植しない（Guideline 3.1.3(a)）」としていたが、**その理由は
+             誤り。** 3.1.3(a) が禁じるのは**アプリ外**の購入手段への誘導で、
+             アプリ内課金の画面へ送ることではない。送らないと、上限に達した人は
+             **何をすれば増やせるのか分からないまま**登録に失敗する。 */}
       {canAddStore && (
         <Pressable
-          onPress={() => router.push("/stores/new")}
-          accessibilityLabel="店舗を追加"
+          onPress={() => router.push(atStoreLimit ? "/settings/plan" : "/stores/new")}
+          accessibilityLabel={atStoreLimit ? "店舗数の上限。プランを見る" : "店舗を追加"}
           style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
         >
-          <Ionicons name="add" size={26} color="#FFFFFF" />
-          <Text style={styles.fabLabel}>追加</Text>
+          <Ionicons name={atStoreLimit ? "lock-closed" : "add"} size={26} color="#FFFFFF" />
+          <Text style={styles.fabLabel}>{atStoreLimit ? "上限" : "追加"}</Text>
         </Pressable>
       )}
     </Screen>
