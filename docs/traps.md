@@ -410,6 +410,51 @@
   ⚠️ ただし**バージョンを変えると話が別**なので、`npx expo install` で
   SDK に合ったものを入れること。「added 1 / removed 1」＝巻き上げただけ、が目印
 
+## EAS の環境変数（2026-08-04 に丸一日溶かした）
+
+⚠️ **`eas env:set` の対話プロンプトに値を貼ると、先頭の 1 文字が飲まれることがある。**
+
+実際に `EXPO_PUBLIC_SUPABASE_URL` が **`ttps://…`（39 文字。正しくは 40）** で
+登録されていた。症状はこう出た:
+
+- **production ビルドだけが起動直後に落ちる**（`RCTExceptionsManager reportFatal:` → `abort()`）
+- **開発ビルドでは絶対に再現しない**（あちらは `.env.local` を読む）
+- **preview でも再現しない**（あちらの環境変数は正しく入っていた）
+- クラッシュログに **JS のメッセージは 1 文字も残らない**
+
+**貼り付けではなく `.env.local` から読ませること。**
+
+```bash
+URL=$(grep '^EXPO_PUBLIC_SUPABASE_URL=' .env.local | cut -d= -f2- | tr -d '\r')
+npx eas-cli env:set --environment production --name EXPO_PUBLIC_SUPABASE_URL \
+  --value "$URL" --type string --visibility sensitive --non-interactive
+```
+
+⚠️ **`env:list` の目視では気づけない。** `sensitive` だと伏せ字になり、
+`--include-sensitive` を付けても 40 文字と 39 文字は見分けが付かない。
+**必ず `.env.local` と機械で突き合わせる**（長さ・`^https?://`・完全一致）。
+
+⚠️ **`環境ごとに独立している`。** `production` / `preview` / `development` は
+別枠で、片方だけ壊れていることがある（実際そうだった）。**3 つとも確認する。**
+
+⚠️ **バンドルに焼き込まれた値を `includes()` で照合しない。**
+`https://<ref>.supabase.co` はコード中のハードコード（Storage の no-image URL）にも
+含まれるので、**環境変数が 1 つも入っていなくても「一致」と出る。**
+実際にこれで「環境変数は正常」と誤判定した。
+
+### 起動直後に落ちて原因が分からないときの手順
+
+⚠️ **`ErrorUtils.setGlobalHandler` では捕まえられない。** RN はレンダラ内部からも
+`reportFatalException` を呼ぶ。`app/_layout.tsx` の先頭でも、エントリ（`index.js`）でも
+間に合わなかった（3 回試して 3 回とも失敗）。
+
+**捕まえるのをやめて、モジュールを 1 つずつ読み込んで結果を画面に出すのが速い。**
+`package.json` の `main` を差し替え、`try` / `catch` で `require` して OK / NG を
+並べるだけ。1 回のビルドで犯人が分かる（`git show 32ce54a:index.js`）。
+
+⚠️ **クラッシュログで見るのは `"triggered":true` のスレッド。** メインスレッドは
+`mach_msg2_trap` で待っているだけで、何も分からない。
+
 ## Node / 検証環境
 
 - ⚠️ **Git Bash に `$TMPDIR` は無い。** 展開に失敗して `/` 直下を触りにいき
