@@ -329,11 +329,17 @@ export default function StoreFunds() {
       />
 
       {/* 書き出しの入口。収益タブと同じ形・同じ位置に置く（操作の語彙を 1 つにする）。
-          ⚠️ プラン外でも押せるようにして、理由はシートの中で説明する */}
+          ⚠️ **行き先も収益タブと揃えること。** 片方だけ変えると、同じ「書き出し」を
+             押したのに画面によって挙動が変わる */}
       <Pressable
-        onPress={() => setExportOpen(true)}
+        /* ⚠️ Free ではシートを開かずプラン画面へ（収益タブのコメントを参照） */
+        onPress={() => (canExport ? setExportOpen(true) : router.push("/settings/plan"))}
         accessibilityRole="button"
-        accessibilityLabel={`${store.data?.store ?? ""}店の集金データを書き出す`}
+        accessibilityLabel={
+          canExport
+            ? `${store.data?.store ?? ""}店の集金データを書き出す`
+            : "書き出しに必要なプランを見る"
+        }
         style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
       >
         <Ionicons name="download-outline" size={24} color="#FFFFFF" />

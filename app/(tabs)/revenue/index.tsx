@@ -480,12 +480,25 @@ export default function Revenue() {
       {/* 書き出しの入口。⚠️ **スクロールしても消えないよう固定にしてある。**
           見出しの横に置いていたときは、履歴を見ている間ずっと画面の外にあった。
           形は店舗一覧の「追加」と揃える（アプリの中で「常に押せる主操作」の語彙を 1 つにする）。
-          ⚠️ プラン外でも押せるようにして、理由はシートの中で説明する
-             （押せないボタンだけが置いてあると、なぜ駄目なのか分からない） */}
+          ⚠️ **プラン外でも押せる。** 押せないボタンだけが置いてあると、
+             なぜ駄目なのか分からない（2026-08-05 に行き先をプラン画面へ変えた）。 */}
       <Pressable
-        onPress={() => setExportOpen(true)}
+        /*
+          ⚠️ **Free ではシートを開かずプラン画面へ送る。** シートを開いても
+             書き出せず、ただ理由が書いてあるだけの画面を 1 枚挟むことになる。
+          ⚠️ 行き先は**アプリ内のプラン画面**（StoreKit の購入導線）。
+             Guideline 3.1.3(a) が禁じるのは**アプリ外の購入手段**への誘導で、
+             アプリ内課金の画面へ送るのはむしろ想定された形。
+          ⚠️ **ここは Modal の中ではない**ので `router.push` を直接呼んでよい
+             （シートの中から遷移するときは onDismiss を待つ必要がある。
+             docs/traps.md の iOS を参照）。
+          ⚠️ 可否の正はサーバ。ここは表示の出し分けだけ。
+        */
+        onPress={() => (canExport ? setExportOpen(true) : router.push("/settings/plan"))}
         accessibilityRole="button"
-        accessibilityLabel="集金データを書き出す"
+        accessibilityLabel={
+          canExport ? "集金データを書き出す" : "書き出しに必要なプランを見る"
+        }
         style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
       >
         <Ionicons name="download-outline" size={24} color="#FFFFFF" />

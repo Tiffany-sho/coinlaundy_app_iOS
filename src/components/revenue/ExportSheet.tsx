@@ -381,6 +381,13 @@ export function ExportSheet({
                     : `1 つの Excel ファイルにまとめ、${effectiveSplit === "period" ? "月" : "店舗"}ごとにシートを分けます`}
               </Text>
 
+              {/*
+                ⚠️ **2026-08-05 以降、通常はここに来ない。** 呼び出し側の書き出しボタンが
+                   Free ならシートを開かずプラン画面へ送るようになったため。
+                   **保険として残してある**（入口が 3 か所に増えた前例があり、
+                   新しい入口が出し分けを忘れても書き出せないことを保証する）。
+                   下の `disabled={… || !canExport}` も同じ理由で外さないこと。
+              */}
               {!canExport && (
                 <View style={styles.planNote}>
                   <Ionicons name="lock-closed-outline" size={14} color={color.orange500} />
