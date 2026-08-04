@@ -52,14 +52,24 @@ type Options = {
   interval: number;
   /** 左端に覗かせる幅。表示中のカードの左端をここに合わせる */
   peek: number;
+  /**
+   * 最初に見せるカード。省略すると末尾（＝いちばん新しい月）。
+   *
+   * ⚠️ **この値が変わると表示中のカードが動く。** 呼び出し側は「データが
+   *    入れ替わったとき」以外で変えないこと。毎レンダー計算し直す値を渡すと、
+   *    指で送った直後に元の位置へ引き戻される。
+   */
+  initialIndex?: number;
 };
 
-export function useCardSwipe({ count, interval, peek }: Options) {
+export function useCardSwipe({ count, interval, peek, initialIndex }: Options) {
   const lastIndex = Math.max(0, count - 1);
+  /** ⚠️ 範囲外を渡されても掴まない。カードが 1 枚も無い位置に留まると画面が空になる */
+  const startIndex = clamp(initialIndex ?? lastIndex, 0, lastIndex);
 
-  const [index, setIndex] = useState(lastIndex);
+  const [index, setIndex] = useState(startIndex);
   /** PanResponder の中から読む現在位置。state だと古い値を掴む */
-  const indexRef = useRef(lastIndex);
+  const indexRef = useRef(startIndex);
   const translateX = useRef(new Animated.Value(0)).current;
 
   /** カード i を表示位置に置くための移動量 */
@@ -86,13 +96,17 @@ export function useCardSwipe({ count, interval, peek }: Options) {
   );
 
   /**
-   * 幅が測れた時点と、データ到着で枚数が変わった時点で末尾（当月）に合わせる。
+   * 幅が測れた時点と、データ到着で見せたいカードが変わった時点で位置を合わせる。
    * ⚠️ ここは必ずアニメーション無し。開いた瞬間に勝手に動くと操作と紛らわしい。
+   *
+   * ⚠️ **依存に `startIndex` を置いている＝これが変わると指で送った位置が戻る。**
+   *    react-query は画面復帰や再接続でも取り直すが、中身が同じなら `startIndex` も
+   *    同じ値になるので戻らない。呼び出し側で毎回変わる値を渡さないこと。
    */
   useEffect(() => {
     if (interval <= 0) return;
-    settle(lastIndex, false);
-  }, [interval, lastIndex, settle]);
+    settle(startIndex, false);
+  }, [interval, startIndex, settle]);
 
   const responder = useMemo(
     () =>

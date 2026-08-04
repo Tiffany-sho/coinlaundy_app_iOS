@@ -95,6 +95,23 @@ function buildMonths(data: MonthlyPoint[] | undefined): MonthCard[] {
   return months;
 }
 
+/**
+ * 最初に見せる月。**集金のある一番新しい月**を選ぶ。
+ *
+ * ⚠️ **当月固定にしない。** 当月にまだ集金が無いと、開いた瞬間に ¥0 のカードが出て
+ *    「売上が表示されない」ように見える。実際に集金は先月までしか無い状態で
+ *    そう見えていた（データが少ないほど当たりやすい）。
+ * ⚠️ **当月に集金があるときは当月のまま**（＝ふだん使いの見え方は変えない）。
+ * ⚠️ 1 件も無い組織は末尾（当月）。¥0 で正しく、ここで先頭に飛ばすと
+ *    「なぜ 1 年前が出るのか」が分からなくなる。
+ */
+function initialMonthIndex(months: MonthCard[]): number {
+  for (let i = months.length - 1; i >= 0; i -= 1) {
+    if (months[i].count > 0) return i;
+  }
+  return Math.max(0, months.length - 1);
+}
+
 export function MonthlySalesCarousel({
   data,
   isLoading,
@@ -105,6 +122,14 @@ export function MonthlySalesCarousel({
   isError: boolean;
 }) {
   const months = useMemo(() => buildMonths(data), [data]);
+  /**
+   * ⚠️ **渡すのは数値。配列を渡さない。** `useCardSwipe` は位置合わせの依存に
+   *    この数値を置いているので、取り直しで `months` の参照が変わっても
+   *    **中身が同じなら同じ数値になり、指で送った位置が戻らない。**
+   *    配列や関数を渡す作りにすると、react-query が画面復帰で取り直すたびに
+   *    当月へ引き戻される（`docs/traps.md` の「サーバの値を…useEffect」と同じ罠）。
+   */
+  const initialIndex = useMemo(() => initialMonthIndex(months), [months]);
 
   /** 帯そのものの幅（画面幅からホームの padding を引いたもの） */
   const [trackWidth, setTrackWidth] = useState(0);
@@ -118,6 +143,7 @@ export function MonthlySalesCarousel({
     count: months.length,
     interval,
     peek: PEEK,
+    initialIndex,
   });
 
   function onLayout(e: LayoutChangeEvent) {
