@@ -1,5 +1,11 @@
+// ⚠️ **この import を動かさない。必ず最上段。** import は書いた順に評価されるので、
+//    ここより下の queryClient（MMKV）や supabase（createClient）が module スコープで
+//    投げた例外を捕まえるには、先にハンドラを入れておく必要がある。
+//    ⚠️ **一時的な診断コード。原因が分かったら import ごと消すこと。**
+import { getCapturedError } from "@/debug/crashReporter";
 import { useEffect } from "react";
 import { Stack } from "expo-router";
+import { ScrollView, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -22,6 +28,14 @@ import { color } from "@/theme/tokens";
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
+  /*
+    ⚠️ **一時的な診断コード。原因が分かったらこのブロックごと消すこと。**
+       Alert が出せない段階で捕まえた例外は、ここで画面に出す。
+       ⚠️ フックより前に return しない（フックの数が変わるとエラーになる）ので、
+          描画の直前で見る。
+  */
+  const startupError = getCapturedError();
+
   // 日本語フォントは容量が大きいので Regular / Bold の 2 ウェイトのみ
   const [fontsLoaded, fontError] = useFonts({
     NotoSansJP_400Regular,
@@ -33,6 +47,23 @@ export default function RootLayout() {
     // フォントの読み込みに失敗しても起動は止めない（システムフォントで出す）
     if (fontsLoaded || fontError) SplashScreen.hideAsync().catch(() => {});
   }, [fontsLoaded, fontError]);
+
+  // ⚠️ 一時的な診断コード。原因が分かったらこの if ごと消すこと
+  if (startupError) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#FFFFFF", paddingTop: 80, paddingHorizontal: 20 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>起動時エラー</Text>
+        <ScrollView>
+          <Text selectable style={{ fontSize: 14, marginBottom: 16 }}>
+            {startupError.message}
+          </Text>
+          <Text selectable style={{ fontSize: 11, color: "#555" }}>
+            {startupError.stack}
+          </Text>
+        </ScrollView>
+      </View>
+    );
+  }
 
   if (!fontsLoaded && !fontError) return null;
 
