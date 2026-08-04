@@ -29,6 +29,7 @@ import { StoreRankBars } from "@/components/revenue/charts";
 import { MonthlyRevenueCard } from "@/components/revenue/MonthlyRevenueCard";
 import { MonthlyProfitCard } from "@/components/revenue/MonthlyProfitCard";
 import { TotalRevenueCard } from "@/components/revenue/TotalRevenueCard";
+import { NoStoresNotice } from "@/components/stores/NoStoresNotice";
 import { HistoryControls, type HistorySortField } from "@/components/revenue/HistoryControls";
 import type { SortDirection } from "@/components/common/SortControls";
 import {
@@ -337,7 +338,23 @@ export default function Revenue() {
               </Pressable>
             )}
 
-            <Appear index={1}>
+            {/*
+              店舗が 1 件も無いと下のカードが全部空になる。何をすれば埋まるのかを先に出す。
+              ⚠️ **読み込み中は出さない**（`storeList.data` が来てから判定する）。
+              ⚠️ 判定に収益サマリ（`stores`）を使わないこと。あちらは**集金のある店舗
+                 だけ**なので、店舗を登録済みで集金がまだ 0 件のときも 0 件になり、
+                 「まず店舗を登録しましょう」が消えなくなる。
+            */}
+            {storeList.data?.length === 0 && (
+              <Appear index={1}>
+                <NoStoresNotice
+                  isAdmin={bootstrap.data?.organization?.myRole === "admin"}
+                  style={{ marginBottom: spacing.lg }}
+                />
+              </Appear>
+            )}
+
+            <Appear index={2}>
               <TotalRevenueCard
                 total={allTimeTotal}
                 stats={[
@@ -352,7 +369,7 @@ export default function Revenue() {
 
             {/* ⚠️ タブとグラフはまとめて 1 つの Appear に入れる。分けると
                    タブを切り替えるたびにグラフだけが出直す */}
-            <Appear index={2}>
+            <Appear index={3}>
               <SegmentedTabs options={visibleTabs} value={activeTab} onChange={setTab} />
 
               {activeTab === "store" && (
@@ -382,7 +399,7 @@ export default function Revenue() {
                     **包むと親が変わること**は別の話。
             */}
             <View onLayout={onHistoryLayout}>
-              <Appear index={3}>
+              <Appear index={4}>
                 <Text style={styles.sectionTitle}>売上履歴</Text>
 
                 <HistoryControls

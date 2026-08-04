@@ -16,6 +16,7 @@ import {
   type SortDirection,
 } from "@/components/common/SortControls";
 import { RegionFilter } from "@/components/stores/RegionFilter";
+import { NoStoresNotice } from "@/components/stores/NoStoresNotice";
 import {
   CollectScopeSheet,
   useCollectLauncher,
@@ -275,50 +276,39 @@ export default function Stores() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl }}
         ListEmptyComponent={
-          <Card>
-            {!hasStores ? (
-              <>
-                {/*
-                  ⚠️ **担当店舗（011）が 0 件でも同じ「0 件」になる。**
-                     `getStores` が担当ぶんしか返さないので、アプリからは
-                     「組織に店舗が無い」のか「自分が担当していない」のか区別が付かない。
-                     管理者は常に全店舗なので、**非管理者のときは担当を疑うほうが当たる。**
-                  ⚠️ ここを「店舗がありません」だけにすると、集金担当者は
-                     **組織ごと空だと思って管理者に連絡しない。**
-                */}
-                <Muted>
-                  {canAddStore ? "登録された店舗がありません" : "担当する店舗がありません"}
-                </Muted>
-                {canAddStore ? (
+          /*
+            ⚠️ **担当店舗（011）が 0 件でも同じ「0 件」になる。**
+               `getStores` が担当ぶんしか返さないので、アプリからは
+               「組織に店舗が無い」のか「自分が担当していない」のか区別が付かない。
+               管理者は常に全店舗なので、**非管理者のときは担当を疑うほうが当たる。**
+            ⚠️ 文面と「登録する」ボタンの出し分けは NoStoresNotice に集約してある
+               （ホーム・管理と同じものを出す）。ここに書き写さないこと。
+          */
+          !hasStores ? (
+            <NoStoresNotice isAdmin={canAddStore} />
+          ) : (
+            <Card>
+              {query.trim() ? (
+                <>
+                  <Muted>「{query.trim()}」に一致する店舗がありません</Muted>
                   <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
-                    右下のボタンから新しい店舗を追加できます
+                    別のキーワードで検索してみてください
                   </Muted>
-                ) : (
+                </>
+              ) : region !== null ? (
+                /* 絞り込んだ地域の店舗が消えた（他の条件と重なった / 住所を直した）とき。
+                   何で 0 件になっているのかを出さないと、店舗ごと消えたように見える */
+                <>
+                  <Muted>{regionLabel ?? "この地域"}の店舗がありません</Muted>
                   <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
-                    担当する店舗は店舗管理者が割り当てます。心当たりがなければ管理者にご確認ください。
+                    上のタブから別の地域を選んでください
                   </Muted>
-                )}
-              </>
-            ) : query.trim() ? (
-              <>
-                <Muted>「{query.trim()}」に一致する店舗がありません</Muted>
-                <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
-                  別のキーワードで検索してみてください
-                </Muted>
-              </>
-            ) : region !== null ? (
-              /* 絞り込んだ地域の店舗が消えた（他の条件と重なった / 住所を直した）とき。
-                 何で 0 件になっているのかを出さないと、店舗ごと消えたように見える */
-              <>
-                <Muted>{regionLabel ?? "この地域"}の店舗がありません</Muted>
-                <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
-                  上のタブから別の地域を選んでください
-                </Muted>
-              </>
-            ) : (
-              <Muted>該当する店舗がありません</Muted>
-            )}
-          </Card>
+                </>
+              ) : (
+                <Muted>該当する店舗がありません</Muted>
+              )}
+            </Card>
+          )
         }
         refreshControl={
           <RefreshControl

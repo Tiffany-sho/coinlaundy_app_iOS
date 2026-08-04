@@ -4,11 +4,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useBootstrap, useHome, useMonthlySummary, queryKeys } from "@/api/queries";
+import { useBootstrap, useHome, useMonthlySummary, useStores, queryKeys } from "@/api/queries";
 import { useOutbox } from "@/offline/OutboxProvider";
 import { usePushPriming } from "@/push/usePushPriming";
 import { ApiError } from "@/api/client";
 import { GreetingHeader } from "@/components/home/GreetingHeader";
+import { NoStoresNotice } from "@/components/stores/NoStoresNotice";
 import { Appear } from "@/components/common/Appear";
 import { MonthlySalesCarousel } from "@/components/home/MonthlySalesCarousel";
 import { QuickActions } from "@/components/home/QuickActions";
@@ -59,6 +60,11 @@ export default function Home() {
    * useHome() は在庫・設備・最近の集金記録の担当。
    */
   const monthly = useMonthlySummary(undefined, hasOrg);
+  /**
+   * 店舗が 1 件も無いときに登録へ誘導するために引く。
+   * ⚠️ 店舗タブと同じクエリキーなので、react-query が使い回して二重に取らない。
+   */
+  const stores = useStores(hasOrg);
   const outbox = useOutbox();
 
   const isOffline =
@@ -140,8 +146,23 @@ export default function Home() {
           </Pressable>
         )}
 
+        {/*
+          店舗が 1 件も無いときは、まずここへ誘導する。
+          ⚠️ **読み込み中は出さない**（`stores.data` が来てから判定する）。
+             出すと開くたびに一瞬「店舗がありません」がちらつく。
+          ⚠️ 店舗を消してもこのカードだけが残らないよう、条件は件数で見る。
+        */}
+        {stores.data?.length === 0 && (
+          <Appear index={1} style={{ marginTop: spacing.lg }}>
+            <NoStoresNotice
+              isAdmin={bootstrap.data.organization.myRole === "admin"}
+              prominent
+            />
+          </Appear>
+        )}
+
         {/* ヒーローは月ごとに配色が変わる（Web と同じ）。横スワイプで過去の月へ */}
-        <Appear index={1} style={{ marginTop: spacing.lg }}>
+        <Appear index={2} style={{ marginTop: spacing.lg }}>
           <MonthlySalesCarousel
             data={monthly.data}
             isLoading={monthly.isLoading && !monthly.data}
@@ -154,7 +175,7 @@ export default function Home() {
         {/* ⚠️ 今日の対応状況をクイックアクションより先に出す（2026-07-30）。
                Web は逆順だが、アプリでは「まず今日どうなっているか」を見て
                そのあと操作を選ぶ流れにしてある。Web に合わせ直さないこと */}
-        <Appear index={2} style={{ marginTop: spacing.xl }}>
+        <Appear index={3} style={{ marginTop: spacing.xl }}>
           <SectionHeading>今日の対応状況</SectionHeading>
           <View style={styles.statusRow}>
             {/*
@@ -189,12 +210,12 @@ export default function Home() {
           </View>
         </Appear>
 
-        <Appear index={3} style={{ marginTop: spacing.xl }}>
+        <Appear index={4} style={{ marginTop: spacing.xl }}>
           <SectionHeading>クイックアクション</SectionHeading>
           <QuickActions myRole={bootstrap.data.organization.myRole} />
         </Appear>
 
-        <Appear index={4} style={{ marginTop: spacing.xl }}>
+        <Appear index={5} style={{ marginTop: spacing.xl }}>
           <ListCard
             icon="time-outline"
             title="過去1ヶ月の集金記録"

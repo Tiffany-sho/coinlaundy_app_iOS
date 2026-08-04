@@ -10,6 +10,7 @@ import { ApiError } from "@/api/client";
 import { useOutbox } from "@/offline/OutboxProvider";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
+import { NoStoresNotice } from "@/components/stores/NoStoresNotice";
 import { brokenMachines, isLowStock, stockDisplayItems } from "@/components/manage/laundryState";
 import { Card, CenterMessage, Muted, OfflineBanner, Screen } from "@/components/common/ui";
 import { color, font, radius, spacing } from "@/theme/tokens";
@@ -119,20 +120,10 @@ export default function Manage() {
             </Appear>
           ))}
 
-          {(data?.length ?? 0) === 0 && (
-            <Card>
-              {/* ⚠️ 担当店舗が 0 件でも同じ 0 件になる（店舗一覧と同じ理由）。
-                     非管理者には割り当てを疑えるように書く */}
-              <Muted>
-                {isAdmin ? "店舗がありません" : "担当する店舗がありません"}
-              </Muted>
-              {!isAdmin && (
-                <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
-                  担当する店舗は店舗管理者が割り当てます。
-                </Muted>
-              )}
-            </Card>
-          )}
+          {/* ⚠️ 担当店舗が 0 件でも同じ 0 件になる（店舗一覧と同じ理由）。
+                 admin には登録への導線を、非管理者には割り当てを疑えるように出す。
+                 文面と出し分けは NoStoresNotice に集約してある */}
+          {(data?.length ?? 0) === 0 && <NoStoresNotice isAdmin={isAdmin} />}
         </ScrollView>
       )}
 
