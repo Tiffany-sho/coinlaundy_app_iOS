@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useDialog } from "@/components/common/dialog";
 import { Ionicons } from "@expo/vector-icons";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { apiFetch } from "@/api/client";
 import { useBootstrap, useDeletionSummary } from "@/api/queries";
 import { supabase } from "@/api/supabase";
@@ -37,18 +38,74 @@ export default function DeleteAccount() {
 
   const email = session?.user.email ?? bootstrap.data?.user.email ?? "";
 
+  /**
+   * どうやってサインインしたか。**本人確認の方法をこれで分ける。**
+   *
+   * ⚠️ **Apple でサインインした人はパスワードを持っていない。** 2026-08-05 まで
+   *    `signInWithPassword` だけで本人確認していたため、**Apple のユーザーは
+   *    「パスワードが違います」から先へ進めず、アカウントを永久に削除できなかった。**
+   *    Guideline 5.1.1(v) 違反であると同時に、消したいのに消せない状態だった。
+   *
+   * ⚠️ **`app_metadata.provider` ではなく `identities` を見る。** 両方で
+   *    サインインできる人がいる（メールで登録したあと Apple を紐づけた等）ので、
+   *    「主たる provider」1 つでは判定を誤る。
+   * ⚠️ **パスワードを持っているなら、そちらを優先する。** Apple の再認証は
+   *    シートが出るぶん重いので、従来どおりの経路を残す。
+   */
+  const identities = session?.user.identities ?? [];
+  const hasPassword = identities.some((i) => i.provider === "email");
+  const hasApple = identities.some((i) => i.provider === "apple");
+  /**
+   * ⚠️ **identities が空のときはパスワードに倒す。** 古いセッションや
+   *    取得に失敗した場合で、Apple のシートを出しても通らない可能性がある。
+   *    パスワード欄なら少なくとも「違う」と伝えられる。
+   */
+  const verifyBy: "password" | "apple" = !hasPassword && hasApple ? "apple" : "password";
+
+  /**
+   * 本人確認。⚠️ **ここを素通りさせないこと。** 端末を拾った人が
+   * アカウントを消せてしまう。通らなければ削除しない。
+   */
+  async function reauthenticate(): Promise<boolean> {
+    if (verifyBy === "apple") {
+      try {
+        const credential = await AppleAuthentication.signInAsync({
+          requestedScopes: [AppleAuthentication.AppleAuthenticationScope.EMAIL],
+        });
+        if (!credential.identityToken) {
+          setError("Apple からトークンを取得できませんでした");
+          return false;
+        }
+        const { error: idError } = await supabase.auth.signInWithIdToken({
+          provider: "apple",
+          token: credential.identityToken,
+        });
+        if (idError) {
+          setError("Apple での確認に失敗しました");
+          return false;
+        }
+        return true;
+      } catch (e: unknown) {
+        // 自分でキャンセルしたときは何も出さない（エラーではない）
+        if ((e as { code?: string })?.code !== "ERR_REQUEST_CANCELED") {
+          setError("Apple での確認に失敗しました");
+        }
+        return false;
+      }
+    }
+
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) {
+      setError("パスワードが違います");
+      return false;
+    }
+    return true;
+  }
+
   async function onDelete() {
     setError(null);
 
-    // 本人確認。パスワードでの再認証が通らなければ削除しない
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (authError) {
-      setError("パスワードが違います");
-      return;
-    }
+    if (!(await reauthenticate())) return;
 
     const ok = await dialog.confirm({
       title: "アカウントを削除しますか？",
@@ -129,17 +186,34 @@ export default function DeleteAccount() {
           )}
         </Card>
 
-        <Text style={styles.label}>確認のためパスワードを入力してください</Text>
-        <TextInput
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          textContentType="password"
-          placeholder="••••••••"
-          placeholderTextColor={color.textFaint}
-        />
+        {/*
+          ⚠️ **Apple でサインインした人にはパスワード欄を出さない。**
+             持っていないものを求めることになり、削除に永久に進めなくなる
+             （2026-08-05 まで実際にそうなっていた）。
+             代わりに削除ボタンを押した時点で Apple のシートが出る。
+        */}
+        {verifyBy === "password" ? (
+          <>
+            <Text style={styles.label}>確認のためパスワードを入力してください</Text>
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              textContentType="password"
+              placeholder="••••••••"
+              placeholderTextColor={color.textFaint}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.label}>確認のため Apple でサインインし直します</Text>
+            <Muted style={{ fontSize: 13 }}>
+              削除を押すと Apple の確認画面が出ます。本人確認が取れてから削除します。
+            </Muted>
+          </>
+        )}
 
         {error && <Text style={styles.error}>{error}</Text>}
 
@@ -169,7 +243,8 @@ export default function DeleteAccount() {
             label="アカウントを削除する"
             variant="danger"
             onPress={onDelete}
-            disabled={password.length === 0 || !acknowledged}
+            /* ⚠️ Apple のときはパスワードを条件にしない（空のままで正しい） */
+            disabled={(verifyBy === "password" && password.length === 0) || !acknowledged}
             loading={submitting}
           />
           <Muted style={styles.dangerNote}>

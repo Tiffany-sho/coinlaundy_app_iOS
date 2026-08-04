@@ -5,6 +5,7 @@ import { Button } from "@/components/common/ui";
 import { Field, FormError, Input, RadioCardGroup } from "@/components/common/form";
 import {
   InfoItem,
+  SETUP_ROLE_LABEL,
   StepNav,
   setupStyles,
   type CollectMethod,
@@ -125,8 +126,15 @@ export function RoleStep({
 }) {
   return (
     <View style={{ gap: spacing.xl }}>
+      {/*
+        ⚠️ **表示名は他の画面と揃えること**（店舗管理者 / 集金担当者 / 閲覧者）。
+           ここだけ「担当スタッフ」と呼んでいたので、設定画面やメンバー一覧と
+           突き合わせたときに別の役割に見えていた。
+        ⚠️ **閲覧者は 2026-08-05 に追加した。** それまで選択肢が 2 つしかなく、
+           閲覧者として招かれた人が自分を集金担当者と申告するしかなかった。
+      */}
       <RadioCardGroup
-        label="あなたは店舗管理者ですか？"
+        label="あなたの役割を選んでください"
         value={value}
         onChange={onChange}
         items={[
@@ -137,8 +145,13 @@ export function RoleStep({
           },
           {
             value: "collecter",
-            title: "担当スタッフ",
-            description: "集金データの登録・閲覧が行えます",
+            title: "集金担当者",
+            description: "担当する店舗の集金データを登録・閲覧できます",
+          },
+          {
+            value: "viewer",
+            title: "閲覧者",
+            description: "担当する店舗のデータを閲覧できます。登録・編集はできません",
           },
         ]}
       />
@@ -275,7 +288,12 @@ export function ConfirmStep({
   onBack: () => void;
   onSubmit: () => void;
 }) {
-  const roleLabel = role === "admin" ? "店舗管理者" : "集金担当者";
+  /*
+    ⚠️ **三項演算子で「admin か、それ以外」と書かないこと。**
+       閲覧者が「集金担当者」と表示され、確認画面で嘘をつくことになる
+       （2026-08-05 まで実際にそうなっていた）。役割を足したらここも足す。
+  */
+  const roleLabel = SETUP_ROLE_LABEL[role];
 
   return (
     <View style={{ gap: spacing.md }}>

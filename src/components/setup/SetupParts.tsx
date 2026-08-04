@@ -11,7 +11,34 @@ import { color, font, radius, spacing } from "@/theme/tokens";
  *    "machine" のような別表記を書き込むと Web 側が総額集金モードとして扱ってしまう。
  */
 export type CollectMethod = "machines" | "total";
-export type SetupRole = "admin" | "collecter";
+
+/**
+ * 初期設定で選ぶ役割。
+ *
+ * ⚠️ **綴りは `collecter`**（`collector` ではない）。`docs/contracts.md` の
+ *    「文字列の値」を参照。間違えると読み側の `===` が外れて静かに壊れる。
+ * ⚠️ **`viewer` は 2026-08-05 に追加した。** それまで初期設定に閲覧者の選択肢が
+ *    無く、閲覧者として招かれた人が自分を「集金担当者」と申告するしかなかった。
+ * ⚠️ **admin 以外は同じ流れ**（組織を作らず、参加画面へ進む）。
+ *    分岐を書くときは `role === "admin"` で判定し、
+ *    **`role === "collecter"` で「非管理者」を表さないこと**（viewer が漏れる）。
+ */
+export type SetupRole = "admin" | "collecter" | "viewer";
+
+/**
+ * 初期設定で出す役割の表示名。
+ *
+ * ⚠️ **他の画面（設定・メンバー一覧・組織参加）と同じ呼び方に揃えること。**
+ *    ここだけ「担当スタッフ」と呼んでいた時期があり、突き合わせると
+ *    別の役割に見えていた。
+ * ⚠️ **`role === "admin" ? A : B` の形で書き直さないこと。** 役割が 3 つに
+ *    なったので、二分岐にすると閲覧者が集金担当者として表示される。
+ */
+export const SETUP_ROLE_LABEL: Record<SetupRole, string> = {
+  admin: "店舗管理者",
+  collecter: "集金担当者",
+  viewer: "閲覧者",
+};
 
 /** 戻る / 次へ。全ステップの下端に置く */
 export function StepNav({

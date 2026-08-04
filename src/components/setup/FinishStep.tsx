@@ -4,12 +4,25 @@ import { Button } from "@/components/common/ui";
 import { setupStyles, type SetupRole } from "@/components/setup/SetupParts";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
-/** 参加までの流れ。collecter だけに出す */
-const JOIN_GUIDE = [
-  { icon: "mail-outline" as const, text: "管理者のメールアドレスと組織パスワードを聞く" },
-  { icon: "log-in-outline" as const, text: "次の画面で入力して組織に参加する" },
-  { icon: "checkmark-outline" as const, text: "参加後に集金・管理ができるようになります" },
-];
+/**
+ * 参加までの流れ。**admin 以外**（集金担当者・閲覧者）に出す。
+ *
+ * ⚠️ 最後の 1 行だけ役割で変える。閲覧者は登録できないので、
+ *    「集金・管理ができる」と書くと**できないことを案内する**ことになる。
+ */
+function joinGuide(role: SetupRole) {
+  return [
+    { icon: "mail-outline" as const, text: "管理者のメールアドレスと組織パスワードを聞く" },
+    { icon: "log-in-outline" as const, text: "次の画面で入力して組織に参加する" },
+    {
+      icon: "checkmark-outline" as const,
+      text:
+        role === "viewer"
+          ? "参加後に売上や在庫を閲覧できるようになります"
+          : "参加後に集金・管理ができるようになります",
+    },
+  ];
+}
 
 /** 初期設定の完了画面。役割で次にやることが変わるので中身を分ける */
 export function FinishStep({ role, onDone }: { role: SetupRole; onDone: () => void }) {
@@ -51,7 +64,7 @@ export function FinishStep({ role, onDone }: { role: SetupRole; onDone: () => vo
       </View>
 
       <View style={{ gap: spacing.md }}>
-        {JOIN_GUIDE.map((row) => (
+        {joinGuide(role).map((row) => (
           <View key={row.text} style={styles.guideRow}>
             <View style={styles.guideIcon}>
               <Ionicons name={row.icon} size={15} color={color.teal} />

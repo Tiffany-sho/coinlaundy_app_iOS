@@ -98,7 +98,9 @@ export default function JoinOrganization() {
               </View>
               <Text style={styles.cardTitle}>組織への参加が完了しました</Text>
               <Text style={styles.lead}>
-                集金担当者としてメンバー登録されました。ホームへ進んでください。
+                {/* ⚠️ 役割を決め打ちにしない。閲覧者にも「集金担当者として登録されました」
+                       と出てしまう（ROLE_LABEL は上で viewer も持っている） */}
+                {ROLE_LABEL[role] ?? role}としてメンバー登録されました。ホームへ進んでください。
               </Text>
               <Button
                 label="ホームへ"
@@ -201,13 +203,26 @@ export default function JoinOrganization() {
           {/*
             Web はここに OtherActionsCard（ヘルプ・規約・サインアウト）を置いているが、
             /terms・/help は価格とアップグレード導線を含むためアプリからは開けない
-            （App Store Guideline 3.1.3(a)）。サインアウトのみ残す。
+            （App Store Guideline 3.1.3(a)）。サインアウトと削除だけ残す。
+
+            ⚠️ **アカウント削除をここに必ず置くこと**（Guideline 5.1.1(v)）。
+               組織未所属のユーザーは `app/index.tsx` の振り分けでこの画面へ
+               リダイレクトされ、**タブにもホームの歯車にも辿り着けない。**
+               2026-08-05 まで削除の導線がこの画面に無く、**組織に入っていない
+               集金担当者・閲覧者はアカウントを削除する手段が 1 つも無かった。**
+               ⚠️ 設定画面（/settings）にあるから足りている、と考えないこと。
+                  そこへ行けないのがこの画面の状態。
           */}
-          <View style={styles.card}>
+          <View style={[styles.card, { gap: spacing.md }]}>
             <Button label="サインアウト" variant="ghost" onPress={async () => {
               await signOut();
               router.replace("/login");
             }} />
+            <Button
+              label="アカウントを削除"
+              variant="danger"
+              onPress={() => router.push("/settings/delete-account")}
+            />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
