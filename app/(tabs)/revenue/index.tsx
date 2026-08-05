@@ -25,7 +25,7 @@ import { useOutbox } from "@/offline/OutboxProvider";
 import { EXPORT_MIME_TYPE, saveAndShareBase64 } from "@/export/saveFile";
 import { errorMessage } from "@/components/funds/fundCache";
 import { ExportSheet } from "@/components/revenue/ExportSheet";
-import { StoreRankBars } from "@/components/revenue/charts";
+import { StoreRankCard } from "@/components/revenue/StoreRankCard";
 import { MonthlyRevenueCard } from "@/components/revenue/MonthlyRevenueCard";
 import { MonthlyProfitCard } from "@/components/revenue/MonthlyProfitCard";
 import { TotalRevenueCard } from "@/components/revenue/TotalRevenueCard";
@@ -372,11 +372,11 @@ export default function Revenue() {
             <Appear index={3}>
               <SegmentedTabs options={visibleTabs} value={activeTab} onChange={setTab} />
 
+              {/* ⚠️ 全期間の合計を並べるだけの Card から差し替えた（2026-08-05）。
+                     開店時期の違う店舗を累計で並べると**古い店舗が常に上に来て**、
+                     「先月どこが稼いだか」を見る手段が無かった */}
               {activeTab === "store" && (
-                <Card style={{ marginBottom: spacing.lg }}>
-                  <Text style={styles.cardTitle}>店舗別の売上</Text>
-                  <StoreRankBars data={stores} />
-                </Card>
+                <StoreRankCard stores={stores} isLoading={byStore.isLoading && !byStore.data} />
               )}
 
               {activeTab === "monthly" && (
