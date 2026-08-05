@@ -99,12 +99,20 @@ export function RadioCardGroup<T extends string>({
   value,
   onChange,
   items,
+  tone = "default",
 }: {
   label: string;
   hint?: string;
   value: T;
   onChange: (value: T) => void;
   items: RadioItem<T>[];
+  /**
+   * ⚠️ **真っ白な画面に直接置くときは `"plain"`。** 既定の枠は `divider`（#F1F5F9）で、
+   *    **白の上では 1.07:1 で見えず、選んでいない選択肢が「消えている」ように見える。**
+   *    初期設定がこれ（2026-08-05 にカードをやめて白地に置いた）。
+   *    ⚠️ **選択中の見た目は変えない。** cyan の塗りは白地でも十分に出る。
+   */
+  tone?: Tone;
 }) {
   return (
     <View>
@@ -121,6 +129,7 @@ export function RadioCardGroup<T extends string>({
               accessibilityState={{ selected }}
               style={({ pressed }) => [
                 styles.radioCard,
+                tone === "plain" && styles.radioCardPlain,
                 selected && styles.radioCardSelected,
                 pressed && { opacity: 0.85 },
               ]}
@@ -385,6 +394,8 @@ const styles = StyleSheet.create({
     borderColor: color.divider,
     backgroundColor: color.cardBg,
   },
+  /* 白地に直接置く用。⚠️ 線は border（#E2E8F0）。divider は 1.07:1 で消える */
+  radioCardPlain: { borderColor: color.border },
   radioCardSelected: { borderColor: color.cyan400, backgroundColor: color.cyan50 },
   radioTitle: { fontFamily: font.uiBold, fontSize: 15, color: color.textMain, marginBottom: 2 },
   radioDesc: { fontFamily: font.ui, fontSize: 13, color: color.textMuted, lineHeight: 19 },

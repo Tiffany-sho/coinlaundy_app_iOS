@@ -139,7 +139,9 @@ const styles = StyleSheet.create({
     backgroundColor: color.cardBg,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: color.divider,
+    /* ⚠️ **`divider` にしない。** この画面は 2026-08-05 に白地へ移したので、
+          白 + #F1F5F9 は 1.07:1 で**枠ごと消えて確認欄が地の文に見える** */
+    borderColor: color.border,
     padding: spacing.lg,
   },
   infoIcon: {

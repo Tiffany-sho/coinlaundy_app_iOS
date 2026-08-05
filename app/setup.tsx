@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/api/queries";
 import { useAuth } from "@/auth/AuthProvider";
-import { Button, Screen } from "@/components/common/ui";
+import { Button } from "@/components/common/ui";
 import type { CollectMethod, SetupRole } from "@/components/setup/SetupParts";
 import {
   ConfirmStep,
@@ -18,7 +18,7 @@ import {
   StartStep,
 } from "@/components/setup/SetupSteps";
 import { FinishStep } from "@/components/setup/FinishStep";
-import { color, font, radius, shadow, spacing } from "@/theme/tokens";
+import { color, font, spacing } from "@/theme/tokens";
 
 /**
  * 初回セットアップ。Web の WelcomeHome（feacher/home/components/WelcomeHome）を移植。
@@ -26,6 +26,14 @@ import { color, font, radius, shadow, spacing } from "@/theme/tokens";
  * 各ステップの中身は components/setup/ にある。ここは進行と登録だけ。
  *   1 ようこそ！ → 2 ユーザの情報登録 → 3 集金方法を設定 → 4 権限設定
  *   → (admin のみ) 5 組織の作成 → 設定内容確認 → 完了
+ *
+ * ⚠️ **カードに載せない**（2026-08-05）。**純白の紙に直接置く**（`auth/AuthScreen`
+ *    と同じ扱い）。ログイン → 新規登録 → **初期設定**は 1 本の流れなのに、
+ *    ここだけ影付きのカード + その中の水色の面という二重の枠になっていて、
+ *    同じアプリの別の画面に見えていた。
+ *    ⚠️ **`color.appBg` の面を戻さない**（`inner`）。**teal / cyan を面で使わない。**
+ *    ⚠️ **背景は `color.cardBg`（純白）を明示する。** ルートの Stack の
+ *       `contentStyle` が `appBg` なので、省くと薄い水色が透ける。
  */
 export default function Setup() {
   const insets = useSafeAreaInsets();
@@ -91,9 +99,11 @@ export default function Setup() {
   }
 
   return (
-    <Screen>
+    <View style={styles.root}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
+        /* ⚠️ keyboardVerticalOffset は渡さない。この画面の上にネイティブの
+              ヘッダは無いので、渡すとヘッダ分を二重に数えて余白が出る */
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
@@ -103,10 +113,10 @@ export default function Setup() {
           ]}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.card}>
+          <View>
             <Text style={styles.title}>{getTitle(step, role, isFinished)}</Text>
 
-            <View style={styles.inner}>
+            <View>
               {step === 1 && <StartStep onNext={next} />}
               {step === 2 && (
                 <ProfileStep
@@ -171,7 +181,7 @@ export default function Setup() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-    </Screen>
+    </View>
   );
 }
 
@@ -189,19 +199,17 @@ function getTitle(step: number, role: SetupRole, isFinished: boolean): string {
 }
 
 const styles = StyleSheet.create({
-  body: { flexGrow: 1, justifyContent: "center", padding: spacing.lg },
-  card: {
-    backgroundColor: color.cardBg,
-    borderRadius: radius.card,
-    padding: spacing.xl,
-    ...shadow.hero,
-  },
+  /* ⚠️ appBg（#F0F9FF）ではなく純白。ルートの Stack の contentStyle が appBg なので、
+        ここを省くと薄い水色が透ける（`auth/AuthScreen` と同じ理由） */
+  root: { flex: 1, backgroundColor: color.cardBg },
+  body: { flexGrow: 1, justifyContent: "center", padding: spacing.xl },
+  /* ⚠️ 色は tealDeeper ではなく textMain。ログイン・新規登録の見出しと揃えてある
+        （teal を面ではなく文字で大きく使うと、そこだけシアン基調に見える） */
   title: {
     fontFamily: font.uiBold,
-    fontSize: 24,
-    color: color.tealDeeper,
+    fontSize: 26,
+    color: color.textMain,
     textAlign: "center",
     marginBottom: spacing.xl,
   },
-  inner: { backgroundColor: color.appBg, borderRadius: radius.xl, padding: spacing.lg },
 });

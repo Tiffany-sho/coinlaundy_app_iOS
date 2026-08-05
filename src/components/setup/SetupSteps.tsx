@@ -56,10 +56,16 @@ export function ProfileStep({
     <View style={{ gap: spacing.lg }}>
       {msg && <FormError message={msg} />}
       <Field label="氏名">
-        <Input value={fullname} onChangeText={setFullname} placeholder="山田 太郎" />
+        <Input
+          tone="plain"
+          value={fullname}
+          onChangeText={setFullname}
+          placeholder="山田 太郎"
+        />
       </Field>
       <Field label="ユーザー名">
         <Input
+          tone="plain"
           value={username}
           onChangeText={setUsername}
           placeholder="yamada_taro"
@@ -95,6 +101,8 @@ export function MethodStep({
   return (
     <View style={{ gap: spacing.xl }}>
       <RadioCardGroup
+        /* ⚠️ 白地に直接置く画面なので plain。既定の枠（divider）は 1.07:1 で消える */
+        tone="plain"
         label="集金方法を選択してください"
         hint="※設定後も変更できます"
         value={value}
@@ -134,6 +142,8 @@ export function RoleStep({
            閲覧者として招かれた人が自分を集金担当者と申告するしかなかった。
       */}
       <RadioCardGroup
+        /* ⚠️ 白地に直接置く画面なので plain。既定の枠（divider）は 1.07:1 で消える */
+        tone="plain"
         label="あなたの役割を選んでください"
         value={value}
         onChange={onChange}
@@ -188,6 +198,7 @@ export function OrgStep({
 
       <Field label="組織名（会社名・店舗グループ名など）">
         <Input
+          tone="plain"
           value={value}
           onChangeText={(v) => {
             setMsg(null);
@@ -243,6 +254,8 @@ export function ExpensesStep({
       </View>
 
       <RadioCardGroup
+        /* ⚠️ 白地に直接置く画面なので plain。既定の枠（divider）は 1.07:1 で消える */
+        tone="plain"
         label="経費を記録しますか？"
         hint="※設定後も変更できます"
         value={value ? "yes" : "no"}
