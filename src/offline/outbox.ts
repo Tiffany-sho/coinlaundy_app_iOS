@@ -83,6 +83,31 @@ export function retryItem(id: string): void {
   );
 }
 
+/**
+ * 失敗した分をまとめて送信待ちへ戻す。**ユーザーが明示的に押したときだけ呼ぶ。**
+ *
+ * ⚠️ **`flushOutbox` は `status === "failed"` を読み飛ばす。** 自動再送の対象から
+ *    外すためにそうしてあるので、**戻さずに flush しても失敗した分は一切送られない。**
+ *    2026-08-05 まで、ホームのバッジが「タップで再送」と書きながら
+ *    `flushOutbox()` を直接呼んでいたため、**押しても永久に何も起きなかった。**
+ * ⚠️ `createdAt` も now に戻す。24 時間で自動的に failed へ落とす仕組み
+ *    （`MAX_AGE_MS`）があり、戻さないと**次の 1 周でまた failed に戻る。**
+ */
+export function retryAllFailed(): number {
+  const items = readOutbox();
+  const failed = items.filter((i) => i.status === "failed");
+  if (failed.length === 0) return 0;
+
+  writeOutbox(
+    items.map((i) =>
+      i.status === "failed"
+        ? { ...i, status: "pending", attempts: 0, nextAttemptAt: 0, createdAt: Date.now() }
+        : i
+    )
+  );
+  return failed.length;
+}
+
 function backoffFor(attempts: number): number {
   return BACKOFF_MS[Math.min(attempts, BACKOFF_MS.length - 1)];
 }

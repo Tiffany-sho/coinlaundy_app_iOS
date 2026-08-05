@@ -3,7 +3,7 @@ import { AppState } from "react-native";
 import NetInfo from "@react-native-community/netinfo";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/api/queries";
-import { flushOutbox, readOutbox, subscribeOutbox } from "./outbox";
+import { flushOutbox, readOutbox, removeItem, retryAllFailed, subscribeOutbox } from "./outbox";
 import type { OutboxItem } from "./types";
 
 type OutboxState = {
@@ -12,6 +12,13 @@ type OutboxState = {
   failedCount: number;
   isOnline: boolean;
   flush: () => Promise<void>;
+  /**
+   * 失敗した分を送信待ちへ戻してから送る。**ユーザーが押したときだけ。**
+   * ⚠️ `flush()` は failed を読み飛ばすので、混ぜないこと（区別が消える）。
+   */
+  retryFailed: () => Promise<void>;
+  /** 送っても通らない 1 件を捨てる。⚠️ 呼び出し側で必ず確認を取ること */
+  discard: (id: string) => void;
 };
 
 const OutboxContext = createContext<OutboxState | null>(null);
@@ -35,6 +42,17 @@ export function OutboxProvider({ children }: { children: React.ReactNode }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.funds });
     }
   }, [queryClient]);
+
+  /*
+    ⚠️ **戻してから flush する。** `flushOutbox` は failed を読み飛ばすので、
+       戻さずに呼んでも失敗した分は 1 件も送られない。
+  */
+  const retryFailed = useCallback(async () => {
+    retryAllFailed();
+    await flush();
+  }, [flush]);
+
+  const discard = useCallback((id: string) => removeItem(id), []);
 
   useEffect(() => subscribeOutbox(setItems), []);
 
@@ -65,8 +83,10 @@ export function OutboxProvider({ children }: { children: React.ReactNode }) {
       failedCount: items.filter((i) => i.status === "failed").length,
       isOnline,
       flush,
+      retryFailed,
+      discard,
     }),
-    [items, isOnline, flush]
+    [items, isOnline, flush, retryFailed, discard]
   );
 
   return <OutboxContext.Provider value={value}>{children}</OutboxContext.Provider>;

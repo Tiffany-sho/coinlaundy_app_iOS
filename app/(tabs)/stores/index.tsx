@@ -100,6 +100,17 @@ export default function Stores() {
   const isOffline = error instanceof ApiError && error.code === "OFFLINE";
   // 店舗の作成は admin だけ（Web の createStore も myRole !== "admin" を弾く）
   const canAddStore = bootstrap.data?.organization?.myRole === "admin";
+  /**
+   * 集金の入口を出すか。
+   *
+   * ⚠️ **`!== "viewer"` で書く。`=== "collecter"` にすると admin が漏れる。**
+   * ⚠️ **役割が読めていないうちは出さない。** 開くほうへ倒すと、閲覧者の画面に
+   *    一瞬ボタンが出て、そこで押されると入力し終えてから 400 で詰まる。
+   *    集金は**入力を捨てさせる操作**なので、閉じるほうへ倒す。
+   */
+  const canCollect =
+    bootstrap.data?.organization?.myRole !== undefined &&
+    bootstrap.data.organization.myRole !== "viewer";
 
   /**
    * 店舗数が上限に達しているか。**「追加」の行き先をプラン画面に切り替える**のに使う。
@@ -348,8 +359,9 @@ export default function Stores() {
             store={item}
             state={stateById.get(item.id)}
             onPress={() => router.push({ pathname: "/stores/[id]", params: { id: item.id } })}
-            /* ⚠️ 直接 push しない。支払方法がある店舗では何を集金するか聞く */
-            onCollect={() => collect.launch(item)}
+            /* ⚠️ 直接 push しない。支払方法がある店舗では何を集金するか聞く。
+                  ⚠️ 閲覧者には null（ボタンごと出さない）。押せると入力し終えてから詰まる */
+            onCollect={canCollect ? () => collect.launch(item) : null}
           />
         )}
       />
@@ -390,7 +402,14 @@ function StoreCard({
   store: Store;
   state: LaundryState | undefined;
   onPress: () => void;
-  onCollect: () => void;
+  /**
+   * ⚠️ **閲覧者には `null` を渡す（＝ボタンごと出さない）。**
+   *    サーバの `createData` が viewer を 400 で弾くので、押せると
+   *    **入力し終えたあとに Outbox で「送信失敗」になって詰まる。**
+   *    店舗詳細（`canEdit`）とホームのクイックアクション（`isViewer`）は
+   *    最初から出しておらず、**ここだけ漏れていた。**
+   */
+  onCollect: (() => void) | null;
 }) {
   const uri = store.images?.[0]?.url ?? NO_IMAGE;
   const isAlert = state ? needsAttention(state) : false;
@@ -422,13 +441,23 @@ function StoreCard({
       </Pressable>
 
       <View style={styles.footerArea}>
-        <Pressable onPress={onPress} style={({ pressed }) => [styles.ghostButton, pressed && { opacity: 0.8 }]}>
+        {/* ⚠️ 集金が無いときは「詳細」を横いっぱいに伸ばす。半分のまま残すと
+               右半分が空いて、ボタンが消えているのではなく壊れて見える */}
+        <Pressable
+          onPress={onPress}
+          style={({ pressed }) => [styles.ghostButton, pressed && { opacity: 0.8 }]}
+        >
           <Text style={styles.ghostLabel}>詳細</Text>
         </Pressable>
-        <Pressable onPress={onCollect} style={({ pressed }) => [styles.primaryButton, pressed && { opacity: 0.85 }]}>
-          <Ionicons name="cash-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.primaryLabel}>集金</Text>
-        </Pressable>
+        {onCollect && (
+          <Pressable
+            onPress={onCollect}
+            style={({ pressed }) => [styles.primaryButton, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons name="cash-outline" size={16} color="#FFFFFF" />
+            <Text style={styles.primaryLabel}>集金</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );

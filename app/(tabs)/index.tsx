@@ -4,8 +4,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useBootstrap, useHome, useMonthlySummary, useStores, queryKeys } from "@/api/queries";
+import {
+  useBootstrap,
+  useHome,
+  useLaundryStates,
+  useMonthlySummary,
+  useStores,
+  queryKeys,
+} from "@/api/queries";
+import { brokenMachines, isLowStock } from "@/components/manage/laundryState";
 import { useOutbox } from "@/offline/OutboxProvider";
+import { OutboxSheet } from "@/offline/OutboxSheet";
 import { usePushPriming } from "@/push/usePushPriming";
 import { ApiError } from "@/api/client";
 import { GreetingHeader } from "@/components/home/GreetingHeader";
@@ -36,6 +45,8 @@ export default function Home() {
   const queryClient = useQueryClient();
   /** 集金記録を何件まで出しているか。⚠️ 取得範囲ではなく表示量 */
   const [recentLimit, setRecentLimit] = useState(RECENT_STEP);
+  /** 送信待ち・送信できなかった集金の一覧 */
+  const [outboxOpen, setOutboxOpen] = useState(false);
   /**
    * ホームタブをもう一度押したら先頭へ戻す。
    * ⚠️ 「今いる画面がそのタブの 1 枚目のとき」だけ動く（useScrollToTop の判定）。
@@ -66,6 +77,24 @@ export default function Home() {
    */
   const stores = useStores(hasOrg);
   const outbox = useOutbox();
+
+  /**
+   * 「今日の対応状況」に出す店舗名。
+   *
+   * ⚠️ **管理タブと同じクエリキー**（`useLaundryStates`）なので react-query が
+   *    使い回す。ここで引いても通信は増えない。
+   * ⚠️ **件数はこれで数え直さない。** 正は `/home` の
+   *    `lowStockCount` / `brokenMachineCount` で、こちらは名前を出すためだけ。
+   *    読み込みが終わっていない間は空配列になり、**件数だけが先に出る。**
+   * ⚠️ 判定は `laundryState.ts` の 1 か所を通す（管理タブのカードと同じ式）。
+   *    ここで「洗剤が N 個以下」を書き直すと、ホームと管理タブで
+   *    要対応の店舗が食い違う。
+   */
+  const states = useLaundryStates(hasOrg);
+  const lowStockStores = (states.data ?? []).filter(isLowStock).map((s) => `${s.laundryName}店`);
+  const brokenStores = (states.data ?? [])
+    .filter((s) => brokenMachines(s).length > 0)
+    .map((s) => `${s.laundryName}店`);
 
   const isOffline =
     (home.error instanceof ApiError && home.error.code === "OFFLINE") ||
@@ -136,12 +165,29 @@ export default function Home() {
           />
         </Appear>
 
+        {/*
+          ⚠️ **押したら必ず何かが起きるようにする。** 2026-08-05 まで
+             `outbox.flush()` を直接呼んでいたが、`flushOutbox` は
+             `status === "failed"` を**読み飛ばす**ので、「送信失敗 1 件・
+             タップで再送」と出ていながら**押しても永久に何も起きなかった。**
+          ⚠️ **失敗した分はシートを開く。** 4xx（権限が無いなど）で落ちたものは
+             再送しても通らないので、**破棄する手段のほうが本命**になる。
+        */}
         {outbox.items.length > 0 && (
-          <Pressable onPress={() => outbox.flush()} style={styles.outboxBadge}>
-            <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
+          <Pressable
+            onPress={() => (outbox.failedCount > 0 ? setOutboxOpen(true) : outbox.flush())}
+            accessibilityRole="button"
+            style={[styles.outboxBadge, outbox.failedCount > 0 && styles.outboxBadgeFailed]}
+          >
+            <Ionicons
+              name={outbox.failedCount > 0 ? "alert-circle-outline" : "cloud-upload-outline"}
+              size={18}
+              color="#FFFFFF"
+            />
             <Text style={styles.outboxText}>
-              未送信 {outbox.pendingCount} 件
-              {outbox.failedCount > 0 ? `（送信失敗 ${outbox.failedCount} 件）` : ""}・タップで再送
+              {outbox.failedCount > 0
+                ? `送信できなかった集金 ${outbox.failedCount} 件・タップして確認`
+                : `未送信 ${outbox.pendingCount} 件・タップで再送`}
             </Text>
           </Pressable>
         )}
@@ -192,6 +238,7 @@ export default function Home() {
               icon="cube-outline"
               label="在庫状況"
               count={home.data?.lowStockCount ?? 0}
+              storeNames={lowStockStores}
               onPress={() =>
                 router.navigate({ pathname: "/manage", params: { tab: "stock", t: Date.now() } })
               }
@@ -200,6 +247,7 @@ export default function Home() {
               icon="construct-outline"
               label="設備状況"
               count={home.data?.brokenMachineCount ?? 0}
+              storeNames={brokenStores}
               onPress={() =>
                 router.navigate({
                   pathname: "/manage",
@@ -257,20 +305,47 @@ export default function Home() {
           </ListCard>
         </Appear>
       </ScrollView>
+
+      {/* ⚠️ 空でも置いたままにする（items が 0 件になった瞬間に閉じられるように） */}
+      <OutboxSheet
+        open={outboxOpen}
+        items={outbox.items}
+        onClose={() => setOutboxOpen(false)}
+        onRetry={() => {
+          setOutboxOpen(false);
+          void outbox.retryFailed();
+        }}
+        onDiscard={outbox.discard}
+      />
     </Screen>
   );
 }
 
-/** Web の StatusCard。問題がなければ teal、あればオレンジで「N店舗 要対応」 */
+/**
+ * Web の StatusCard。問題がなければ teal、あればオレンジで「N店舗 要対応」。
+ *
+ * ⚠️ **要対応のときは店舗名まで出す**（2026-08-05）。件数だけだと
+ *    「どこへ行けばいいのか」が分からず、管理タブを開いて一覧を上から
+ *    見比べることになる。⚠️ 名前は必ず**この画面で**引く（管理タブへ
+ *    渡して向こうで出す形にすると、押す前に分かる、という利点が消える）。
+ */
 function StatusCard({
   icon,
   label,
   count,
+  storeNames,
   onPress,
 }: {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
   count: number;
+  /**
+   * 要対応の店舗名。
+   * ⚠️ **`count` と食い違い得る。** `count` は BFF（`/home`）が数えたもので、
+   *    こちらは端末が `laundry_state` から組んだもの。**件数は `count` を正とし、
+   *    名前は「出せたぶんだけ」出す**（読み込み中は空になる）。
+   */
+  storeNames: string[];
   onPress: () => void;
 }) {
   const isAlert = count > 0;
@@ -296,6 +371,12 @@ function StatusCard({
         <Text style={[styles.statusValue, { color: isAlert ? color.orange500 : color.tealDeeper }]}>
           {isAlert ? `${count}店舗 要対応` : "問題なし"}
         </Text>
+        {/* ⚠️ 2 行まで。長い店名が 3 軒続くとカードの高さが跳ねて、隣と揃わなくなる */}
+        {isAlert && storeNames.length > 0 && (
+          <Text style={styles.statusStores} numberOfLines={2}>
+            {storeNames.join("・")}
+          </Text>
+        )}
       </View>
       <Ionicons name="chevron-forward" size={14} color={isAlert ? color.orange200 : color.cyan300} />
     </Pressable>
@@ -323,6 +404,13 @@ const styles = StyleSheet.create({
   statusIcon: { borderRadius: 999, padding: 6 },
   statusLabel: { fontFamily: font.uiBold, fontSize: 11, color: color.textMuted },
   statusValue: { fontFamily: font.uiBold, fontSize: 13, marginTop: 2 },
+  statusStores: {
+    fontFamily: font.ui,
+    fontSize: 10,
+    lineHeight: 14,
+    color: color.textMuted,
+    marginTop: 2,
+  },
   rowTitle: { fontFamily: font.uiBold, fontSize: 14, color: color.textMain },
   rowMetaRow: { flexDirection: "row", gap: spacing.sm, marginTop: 2 },
   rowMeta: { fontFamily: font.ui, fontSize: 12, color: color.textMuted },
@@ -338,5 +426,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginTop: spacing.md,
   },
+  /* ⚠️ 送信待ち（橙）と送信失敗（赤）を色で分ける。同じ橙のままだと
+        「電波が戻れば送られる」ものと「手を打たないと消えない」ものが区別できない */
+  outboxBadgeFailed: { backgroundColor: color.red500 },
   outboxText: { fontFamily: font.uiBold, fontSize: 13, color: "#FFFFFF", flex: 1 },
 });
