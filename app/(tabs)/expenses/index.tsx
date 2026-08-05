@@ -18,18 +18,27 @@ import {
 import { RecurringFormSheet } from "@/components/expenses/RecurringFormSheet";
 import { RecurringSection } from "@/components/expenses/RecurringSection";
 import { ScreenTitleRow } from "@/components/common/SettingsButton";
-import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
+import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import {
-  currentMonthIndex,
-  monthKey,
-  monthLabel,
-  monthStartEpoch,
-  type MonthIndex,
-} from "@/components/revenue/monthIndex";
+  canGoNext,
+  convertCursor,
+  currentCursor,
+  monthlyTotals,
+  periodOf,
+  type ExpenseCursor,
+  type ExpenseUnit,
+} from "@/components/expenses/expensePeriod";
+import { ChartPager, PagerArrow } from "@/components/revenue/ChartPager";
+import type { MonthIndex } from "@/components/revenue/monthIndex";
 import { Card, CenterMessage, Muted, Screen } from "@/components/common/ui";
 import { formatJstDate } from "@/shared/date";
 import { color, font, numeric, radius, spacing } from "@/theme/tokens";
-import type { Expense, Store } from "@/api/types";
+import type { Expense, RecurringExpense, Store } from "@/api/types";
+
+const UNITS = [
+  { value: "month", label: "月ごと" },
+  { value: "year", label: "年ごと" },
+] as const satisfies readonly { value: ExpenseUnit; label: string }[];
 
 /**
  * 経費。**単発と毎月の固定費を 1 枚にまとめてある**（2026-08-03）。
@@ -54,32 +63,42 @@ export default function ExpensesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const current = currentMonthIndex();
-  const [month, setMonth] = useState<MonthIndex>(current);
+  /**
+   * 月ごとに見るか年ごとに見るか（2026-08-05）。
+   * ⚠️ 切り替えは管理タブ（在庫 / 設備）と同じ `SegmentedTabs`。
+   */
+  const [unit, setUnit] = useState<ExpenseUnit>("month");
+  const [cursor, setCursor] = useState<ExpenseCursor>(() => currentCursor("month"));
   /** ⚠️ "all" が「絞らない」。"org" は `laundry_id` が NULL の行だけ（別物） */
   const [scope, setScope] = useState<ExpenseScope>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  /** ⚠️ null で「追加」。同じシートを追加と編集で使い回す */
+  const [recurringEditing, setRecurringEditing] = useState<RecurringExpense | null>(null);
 
   const stores = useStores();
   const bootstrap = useBootstrap();
 
-  /* ⚠️ 未来の月は見せない。空の月を無限にめくれてしまう */
-  const canNext = month < current;
+  /* ⚠️ 未来は見せない。空の期間を無限にめくれてしまう */
+  const canNext = canGoNext(unit, cursor);
   /*
     ⚠️ **過去に下限は設けない。** 「最初の経費がいつか」を返す API が無く、
        集金の最古月で代用すると**それより前に入れた経費に辿り着けなくなる。**
   */
   const canPrev = true;
 
+  const period = periodOf(unit, cursor);
+
   /*
-    前後の月も先に取っておく。⚠️ **取らないと、指で引いている最中に隣の月が
+    前後の期間も先に取っておく。⚠️ **取らないと、指で引いている最中に隣が
     空で描かれ、送りきった瞬間に中身が現れる。**
-    ⚠️ react-query のキャッシュに月ごとに乗るので、行き来しても取り直さない。
+    ⚠️ react-query のキャッシュに期間ごとに乗るので、行き来しても取り直さない。
+    ⚠️ **年モードでは 1 本が 12 か月ぶんになる。** 月モードのキャッシュとは
+       別のキーになるので、切り替えた直後は取り直しが 1 回入る（避けられない）。
   */
-  const currentQuery = useMonthExpenses(month, true);
-  const prevQuery = useMonthExpenses(month - 1, true);
-  const nextQuery = useMonthExpenses(month + 1, canNext);
+  const currentQuery = usePeriodExpenses(unit, cursor, true);
+  const prevQuery = usePeriodExpenses(unit, cursor - 1, true);
+  const nextQuery = usePeriodExpenses(unit, cursor + 1, canNext);
 
   const isOffline =
     currentQuery.error instanceof ApiError && currentQuery.error.code === "OFFLINE";
@@ -98,14 +117,24 @@ export default function ExpensesScreen() {
   const canAdd = isAdmin || myRole === "collecter";
 
   const emptyNote =
-    scope === "all" ? "この月の経費はありません" : "この絞り込みに合う経費はありません";
+    scope === "all"
+      ? unit === "month"
+        ? "この月の経費はありません"
+        : "この年の経費はありません"
+      : "この絞り込みに合う経費はありません";
 
-  const pane = (query: ReturnType<typeof useMonthExpenses>) => (
+  const pane = (query: ReturnType<typeof usePeriodExpenses>) => (
     <MonthPane
       items={(query.data ?? []).filter((e) => matchesScope(e, scope))}
       loading={query.isLoading && !query.data}
+      unit={unit}
       stores={stores.data}
       emptyNote={emptyNote}
+      /* 年の一覧から月へ降りる。⚠️ 単位ごと切り替える（カーソルだけ変えると年が月として読まれる） */
+      onPressMonth={(month) => {
+        setUnit("month");
+        setCursor(month);
+      }}
       /*
         ⚠️ **押せるかは行ごとに違う**（`expense.editable`）。集金担当者は
            自分が登録した当月の分だけ直せるので、画面全体では出し分けられない。
@@ -159,46 +188,71 @@ export default function ExpensesScreen() {
             <ExpenseScopeFilter stores={stores.data} value={scope} onChange={setScope} />
           )}
 
+          {/*
+            ⚠️ **月 / 年の切り替えは管理タブ（在庫 / 設備）と同じ `SegmentedTabs`。**
+               アプリの中で「2 つの見方を切り替える」操作をこれ 1 種類に揃えてある。
+            ⚠️ **切り替えても見ている場所を保つ**（`convertCursor`）。今月・今年へ
+               飛ばすと、過去を調べている途中の人が見ていた場所を見失う。
+          */}
+          <SegmentedTabs
+            options={UNITS}
+            value={unit}
+            onChange={(next) => {
+              setCursor((c) => convertCursor(c, unit, next));
+              setUnit(next);
+            }}
+            style={{ marginTop: spacing.md }}
+          />
+
           <Card style={{ marginTop: spacing.md }}>
             {/*
-              月の送り。払っても送れるが、**矢印も必ず出す。**
+              期間の送り。払っても送れるが、**矢印も必ず出す。**
               ⚠️ ジェスチャだけにすると気づかれないうえ、**VoiceOver から操作できない。**
             */}
             <View style={styles.monthNav}>
               <PagerArrow
                 direction={-1}
                 disabled={!canPrev}
-                onPress={() => setMonth((m) => m - 1)}
+                onPress={() => setCursor((c) => c - 1)}
               />
-              <Text style={styles.monthLabel}>{monthLabel(month)}</Text>
+              <Text style={styles.monthLabel}>{period.label}</Text>
               <PagerArrow
                 direction={1}
                 disabled={!canNext}
-                onPress={() => setMonth((m) => m + 1)}
+                onPress={() => setCursor((c) => c + 1)}
               />
             </View>
 
             {/*
-              ⚠️ 3 面まとめて描く。指で引いている最中に隣の月が見えるようにするため。
-                 ⚠️ **端では隣を描かない**（`canNext`）。描くと存在しない未来の月が
+              ⚠️ 3 面まとめて描く。指で引いている最中に隣が見えるようにするため。
+                 ⚠️ **端では隣を描かない**（`canNext`）。描くと存在しない未来が
                     覗いて「まだ先がある」ように見える。
+                 ⚠️ `pageKey` に単位の接頭辞が入っている（`expensePeriod.ts`）。
+                    月と年で同じキーになると、切り替えても面が作り直されない。
             */}
             <ChartPager
-              pageKey={monthKey(month)}
+              pageKey={period.key}
               canPrev={canPrev}
               canNext={canNext}
-              onPage={(direction) => setMonth((m) => m + direction)}
+              onPage={(direction) => setCursor((c) => c + direction)}
               prev={canPrev ? pane(prevQuery) : null}
               current={pane(currentQuery)}
               next={canNext ? pane(nextQuery) : null}
             />
           </Card>
 
-          {/* ⚠️ 固定費の管理は admin だけ（追加・終了・削除。理由はサーバの requireAdmin） */}
+          {/* ⚠️ 固定費の管理は admin だけ（追加・編集・終了・削除。理由はサーバの requireAdmin） */}
           <RecurringSection
             stores={stores.data}
             canEdit={isAdmin}
-            onAdd={() => setRecurringOpen(true)}
+            onAdd={() => {
+              setRecurringEditing(null);
+              setRecurringOpen(true);
+            }}
+            onEdit={(item) => {
+              setRecurringEditing(item);
+              setRecurringOpen(true);
+            }}
           />
         </ScrollView>
       )}
@@ -236,11 +290,18 @@ export default function ExpensesScreen() {
             onClose={() => setAddOpen(false)}
             onChoose={(choice) => {
               if (choice === "once") router.push("/expenses/new");
-              else setRecurringOpen(true);
+              else {
+                setRecurringEditing(null);
+                setRecurringOpen(true);
+              }
             }}
           />
 
-          <RecurringFormSheet open={recurringOpen} onClose={() => setRecurringOpen(false)} />
+          <RecurringFormSheet
+            open={recurringOpen}
+            editing={recurringEditing}
+            onClose={() => setRecurringOpen(false)}
+          />
         </>
       )}
     </Screen>
@@ -248,15 +309,18 @@ export default function ExpensesScreen() {
 }
 
 /**
- * 1 か月ぶんの経費。
+ * 1 面ぶんの経費（月モードなら 1 か月、年モードなら 1 年）。
  *
  * ⚠️ **`to` は「含む」。** `/funds/chart` の `to` は排他なので**向きが逆**。
- *    翌月 1 日を渡すと**翌月 1 日の経費が 1 件だけ混ざる**ので、その 1 ミリ秒前にする。
- * ⚠️ **月ごとに 1 本ずつ引く。** まとめて引いて手元で分けることもできるが、
- *    月ごとなら react-query のキャッシュがそのまま前後の先読みになる。
+ *    期間の作りは `expensePeriod.ts` に集約してある（ここで組み直さないこと）。
+ * ⚠️ **1 面につき 1 本ずつ引く。** まとめて引いて手元で分けることもできるが、
+ *    面ごとなら react-query のキャッシュがそのまま前後の先読みになる。
+ * ⚠️ **年モードは 1 本で 12 か月ぶん。** 経費が多い組織では 1000 行の上限に
+ *    近づく（`fetchAllRows` を通しているのでサーバ側では欠けない）。
  */
-function useMonthExpenses(month: MonthIndex, enabled: boolean) {
-  return useExpenses(monthStartEpoch(month), monthStartEpoch(month + 1) - 1, undefined, enabled);
+function usePeriodExpenses(unit: ExpenseUnit, cursor: ExpenseCursor, enabled: boolean) {
+  const { from, to } = periodOf(unit, cursor);
+  return useExpenses(from, to, undefined, enabled);
 }
 
 /**
@@ -269,18 +333,23 @@ function useMonthExpenses(month: MonthIndex, enabled: boolean) {
 function MonthPane({
   items,
   loading,
+  unit,
   stores,
   emptyNote,
   canEditRow,
   onPressItem,
+  onPressMonth,
 }: {
   items: Expense[];
   loading: boolean;
+  unit: ExpenseUnit;
   stores: Store[] | undefined;
   emptyNote: string;
   /** ⚠️ **行ごとに変わる。** 直せない行は押せなくする（403 の画面へ送らないため） */
   canEditRow: (expense: Expense) => boolean;
   onPressItem: (id: string) => void;
+  /** 年モードで月の小計を押したとき。その月の月モードへ切り替える */
+  onPressMonth: (month: MonthIndex) => void;
 }) {
   if (loading) return <Muted style={styles.paneNote}>読み込み中…</Muted>;
   if (items.length === 0) return <Muted style={styles.paneNote}>{emptyNote}</Muted>;
@@ -288,19 +357,46 @@ function MonthPane({
   /* ⚠️ 数値であることまで確かめる（永続キャッシュで項目が欠けると NaN になる） */
   const total = items.reduce((sum, e) => sum + (Number.isFinite(e?.amount) ? e.amount : 0), 0);
 
+  /*
+    ⚠️ **年モードでは明細を 1 行ずつ並べない。** `ChartPager` は 3 面を同時に
+       マウントするので、**3 年ぶんの行が仮想化されていない ScrollView に載る。**
+       月の小計にすると最大 12 行に収まり、押せばその月の明細へ行ける。
+  */
+  const months = unit === "year" ? monthlyTotals(items) : [];
+
   return (
     <View>
       <ExpenseCategoryPie expenses={items} total={total} />
       <View style={styles.paneDivider} />
-      {items.map((expense, i) => (
-        <ExpenseRow
-          key={expense.id}
-          expense={expense}
-          stores={stores}
-          last={i === items.length - 1}
-          onPress={canEditRow(expense) ? () => onPressItem(expense.id) : null}
-        />
-      ))}
+
+      {unit === "year"
+        ? months.map((row, i) => (
+            <Pressable
+              key={row.month}
+              onPress={() => onPressMonth(row.month)}
+              accessibilityRole="button"
+              accessibilityLabel={`${row.label}の経費を見る`}
+              style={({ pressed }) => pressed && { opacity: 0.7 }}
+            >
+              <View style={[styles.row, i === months.length - 1 && { borderBottomWidth: 0 }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowCategory}>{row.label}</Text>
+                  <Text style={styles.rowMeta}>{row.count} 件</Text>
+                </View>
+                <Text style={styles.rowAmount}>¥{row.total.toLocaleString()}</Text>
+                <Ionicons name="chevron-forward" size={14} color={color.cyan300} />
+              </View>
+            </Pressable>
+          ))
+        : items.map((expense, i) => (
+            <ExpenseRow
+              key={expense.id}
+              expense={expense}
+              stores={stores}
+              last={i === items.length - 1}
+              onPress={canEditRow(expense) ? () => onPressItem(expense.id) : null}
+            />
+          ))}
     </View>
   );
 }

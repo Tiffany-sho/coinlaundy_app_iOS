@@ -7,7 +7,11 @@ import { CalendarPicker } from "@/components/common/CalendarPicker";
 import { Field, FormError, Input, Select } from "@/components/common/form";
 import { Button, Card, Muted, Screen } from "@/components/common/ui";
 import { useKeyboardVisible } from "@/components/common/useKeyboardVisible";
-import { DEFAULT_CATEGORY, EXPENSE_CATEGORIES } from "@/components/expenses/categories";
+import {
+  DEFAULT_CATEGORY,
+  EXPENSE_CATEGORIES,
+  FREE_TEXT_CATEGORY,
+} from "@/components/expenses/categories";
 import { formatJstDate, nowInJst, toJstMidnightEpoch } from "@/shared/date";
 import { color, font, numeric, radius, spacing } from "@/theme/tokens";
 
@@ -63,7 +67,13 @@ export function ExpenseForm({
   const [note, setNote] = useState(initial?.note ?? "");
 
   const amountValue = Number(amount);
-  const canSubmit = Number.isFinite(amountValue) && amountValue > 0 && !submitting;
+  /** ⚠️ 「その他」は内訳が分からないと後から読めないので、内容を必須にする */
+  const isFreeText = category === FREE_TEXT_CATEGORY;
+  const canSubmit =
+    Number.isFinite(amountValue) &&
+    amountValue > 0 &&
+    (!isFreeText || note.trim() !== "") &&
+    !submitting;
 
   const storeOptions = [
     // ⚠️ 空文字 = 組織全体。null を Select の値にできないのでここで畳んでいる
@@ -146,11 +156,19 @@ export function ExpenseForm({
               <Select title="対象" value={storeId} onChange={setStoreId} options={storeOptions} />
             </Field>
 
-            <Field label="メモ（任意）">
+            {/*
+              ⚠️ **「その他」のときだけ聞き方を変える。** 一覧は
+                 「カテゴリ　メモ」の順に描くので、`note` に内容を書けば
+                 「その他　町内会費」と読める。**カテゴリを自由文字列にしない**
+                 （サーバの検証を緩めることになり、集計と色が組織ごとにばらける）。
+              ⚠️ **同じ `note` を使い回す。** 専用の欄を別に持つと、カテゴリを
+                 その他 → 家賃 に変えたときに書いた内容がどこにも出なくなる。
+            */}
+            <Field label={isFreeText ? "内容" : "メモ（任意）"}>
               <Input
                 value={note}
                 onChangeText={setNote}
-                placeholder="例) 洗剤 20L × 2"
+                placeholder={isFreeText ? "例) 町内会費" : "例) 洗剤 20L × 2"}
                 maxLength={200}
               />
             </Field>
@@ -198,7 +216,9 @@ export function ExpenseForm({
               })
             }
           />
-          <Muted style={styles.hint}>金額は円で入力します</Muted>
+          <Muted style={styles.hint}>
+            {isFreeText ? "「その他」は内容の入力が必要です" : "金額は円で入力します"}
+          </Muted>
         </View>
       </KeyboardAvoidingView>
     </Screen>

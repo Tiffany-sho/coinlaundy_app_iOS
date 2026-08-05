@@ -32,10 +32,19 @@ import type { RecurringExpense, Store } from "@/api/types";
 export function RecurringSection({
   stores,
   onAdd,
+  onEdit,
   canEdit,
 }: {
   stores: Store[] | undefined;
   onAdd: () => void;
+  /**
+   * 定義を直す（2026-08-05）。
+   *
+   * ⚠️ **「終わらせる」では代われない。** あちらは終了月を入れるだけなので、
+   *    **金額の打ち間違い・対象店舗の選び間違いを直す手段が 1 つも無かった。**
+   *    削除すると過去の月からも消えるので、直したいだけの人には使えない。
+   */
+  onEdit: (item: RecurringExpense) => void;
   canEdit: boolean;
 }) {
   const dialog = useDialog();
@@ -129,8 +138,13 @@ export function RecurringSection({
                 <Text style={styles.rowName}>{item.category}</Text>
                 {/* ⚠️ Muted は numberOfLines を受け取らない。素の Text にする */}
                 <Text style={styles.rowMeta} numberOfLines={1}>
-                  毎月 {item.dayOfMonth} 日　{scopeLabel(item, stores)}
+                  {scopeLabel(item, stores)}
                 </Text>
+                {/*
+                  ⚠️ **「毎月 N 日」を出さない**（2026-08-05）。展開は月単位で
+                     計上される月は日に左右されないので、出すと
+                     「この日を過ぎないと計上されない」と読めてしまう。
+                */}
                 <Text style={styles.rowMeta}>
                   {item.startMonth} 〜 {item.endMonth ?? "継続中"}
                 </Text>
@@ -139,6 +153,16 @@ export function RecurringSection({
                 <Text style={styles.rowAmount}>¥{item.amount.toLocaleString()}</Text>
                 {canEdit && (
                   <View style={styles.actions}>
+                    {/* ⚠️ 「終わらせる」と別に必ず置く。あちらは終了月を入れるだけで、
+                           金額や対象店舗の打ち間違いは直せない */}
+                    <Pressable
+                      onPress={() => onEdit(item)}
+                      hitSlop={6}
+                      accessibilityLabel={`毎月の${item.category}を編集`}
+                      style={({ pressed }) => pressed && { opacity: 0.6 }}
+                    >
+                      <Text style={styles.actionText}>編集</Text>
+                    </Pressable>
                     {/* ⚠️ 継続中のものだけ「終わらせる」を出す。終わっているものに出すと
                            押しても何も変わらないボタンになる */}
                     {item.endMonth === null && (
