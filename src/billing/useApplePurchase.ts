@@ -4,7 +4,12 @@ import type { Purchase, ProductSubscription } from "expo-iap";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/api/queries";
-import { PRODUCT_ID_LIST, PRODUCT_IDS, type PurchasablePlan } from "@/billing/products";
+import {
+  PLAN_BY_PRODUCT_ID,
+  PRODUCT_ID_LIST,
+  PRODUCT_IDS,
+  type PurchasablePlan,
+} from "@/billing/products";
 import type { ApplePurchaseResult } from "@/api/types";
 
 /**
@@ -27,6 +32,12 @@ import type { ApplePurchaseResult } from "@/api/types";
  *    アプリを閉じている間に完了した購入や、承認待ち（Ask to Buy）が通った購入も
  *    接続時にまとめて流れてくる。「購入ボタンを押した文脈」を前提にしないこと。
  */
+
+/**
+ * 決済シートを出したまま何の応答も来なかったときに、画面のロックだけ外すまでの時間。
+ * ⚠️ **短くしない。** Apple ID のパスワード入力や承認待ちで普通に数十秒かかる。
+ */
+const PURCHASE_WATCHDOG_MS = 120_000;
 
 export type PurchasePhase =
   | "idle"
@@ -76,6 +87,16 @@ export function useApplePurchase(orgId: string | null) {
 
   /** 商品の取得は接続確立後に 1 回だけ */
   const fetchedRef = useRef(false);
+  /** 決済シートの応答が来ないときの保険。⚠️ 応答が来たら必ず止める */
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** ⚠️ どの経路で phase を戻すときも通す。止め忘れると後から勝手に idle にされる */
+  const stopWatchdog = useCallback(() => {
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  }, []);
 
   /**
    * useIAP の戻り。onPurchaseSuccess から finishTransaction を呼ぶために保持する。
@@ -90,6 +111,7 @@ export function useApplePurchase(orgId: string | null) {
    */
   const settle = useCallback(
     async (purchase: Purchase, shouldFinish: boolean) => {
+      stopWatchdog();
       const jws = purchase.purchaseToken;
       if (!jws) {
         setError({
@@ -128,7 +150,7 @@ export function useApplePurchase(orgId: string | null) {
         setPhase("idle");
       }
     },
-    [queryClient]
+    [queryClient, stopWatchdog]
   );
 
   const settleRef = useRef(settle);
@@ -139,6 +161,7 @@ export function useApplePurchase(orgId: string | null) {
       void settleRef.current(purchase, true);
     },
     onPurchaseError: (e) => {
+      stopWatchdog();
       const next = toBillingError(e);
       setError(next.cancelled ? null : next);
       setPhase("idle");
@@ -163,6 +186,25 @@ export function useApplePurchase(orgId: string | null) {
     async (plan: PurchasablePlan) => {
       setError(null);
       setPhase("purchasing");
+      /*
+        ⚠️ **StoreKit が何のコールバックも返さないことがある。**
+           すでに同じ商品を契約している状態で購入すると
+           「現在このサブスクリプションに登録しています」が出るが、これを閉じても
+           `onPurchaseSuccess` も `onPurchaseError` も呼ばれない経路がある。
+           そのまま放っておくと `phase` が "purchasing" のまま固まり、
+           **`busy` がずっと true なのでプラン画面のボタンが全部押せなくなる**
+           （アプリを終了させるまで戻らない）。実機で踏んだ（2026-08-06）。
+        ⚠️ **エラーは出さない。** 実際には成功していることも、Apple ID の
+           パスワード入力に時間がかかっているだけのこともある。**取るのは
+           画面のロックだけ**にして、購入が通れば `onPurchaseSuccess` が
+           あとから拾う（`finishTransaction` はそこで呼ばれる）。
+        ⚠️ 時間は長めに取る。短くすると、パスワードを打っている最中に
+           ボタンが戻って二重に押せてしまう。
+      */
+      watchdogRef.current = setTimeout(() => {
+        setPhase((current) => (current === "purchasing" ? "idle" : current));
+      }, PURCHASE_WATCHDOG_MS);
+
       try {
         await iapRef.current?.requestPurchase({
           type: "subs",
@@ -179,13 +221,17 @@ export function useApplePurchase(orgId: string | null) {
         });
         // 成否は onPurchaseSuccess / onPurchaseError で受ける
       } catch (e) {
+        stopWatchdog();
         const next = toBillingError(e);
         setError(next.cancelled ? null : next);
         setPhase("idle");
       }
     },
-    [orgId]
+    [orgId, stopWatchdog]
   );
+
+  /* ⚠️ 画面を離れたら必ず止める。残すと setState が unmount 後に走る */
+  useEffect(() => stopWatchdog, [stopWatchdog]);
 
   /**
    * 購入の復元。機種変更やアプリの入れ直しで使う。
@@ -203,8 +249,18 @@ export function useApplePurchase(orgId: string | null) {
       //    配列をその場で受け取れるモジュール側の関数を直接使う。
       const list = await getAvailablePurchases();
 
+      /*
+        ⚠️ **絞り込みは `PLAN_BY_PRODUCT_ID` で行う。`PRODUCT_ID_LIST` ではない。**
+           あちらは**今売っている 3 つ**しか持たないので、過去の商品 ID で
+           購入した人（`com.collecie.app.pro.monthly`）の取引をここで捨ててしまい、
+           **契約が生きているのに「復元できる購入が見つかりませんでした」**になる。
+           サーバ側は legacy を引けるのに、端末が送る前に落としていた。
+        ⚠️ **`PRODUCT_ID_LIST` に legacy を混ぜて解決しないこと。** あちらは
+           `fetchProducts` に渡す一覧で、販売を終えた商品は返ってこないうえ
+           画面に出す理由も無い。
+      */
       const mine = (list ?? [])
-        .filter((p) => PRODUCT_ID_LIST.includes(p.productId))
+        .filter((p) => Boolean(PLAN_BY_PRODUCT_ID[p.productId]))
         // 新しいものを採用。ダウングレード直後は 2 件返ることがある
         .sort((a, b) => (b.transactionDate ?? 0) - (a.transactionDate ?? 0));
 
