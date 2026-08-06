@@ -35,8 +35,9 @@ export function AuthScreen({
   subtitle: string;
   /**
    * 戻る先。**渡さなければ「戻る」を出さない。**
-   * ⚠️ ログインはアプリの起点なので戻り先が無い（2026-08-01 に未ログイン画面を廃止した）。
-   *    押しても何も起きないボタンを置かないため、ここで出し分けている。
+   * ⚠️ 押しても何も起きないボタンを置かないための出し分け。
+   *    ログインも新規登録も `/welcome` から来るので、**今はどちらも渡している**
+   *    （2026-08-06 に起点を `/welcome` へ戻したため）。
    */
   onBack?: () => void;
   children: React.ReactNode;
@@ -72,7 +73,6 @@ export function AuthScreen({
 
           {/* ⚠️ 「戻る」が無い画面では上が詰まるので、その分だけ下げる */}
           <View style={[styles.head, !onBack && { marginTop: spacing.xxl }]}>
-            {/* アプリの正体はここでしか名乗らない（未ログイン画面は 2026-08-01 に廃止） */}
             <Text style={styles.logo}>Collecie</Text>
             <Text style={styles.title}>{title}</Text>
             <Text style={styles.subtitle}>{subtitle}</Text>

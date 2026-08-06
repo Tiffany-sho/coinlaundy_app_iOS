@@ -216,7 +216,7 @@ export default function JoinOrganization() {
           <View style={[styles.card, { gap: spacing.md }]}>
             <Button label="サインアウト" variant="ghost" onPress={async () => {
               await signOut();
-              router.replace("/login");
+              router.replace("/welcome");
             }} />
             <Button
               label="アカウントを削除"

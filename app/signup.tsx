@@ -84,7 +84,9 @@ export default function Signup() {
       title="新規登録"
       subtitle="新しいアカウントを作成するために情報を入力してください"
       /* 来るのはログイン画面からだけ。直リンクで開かれたときのために replace も残す */
-      onBack={() => (router.canGoBack() ? router.back() : router.replace("/login"))}
+      /* ⚠️ 戻り先は `/welcome`。ログインからも welcome からも来るので、
+            積まれていれば `back()`、無ければ起点へ落とす */
+      onBack={() => (router.canGoBack() ? router.back() : router.replace("/welcome"))}
     >
       {error && <AuthMessage tone="error" text={error} />}
       {notice && <AuthMessage tone="notice" text={notice} />}

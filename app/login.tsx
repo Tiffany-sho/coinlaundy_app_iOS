@@ -100,8 +100,10 @@ export default function Login() {
     <AuthScreen
       title="ログイン"
       subtitle="アカウント情報を入力してログインしてください"
-      /* ⚠️ onBack を渡さない＝「戻る」を出さない。**この画面がアプリの起点**
-            （2026-08-01 に未ログイン画面を廃止した）。戻り先が無い */
+      /* ⚠️ **「戻る」を出す**（2026-08-06）。起点が `/welcome` に戻ったので
+            戻り先ができた。⚠️ 直接ここへ落ちる経路（セッション切れなど）は
+            もう無いが、積まれていないときは起点へ落とす */
+      onBack={() => (router.canGoBack() ? router.back() : router.replace("/welcome"))}
     >
       {error && <AuthMessage tone="error" text={error} />}
       {notice && <AuthMessage tone="notice" text={notice} />}

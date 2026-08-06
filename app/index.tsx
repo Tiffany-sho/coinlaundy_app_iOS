@@ -8,7 +8,7 @@ import { color } from "@/theme/tokens";
 /**
  * 起動時の振り分け。設計図 5 章の起動時フローと 1 対 1 で対応させる。
  *
- *   セッションなし            → ログイン画面（そこから新規登録へ）
+ *   セッションなし            → /welcome（ログインと新規登録の入口）
  *   profiles 未登録          → 初回セットアップ
  *   組織未所属               → 組織参加
  *   それ以外                 → ホームタブ
@@ -21,17 +21,19 @@ export default function Index() {
   const { data, isLoading, isFetching, error } = useBootstrap(Boolean(session));
 
   if (isRestoring) return <Splash />;
-  /* ⚠️ ここがアプリの起点。2026-08-01 に未ログイン画面（/welcome）を廃止した。
-        「ダウンロードした時点で説明は済んでいる」ため、1 タップ挟む価値が無かった。
-        新規登録はログイン画面の中の導線から入る */
-  if (!session) return <Redirect href="/login" />;
+  /* ⚠️ **`/login` へ直行させないこと**（2026-08-06 に `/welcome` へ戻した）。
+        2026-08-01〜08-05 はログイン画面が起点だったが、**インストール直後の人が
+        最初に見るのが素のログイン壁**になり、新規登録がフォームの下の
+        小さなリンク 1 本にしか無かった。⚠️ **ここは 6 か所ある着地点の 1 つ**
+        （`app/welcome.tsx` の注意を参照）*/
+  if (!session) return <Redirect href="/welcome" />;
 
   // キャッシュがあれば data が入っているので待たされない
   if (isLoading && !data) return <Splash />;
 
   // セッション切れ。AuthProvider 側でも検知するが念のため
   if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
-    return <Redirect href="/login" />;
+    return <Redirect href="/welcome" />;
   }
 
   /**

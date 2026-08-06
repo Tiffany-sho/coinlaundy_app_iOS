@@ -40,7 +40,7 @@ export default function Settings() {
 
   async function onSignOut() {
     await signOut();
-    router.replace("/login");
+    router.replace("/welcome");
   }
 
   return (

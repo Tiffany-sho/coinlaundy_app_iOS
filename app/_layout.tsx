@@ -68,14 +68,13 @@ export default function RootLayout() {
             >
               {/*
                 ⚠️ タブ全体を**スワイプで戻れなくする**。
-                   新規登録は /login → push /signup と積んだうえで router.replace("/") し、
+                   新規登録は /welcome → push /signup と積んだうえで router.replace("/") し、
                    "/" が <Redirect href="/(tabs)" /> で更に置き換える。**この時点でも
-                   /login が下に残っている**（replace が置き換えるのは自分だけで、
+                   /welcome が下に残っている**（replace が置き換えるのは自分だけで、
                    履歴は消えない）。iOS の画面端スワイプはこれを popping できてしまうので、
-                   登録直後に右へ払うとログイン画面に戻る。gestureEnabled: false が唯一の防波堤。
-                   ⚠️ ログインから入った場合は積まれないが、**経路によって変わるものに
-                      頼らない**（2026-08-01 に /welcome を廃止したときも、この理由だけが
-                      /signup 経由へ移って残った）。
+                   登録直後に右へ払うと未ログインの画面に戻る。gestureEnabled: false が唯一の防波堤。
+                   ⚠️ **積まれる枚数は経路で変わる**（/welcome → /login → /signup と
+                      辿れば 2 枚）。**枚数に依存しない対策にしてあること。**
                    ⚠️ タブの中の Stack（stores/ manage/）には影響しない。
                       あちらは自前の Stack が持つので、店舗詳細のスワイプ戻りは生きている。
               */}
