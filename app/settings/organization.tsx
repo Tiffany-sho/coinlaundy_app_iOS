@@ -28,7 +28,7 @@ import type { OrgMember, Role } from "@/api/types";
  * 組織管理。Web の /settings/organization/edit（OrganizationSettings + OrgJoinPasswordCard）を移植。
  *
  * 章立ても Web と同じ順に並べる：
- *   組織情報 → 経費 → メンバー（N名） → 参加申請（オーナーのみ）
+ *   組織情報 → 経費 → メンバー（N名） → 参加申請（店舗管理者のみ）
  *
  * 各節は components/settings/ にある。ここは並べる順と、メンバーへの操作だけ。
  *
@@ -45,10 +45,10 @@ export default function Organization() {
   const members = useMembers();
   const isAdmin = members.data?.myRole === "admin";
   /*
-    参加申請（013）。⚠️ **オーナー以外には空配列が返る**ので `isAdmin` で
-       取りに行くかだけ決め、出すかどうかは件数で判断する。
-    ⚠️ **`isAdmin` で出し分けないこと。** admin でもオーナーでなければ
-       承認は通らず、押しても失敗するボタンになる。
+    参加申請（013）。⚠️ **店舗管理者（admin）以外には空配列が返る。**
+    ⚠️ **オーナー限定にしない**（2026-08-06 に owner_id から変えた）。
+       オーナーは組織を作った 1 人だけで譲渡する手段が無いため、限定すると
+       **オーナー不在の間は誰も組織に参加できなくなる。**
   */
   const invitations = useJoinRequests(isAdmin);
 

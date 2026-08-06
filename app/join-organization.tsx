@@ -120,7 +120,7 @@ export default function JoinOrganization() {
               <Text style={styles.cardTitle}>参加を申請しました</Text>
               <Text style={styles.lead}>
                 {pendingRequest.orgName ? `「${pendingRequest.orgName}」の` : ""}
-                オーナーが承認すると参加できます。承認されたら「確認する」を押してください。
+                店舗管理者が承認すると参加できます。承認されたら「確認する」を押してください。
               </Text>
               <Button
                 label="確認する"
@@ -184,7 +184,7 @@ export default function JoinOrganization() {
                 <Text style={styles.cardTitle}>組織に参加する</Text>
               </View>
               <Text style={[styles.lead, { textAlign: "left", marginBottom: spacing.lg }]}>
-                管理者のメールアドレスを入力して申請してください。組織のオーナーが承認すると参加できます。
+                管理者のメールアドレスを入力して申請してください。店舗管理者が承認すると参加できます。
               </Text>
 
               <View style={{ gap: spacing.lg }}>
