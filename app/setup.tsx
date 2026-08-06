@@ -1,12 +1,20 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/api/queries";
 import { useAuth } from "@/auth/AuthProvider";
-import { Button } from "@/components/common/ui";
 import type { CollectMethod, SetupRole } from "@/components/setup/SetupParts";
 import {
   ConfirmStep,
@@ -18,7 +26,7 @@ import {
   StartStep,
 } from "@/components/setup/SetupSteps";
 import { FinishStep } from "@/components/setup/FinishStep";
-import { color, font, spacing } from "@/theme/tokens";
+import { color, font, radius, spacing } from "@/theme/tokens";
 
 /**
  * 初回セットアップ。Web の WelcomeHome（feacher/home/components/WelcomeHome）を移植。
@@ -168,19 +176,35 @@ export default function Setup() {
             </View>
           </View>
 
-          {!isFinished && (
-            <Button
-              label="サインアウト"
-              variant="ghost"
-              onPress={async () => {
-                await signOut();
-                router.replace("/login");
-              }}
-              style={{ marginTop: spacing.lg }}
-            />
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/*
+        ⚠️ **画面の隅に置く**（2026-08-06）。それまでは各ステップの「次へ」の
+           すぐ下に**全幅のボタン**として並んでいたので、**進めるつもりで
+           押してしまう**位置だった（初期設定の途中で消えると最初からやり直しになる）。
+        ⚠️ **ScrollView の外＝絶対配置にする。** 中に置くと、ステップごとに
+           中身の高さが違うので**現れる位置が上下に動く。**
+        ⚠️ **白い下地を敷く。** 内容が長いステップではスクロールした本文が
+           この下を通るので、敷かないと文字が重なって読めなくなる
+           （紙が純白なので下地そのものは見えない）。
+        ⚠️ **完了後は出さない**（`isFinished`）。従来どおり。
+      */}
+      {!isFinished && (
+        <Pressable
+          onPress={async () => {
+            await signOut();
+            router.replace("/welcome");
+          }}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="サインアウト"
+          style={[styles.signOut, { top: insets.top + spacing.xs }]}
+        >
+          <Ionicons name="log-out-outline" size={14} color={color.textFaint} />
+          <Text style={styles.signOutLabel}>サインアウト</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -212,4 +236,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: spacing.xl,
   },
+  /* ⚠️ `top` は insets を足して呼び出し側で決める（ノッチの有無で変わるため） */
+  signOut: {
+    position: "absolute",
+    right: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: color.cardBg,
+    borderRadius: radius.md,
+  },
+  signOutLabel: { fontFamily: font.ui, fontSize: 12, color: color.textFaint },
 });
