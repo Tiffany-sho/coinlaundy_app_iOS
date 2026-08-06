@@ -889,5 +889,37 @@ expensesEnabled: settings?.expenses_enabled !== false,
 
 ## 開発環境
 
-- 実機で見るときは `.env.local` の `EXPO_PUBLIC_API_BASE_URL` を LAN IP にする（`http://192.168.0.17:3000/api/v1`）。`localhost` のままだと端末自身を見にいく
-- Wi-Fi プロファイルが「パブリック」でも node.exe の受信は許可済み。dev の CORS は任意の Origin をエコーする
+- Wi-Fi プロファイルが「パブリック」でも node.exe の受信は許可済み
+
+### ⚠️ `EXPO_PUBLIC_API_BASE_URL` の選び方（2026-08-06 に 1 時間溶かした）
+
+**ログインは通るのにデータが 1 件も来ない**、という壊れ方をする。
+⚠️ **ログインは Supabase へ直接行くので、BFF が死んでいても成功する。**
+「認証は通っているのだからサーバは生きている」と考えないこと。
+
+| 見るところ | 指す先 |
+|---|---|
+| **PC のブラウザ / 実機のどちらも** | **`http://<LAN IP>:3000/api/v1`**（要 `npm run dev`） |
+| 実機で本番の挙動を見る | `https://www.collecie.com/api/v1` |
+
+- ⚠️ **`localhost` にしない。** `localhost` は**開いている端末自身**を指すので、
+  iPhone から叩くと iPhone の中を探しにいって永久に届かない。
+  **LAN IP なら PC のブラウザからも実機からも同じように届く**ので、
+  常に LAN IP にしておけば取り違えが起きない
+- ⚠️ **ブラウザ確認で本番を指せない。** 本番の BFF は
+  **`Access-Control-Allow-Origin` を 1 つも返さない**（`api/v1/_lib/handler.js` の
+  `ALLOW_CORS_IN_DEV` が production で false。実機は Origin を送らないので不要）。
+  ブラウザからは全 API が CORS で読めず、**`Load failed` としか出ない**
+- ⚠️ **`EXPO_PUBLIC_*` はバンドルに焼き込まれる。** `.env.local` を書き換えたら
+  **Metro を再起動する**（`npx expo start --clear`）。
+  ⚠️ ブラウザのタブも**ハードリロード**しないと古いバンドルのまま
+- 確かめ方（焼き込まれた値をバンドルから直接見る）:
+
+  ```bash
+  curl -s "http://localhost:8081/node_modules/expo-router/entry.bundle?platform=web&dev=true&minify=false" -o /tmp/b.js
+  grep -o "http://192.168.0.17:3000/api/v1" /tmp/b.js | head -1
+  ```
+
+  ⚠️ **`collecie.com` が引っかかっても本番を指しているとは限らない。**
+  `client.ts` のフォールバック文字列（`?? "https://www.collecie.com/api/v1"`）と
+  コメントが入っているので、**必ず期待する URL のほうで grep すること**
