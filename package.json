@@ -7,8 +7,8 @@
     "start": "expo start",
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit",
-    "build:ios": "eas-cli build --profile production --platform ios",
-    "submit:ios": "eas-cli submit --profile production --platform ios"
+    "build:ios": "npx eas-cli build --profile production --platform ios",
+    "submit:ios": "npx eas-cli submit --profile production --platform ios"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

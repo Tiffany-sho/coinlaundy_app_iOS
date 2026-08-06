@@ -396,6 +396,11 @@
   *could not determine executable to run* で落ちる。npx が引数を**パッケージ名**として
   探すのに対し、パッケージ名は `eas-cli` で、その中の実行ファイルが `eas` という名前
   だから。グローバルに入れれば（`npm i -g eas-cli`）`eas` だけで通る
+- ⚠️ **`package.json` の script にも `npx` を付ける。** npm script は
+  `node_modules/.bin` からしか探さないので、**依存に入っていない `eas-cli` は
+  「内部コマンドまたは外部コマンドとして認識されていません」で落ちる。**
+  ⚠️ シェルで `npx eas-cli` が通るからといって、script に素の `eas-cli` と
+  書けるわけではない（2026-08-06 に `npm run build:ios` がこれで落ちた）
 - ⚠️ **端末登録はビルドより前に。** Ad Hoc のプロビジョニングプロファイルは
   ビルド時点で登録されている端末しか含まない。後から登録した端末は
   インストールできず、**ビルドのやり直しになる**（`eas-cli device:list` で先に確認）
