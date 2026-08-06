@@ -30,12 +30,15 @@ import type { Expense } from "@/api/types";
  */
 
 const SIZE = 132;
-/** ドーナツの穴。⚠️ 中央に合計を出すので、字が収まる大きさが要る */
+/**
+ * ドーナツの穴。**中は空**（合計は円の下に出す）。
+ * ⚠️ **広げないこと。** 広げるとドーナツの輪が細って、扇の色の差が読めなくなる。
+ */
 const HOLE = 78;
 
 export function ExpenseCategoryPie({
   expenses,
-  /** 中央に出す合計。⚠️ 絞り込み後の合計を渡すこと（円と数字がずれる） */
+  /** 円の下に出す合計。⚠️ 絞り込み後の合計を渡すこと（円と数字がずれる） */
   total,
 }: {
   expenses: Expense[] | undefined;
@@ -50,6 +53,7 @@ export function ExpenseCategoryPie({
 
   return (
     <View style={styles.row}>
+      <View style={styles.pieColumn}>
       <View style={styles.pie}>
         {chunks.map((chunk) => (
           <View
@@ -70,10 +74,22 @@ export function ExpenseCategoryPie({
           </View>
         ))}
 
-        {/* 穴。⚠️ 影は付けない（丸くクリップした親の中なので iOS で消える） */}
-        <View style={styles.hole}>
-          <Muted style={styles.holeLabel}>合計</Muted>
-          <Text style={styles.holeValue} numberOfLines={1} adjustsFontSizeToFit>
+          {/* 穴。⚠️ 影は付けない（丸くクリップした親の中なので iOS で消える） */}
+          <View style={styles.hole} />
+        </View>
+
+        {/*
+          ⚠️ **合計は円の中に入れない**（2026-08-06）。それまで穴（78px）に
+             入れていたが、**桁が増えると `adjustsFontSizeToFit` が縮め続けて
+             読めなくなっていた。** ¥1,000,000 を超えると顕著。
+          ⚠️ **穴を広げて解決しない。** 広げるとドーナツの輪が細って
+             扇の色の差が分からなくなる（12 カテゴリを色で見分ける図なので致命的）。
+          ⚠️ **出すのはこの 1 か所だけ。** 見出しにも出すと同じ数字が
+             数センチ離れて 2 回並ぶ。
+        */}
+        <View style={styles.totalBox}>
+          <Muted style={styles.totalLabel}>合計</Muted>
+          <Text style={styles.totalValue} numberOfLines={1} adjustsFontSizeToFit>
             ¥{total.toLocaleString()}
           </Text>
         </View>
@@ -104,6 +120,9 @@ function LegendRow({ slice }: { slice: CategorySlice }) {
 const styles = StyleSheet.create({
   empty: { fontSize: 12, textAlign: "center", paddingVertical: spacing.lg },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  /* ⚠️ 円と合計を縦に積む列。`flexShrink: 0` を外すと、カテゴリ名が長いときに
+        円のほうが潰れて扇が楕円になる */
+  pieColumn: { alignItems: "center", flexShrink: 0 },
 
   pie: {
     width: SIZE,
@@ -145,12 +164,12 @@ const styles = StyleSheet.create({
     height: HOLE,
     borderRadius: HOLE / 2,
     backgroundColor: color.cardBg,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6,
   },
-  holeLabel: { fontSize: 10 },
-  holeValue: { ...numeric, fontSize: 15, color: color.tealDeeper },
+
+  /* ⚠️ 幅は円と同じ SIZE。金額はここいっぱいまで使える（穴の 78px の 1.7 倍） */
+  totalBox: { width: SIZE, alignItems: "center", marginTop: spacing.sm },
+  totalLabel: { fontSize: 10 },
+  totalValue: { ...numeric, fontSize: 18, color: color.tealDeeper },
 
   legend: { flex: 1, gap: 3 },
   legendRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, minHeight: 22 },
