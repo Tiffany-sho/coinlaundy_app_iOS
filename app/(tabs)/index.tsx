@@ -329,6 +329,9 @@ export default function Home() {
  *    見比べることになる。⚠️ 名前は必ず**この画面で**引く（管理タブへ
  *    渡して向こうで出す形にすると、押す前に分かる、という利点が消える）。
  */
+
+/** 店舗名を出す上限。⚠️ 増やすと 2 枚のカードの高さが揃って伸びる（下の注意） */
+const STORE_NAME_LIMIT = 3;
 function StatusCard({
   icon,
   label,
@@ -371,11 +374,28 @@ function StatusCard({
         <Text style={[styles.statusValue, { color: isAlert ? color.orange500 : color.tealDeeper }]}>
           {isAlert ? `${count}店舗 要対応` : "問題なし"}
         </Text>
-        {/* ⚠️ 2 行まで。長い店名が 3 軒続くとカードの高さが跳ねて、隣と揃わなくなる */}
+        {/*
+          ⚠️ **1 店舗 1 行の箇条書きにする**（2026-08-06）。「・」で繋いだ 1 本の
+             文にしていたが、店名自体に「店」が付くので**どこで切れているのか
+             読めなかった**（「北町店・南口店」が 1 軒の名前に見える）。
+             Web の `StatusSummaryCards` が最初からこの形なので揃えてある。
+          ⚠️ **`STORE_NAME_LIMIT` 件で打ち切る。** 2 枚のカードは横に並んでいて
+             背の高いほうに揃うので、片方が 8 軒あると**両方が 8 行ぶんの高さになる。**
+             残りは件数で伝えて、続きは押した先（管理タブ）で見てもらう。
+        */}
         {isAlert && storeNames.length > 0 && (
-          <Text style={styles.statusStores} numberOfLines={2}>
-            {storeNames.join("・")}
-          </Text>
+          <View style={styles.statusStores}>
+            {storeNames.slice(0, STORE_NAME_LIMIT).map((name) => (
+              <Text key={name} style={styles.statusStore} numberOfLines={1}>
+                • {name}
+              </Text>
+            ))}
+            {storeNames.length > STORE_NAME_LIMIT && (
+              <Text style={styles.statusStore}>
+                ほか {storeNames.length - STORE_NAME_LIMIT} 件
+              </Text>
+            )}
+          </View>
         )}
       </View>
       <Ionicons name="chevron-forward" size={14} color={isAlert ? color.orange200 : color.cyan300} />
@@ -404,12 +424,12 @@ const styles = StyleSheet.create({
   statusIcon: { borderRadius: 999, padding: 6 },
   statusLabel: { fontFamily: font.uiBold, fontSize: 11, color: color.textMuted },
   statusValue: { fontFamily: font.uiBold, fontSize: 13, marginTop: 2 },
-  statusStores: {
+  statusStores: { marginTop: 2 },
+  statusStore: {
     fontFamily: font.ui,
     fontSize: 10,
     lineHeight: 14,
     color: color.textMuted,
-    marginTop: 2,
   },
   rowTitle: { fontFamily: font.uiBold, fontSize: 14, color: color.textMain },
   rowMetaRow: { flexDirection: "row", gap: spacing.sm, marginTop: 2 },
