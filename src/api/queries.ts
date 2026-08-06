@@ -20,7 +20,8 @@ import type {
   FundEntry,
   FundListItem,
   HomeSummary,
-  Invitation,
+  JoinRequest,
+  MyJoinRequest,
   LaundryState,
   MachineBreakdown,
   MembersResponse,
@@ -807,9 +808,11 @@ export function useSetCollectMethod() {
 
 export const settingsKeys = {
   members: ["org", "members"] as const,
-  invitations: ["org", "invitations"] as const,
+  /** 保留中の参加申請（013）。⚠️ オーナー以外には空配列が返る */
+  joinRequests: ["org", "join-requests"] as const,
+  /** 自分が出している参加申請（013）。⚠️ 無いことは正常（null） */
+  myJoinRequest: ["org", "join", "mine"] as const,
   schedule: ["org", "collect-schedule"] as const,
-  joinPassword: ["org", "join-password"] as const,
   messages: ["org", "messages"] as const,
   deletionSummary: ["account", "deletion-summary"] as const,
 };
@@ -870,30 +873,16 @@ export function useMembers(enabled = true) {
   });
 }
 
-export function useInvitations(enabled = true) {
+/**
+ * 自分の組織に届いている参加申請（013）。
+ * ⚠️ **オーナー以外には空配列が返る**（403 ではない）。承認できない人に
+ *    一覧だけ見せると、押しても失敗するボタンを出すことになるため。
+ */
+export function useJoinRequests(enabled = true) {
   return useQuery({
-    queryKey: settingsKeys.invitations,
-    queryFn: () => apiFetch<Invitation[]>("/org/invitations"),
+    queryKey: settingsKeys.joinRequests,
+    queryFn: () => apiFetch<JoinRequest[]>("/org/join-requests"),
     enabled,
-  });
-}
-
-/** 組織参加パスワード。admin 以外は 403 になるので enabled で止めること */
-export function useJoinPassword(enabled = true) {
-  return useQuery({
-    queryKey: settingsKeys.joinPassword,
-    queryFn: () => apiFetch<string | null>("/org/join-password"),
-    enabled,
-  });
-}
-
-export function useSetJoinPassword() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    // 空文字を送ると削除になる（Web の「空欄で保存すると削除」と同じ）
-    mutationFn: (password: string) =>
-      apiFetch("/org/join-password", { method: "PUT", body: { password } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKeys.joinPassword }),
   });
 }
 
@@ -993,26 +982,50 @@ export function useUpdateOrgExpensesEnabled() {
 }
 
 /**
- * メンバー招待。Web は招待レコードの作成とメール送信を 2 回に分けて呼ぶが、
- * アプリからは BFF の 1 リクエストで両方行う（/api/invite は Cookie 前提のため）。
+ * 参加申請を承認・却下する（013）。**オーナーだけ通る。**
+ *
+ * ⚠️ **メンバーが増える経路はこれだけ**になった（2026-08-06 にメール招待と
+ *    参加パスワードを畳んだ）。プランの人数制限もサーバのここ 1 か所で見ている。
+ * ⚠️ 承認するとメンバー一覧も変わるので、**両方を無効化する。**
  */
-export function useInviteMember() {
+export function useDecideJoinRequest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ email, role }: { email: string; role: Role }) =>
-      apiFetch<{ token: string; emailSent: boolean }>("/org/invitations", {
+    mutationFn: ({
+      id,
+      decision,
+      role,
+    }: {
+      id: string;
+      decision: "approve" | "reject";
+      role?: Exclude<Role, "admin">;
+    }) =>
+      apiFetch<{ decision: string; role?: Role; name?: string }>(`/org/join-requests/${id}`, {
         method: "POST",
-        body: { email, role },
+        body: { decision, role },
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKeys.invitations }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: settingsKeys.joinRequests });
+      queryClient.invalidateQueries({ queryKey: settingsKeys.members });
+    },
   });
 }
 
-export function useDeleteInvitation() {
+/** 自分が出している参加申請（013）。⚠️ 無ければ null */
+export function useMyJoinRequest(enabled = true) {
+  return useQuery({
+    queryKey: settingsKeys.myJoinRequest,
+    queryFn: () => apiFetch<MyJoinRequest | null>("/org/join"),
+    enabled,
+  });
+}
+
+/** 申請を取り下げる。⚠️ 別の組織へ申請し直す手段がこれしか無い */
+export function useCancelJoinRequest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiFetch(`/org/invitations/${id}`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKeys.invitations }),
+    mutationFn: () => apiFetch("/org/join", { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsKeys.myJoinRequest }),
   });
 }
 

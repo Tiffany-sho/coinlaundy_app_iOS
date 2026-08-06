@@ -5,7 +5,12 @@ import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "@/api/client";
-import { queryKeys, useBootstrap } from "@/api/queries";
+import {
+  queryKeys,
+  useBootstrap,
+  useCancelJoinRequest,
+  useMyJoinRequest,
+} from "@/api/queries";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button, GradientHeaderCard, Screen } from "@/components/common/ui";
 import { Field, FormError, Input } from "@/components/common/form";
@@ -37,11 +42,19 @@ export default function JoinOrganization() {
   const isAdmin = role === "admin";
 
   const [adminEmail, setAdminEmail] = useState("");
-  const [joinPassword, setJoinPassword] = useState("");
   const [orgName, setOrgName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [joined, setJoined] = useState(false);
+
+  /*
+    自分が出している参加申請（013）。⚠️ **無いことは正常**（`null`）。
+    ⚠️ **開いた時点で引く。** 引かないと、申請済みの人がこの画面を開き直すたびに
+       空のフォームを見て、同じ申請を何度も送ろうとする（サーバは
+       「すでに申請中です」で弾くので、エラーだけ見せることになる）。
+  */
+  const myRequest = useMyJoinRequest();
+  const cancelRequest = useCancelJoinRequest();
+  const pendingRequest = myRequest.data ?? null;
 
   async function submit(fn: () => Promise<unknown>, onDone: () => void) {
     setError(null);
@@ -91,23 +104,42 @@ export default function JoinOrganization() {
             </View>
           </GradientHeaderCard>
 
-          {joined ? (
+          {/*
+            ⚠️ **申請しただけではまだ入れていない**（013、2026-08-06）。
+               それまでは参加パスワードで**即座にメンバーになれた**ので
+               「参加が完了しました」で正しかったが、今はオーナーの承認待ち。
+               **「完了しました」に戻さないこと。** 入れたと誤解される。
+            ⚠️ **役割を書かない。** 権限は承認する側が承認時に選ぶので、
+               申請した時点ではまだ決まっていない。
+          */}
+          {pendingRequest ? (
             <View style={[styles.card, { alignItems: "center", gap: spacing.md }]}>
               <View style={styles.successIcon}>
-                <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                <Ionicons name="time-outline" size={20} color="#FFFFFF" />
               </View>
-              <Text style={styles.cardTitle}>組織への参加が完了しました</Text>
+              <Text style={styles.cardTitle}>参加を申請しました</Text>
               <Text style={styles.lead}>
-                {/* ⚠️ 役割を決め打ちにしない。閲覧者にも「集金担当者として登録されました」
-                       と出てしまう（ROLE_LABEL は上で viewer も持っている） */}
-                {ROLE_LABEL[role] ?? role}としてメンバー登録されました。ホームへ進んでください。
+                {pendingRequest.orgName ? `「${pendingRequest.orgName}」の` : ""}
+                オーナーが承認すると参加できます。承認されたら「確認する」を押してください。
               </Text>
               <Button
-                label="ホームへ"
+                label="確認する"
                 variant="gradient"
-                icon="arrow-forward"
+                icon="refresh"
                 onPress={() => router.replace("/")}
                 style={{ alignSelf: "stretch", marginTop: spacing.sm }}
+              />
+              {/* ⚠️ 取り下げを必ず置く。別の組織へ申請し直す手段がこれしか無い */}
+              <Button
+                label="申請を取り下げる"
+                variant="ghost"
+                loading={cancelRequest.isPending}
+                onPress={() =>
+                  cancelRequest.mutate(undefined, {
+                    onError: () => setError("申請を取り下げられませんでした"),
+                  })
+                }
+                style={{ alignSelf: "stretch" }}
               />
             </View>
           ) : isAdmin ? (
@@ -117,7 +149,7 @@ export default function JoinOrganization() {
                 <Text style={styles.cardTitle}>組織を作成する</Text>
               </View>
               <Text style={[styles.lead, { textAlign: "left", marginBottom: spacing.lg }]}>
-                組織を作ると、店舗と集金データをチームで共有できます。後からスタッフを招待できます。
+                組織を作ると、店舗と集金データをチームで共有できます。スタッフからの参加申請を承認して追加できます。
               </Text>
 
               <Field label="組織名（会社名・店舗グループ名など）">
@@ -152,7 +184,7 @@ export default function JoinOrganization() {
                 <Text style={styles.cardTitle}>組織に参加する</Text>
               </View>
               <Text style={[styles.lead, { textAlign: "left", marginBottom: spacing.lg }]}>
-                管理者のメールアドレスと組織パスワードを入力してください。管理者から事前に共有を受けてください。
+                管理者のメールアドレスを入力して申請してください。組織のオーナーが承認すると参加できます。
               </Text>
 
               <View style={{ gap: spacing.lg }}>
@@ -167,32 +199,22 @@ export default function JoinOrganization() {
                   />
                 </Field>
 
-                <Field label="組織パスワード">
-                  <Input
-                    value={joinPassword}
-                    onChangeText={setJoinPassword}
-                    placeholder="管理者から共有されたパスワード"
-                    secureTextEntry
-                    autoCapitalize="none"
-                  />
-                </Field>
-
                 {error && <FormError message={error} />}
 
                 <Button
-                  label="参加する"
+                  label="参加を申請する"
                   variant="gradient"
                   icon="person-add-outline"
                   loading={submitting}
-                  disabled={adminEmail.trim().length === 0 || joinPassword.trim().length === 0}
+                  disabled={adminEmail.trim().length === 0}
                   onPress={() =>
                     submit(
                       () =>
                         apiFetch("/org/join", {
                           method: "POST",
-                          body: { adminEmail: adminEmail.trim(), password: joinPassword.trim() },
+                          body: { adminEmail: adminEmail.trim() },
                         }),
-                      () => setJoined(true)
+                      () => void myRequest.refetch()
                     )
                   }
                 />

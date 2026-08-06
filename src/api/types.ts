@@ -455,14 +455,28 @@ export type MembersResponse = {
   myRole: Role;
 };
 
-export type Invitation = {
+/**
+ * 組織に届いている参加申請（013）。`GET /org/join-requests`。
+ *
+ * ⚠️ **メールアドレスは入っていない。** 一覧は組織のオーナーが見るものだが、
+ *    表示名で足りるうえ、連絡先を配る理由が無い（アクションログと同じ判断）。
+ * ⚠️ **権限はここに無い。** 承認する側が承認のときに選ぶ。
+ */
+export type JoinRequest = {
   id: string;
-  email: string;
-  role: Role;
-  created_at: string;
-  expires_at: string | null;
-  accepted_at: string | null;
-  token: string;
+  /** 申請した人の表示名。⚠️ 未設定なら「名称未設定」がサーバから来る */
+  name: string;
+  /** epoch ミリ秒。⚠️ ISO 文字列を渡さない（Hermes がパースできない） */
+  createdAt: number;
+};
+
+/** 自分が出している参加申請（013）。`GET /org/join`。⚠️ 無ければ null */
+export type MyJoinRequest = {
+  id: string;
+  status: "pending";
+  /** 申請先の組織名。⚠️ 引けなかったときは null */
+  orgName: string | null;
+  createdAt: number;
 };
 
 /**

@@ -11,8 +11,11 @@ export const ROLE_INFO: Record<Role, { label: string; bg: string; fg: string }> 
   viewer: { label: "閲覧者", bg: color.gray100, fg: color.gray700 },
 };
 
-/** ⚠️ 招待できるのは集金担当者と閲覧者だけ（Web の inviteMember が admin を拒否する） */
-export const INVITABLE_ROLES: Role[] = ["collecter", "viewer"];
+/**
+ * 割り当てられる権限。**メンバーの権限変更と、参加申請の承認（013）で使う。**
+ * ⚠️ **`admin` を入れないこと。** オーナーの座を配れてしまう。
+ */
+export const ASSIGNABLE_ROLES: Role[] = ["collecter", "viewer"];
 
 /** ⚠️ サーバが返した日本語をそのまま出す。言い換えると何を直せばいいか分からなくなる */
 export function errorText(error: unknown, fallback: string): string {
