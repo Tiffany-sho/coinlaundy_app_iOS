@@ -617,6 +617,38 @@ npx eas-cli env:set --environment production --name EXPO_PUBLIC_SUPABASE_URL \
 - **Server Actions のモジュールを触ったら `npm run build` まで通すこと。**
   型チェックとテストだけでは足りない
 
+## PostgREST の埋め込みは、外部キーが 2 本あると失敗する
+
+⚠️ **同じテーブルへの外部キーが 2 本以上あると、素の `profiles(...)` では
+「どちらの関係か決められない」というエラーになる。**
+
+2026-08-06 に `organization_join_requests`（013）で踏んだ。この表は
+`user_id` と `decided_by` の**両方が `profiles` を参照している。**
+
+```js
+// ✗ どちらの関係か決められずエラー。行は 1 件も返らない
+.select("id, created_at, profiles(username, full_name)")
+// ✓ 関係を名指しする
+.select("id, created_at, profiles!user_id(username, full_name)")
+```
+
+⚠️ **症状が「0 件」と区別が付かない。** 呼び出し側が
+
+```js
+if (res.data) setRows(res.data);   // ← error のときは何も起きない
+```
+
+と書いていると、**エラーが握り潰されて「申請がまだ無い」ようにしか見えない。**
+セクションごと描かれないので**画面に手掛かりが 1 つも残らない。**
+受け側は必ず `setRows(res.data ?? [])` + `if (res.error) …` の形にすること。
+
+⚠️ **後から列を足したときに壊れる。** 作った時点では 1 本でも、
+`decided_by` のような「操作した人」を足した瞬間に 2 本になる。
+**同じテーブルへの外部キーを増やすときは、既存の埋め込みを見直すこと。**
+
+⚠️ **既存のコードは名指ししている**（`profiles!invited_by(username)`）。
+真似ること。
+
 ## 列を足したときに「権限が下がる」「組織が消える」
 
 ⚠️ **`getMyOrganization` の select に新しい列を混ぜない。**
