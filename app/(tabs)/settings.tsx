@@ -110,18 +110,18 @@ export default function Settings() {
         </View>
 
         {/*
-          ⚠️ ここに出せるのはプライバシーポリシーだけ。
-
-          Web の /terms は「Proプラン ¥780/月」「クレジットカードによる月次自動引き落とし」
-          「解約はマイページの『プランを管理する』から」を、/tokushoho は販売価格と決済条件を、
-          /help は「アップグレードができます」を含む。
-          これらをアプリ内 WebView で表示すると Guideline 3.1.3(a)（外部購入への誘導）に触れる。
-
-          リンクを戻すには、価格・決済・アップグレードへの言及を除いた
-          アプリ専用ページ（例: /terms/app）を Web 側に用意すること。
+          ⚠️ 利用規約（EULA）は Apple 標準 EULA を指す（webview.tsx の PAGES.eula）。
+             Web の /terms・/tokushoho・/help は価格・決済・アップグレード文言を含み、
+             アプリ内 WebView で表示すると Guideline 3.1.3(a)（外部購入への誘導）に触れるため出せない。
+             Apple 標準 EULA は課金文言を含まず、Guideline 3.1.2(c) が求める
+             「利用規約（EULA）への機能するリンク」を満たす。プライバシーと EULA の 2 本は必須。
         */}
         <View style={{ marginTop: spacing.lg }}>
           <ListCard icon="document-text-outline" title="その他">
+            <LinkRow
+              label="利用規約（EULA）"
+              onPress={() => router.push("/settings/webview?page=eula" as Href)}
+            />
             <LinkRow
               label="プライバシーポリシー"
               onPress={() => router.push("/settings/webview?page=privacy" as Href)}
