@@ -6,25 +6,35 @@ import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/components/common/ui";
 import { color, font, spacing, HIT_SIZE } from "@/theme/tokens";
 
+const BASE_URL = "https://www.collecie.com";
+
 /**
  * 利用規約・プライバシーポリシー・特商法。
- * アプリ内で作り直さず、Web の該当ページをそのまま表示する（設計図 1 章）。
+ * アプリ内で作り直さず、該当ページをそのまま表示する（設計図 1 章）。
+ *
+ * ⚠️ eula は Web の /terms ではなく Apple 標準 EULA を指す。
+ *    Web の /terms は「Proプラン ¥780/月」等の価格・決済・アップグレード文言を含み、
+ *    アプリ内で表示すると Guideline 3.1.3(a)（外部購入への誘導）に触れるため使えない。
+ *    Apple 標準 EULA は課金文言を含まず、Guideline 3.1.2(c) が求める
+ *    「利用規約（EULA）への機能するリンク」をそのまま満たす。
  */
-const PAGES: Record<string, { title: string; path: string }> = {
-  terms: { title: "利用規約", path: "/terms" },
-  privacy: { title: "プライバシーポリシー", path: "/privacy" },
-  tokushoho: { title: "特定商取引法に基づく表記", path: "/tokushoho" },
-  help: { title: "ヘルプ", path: "/help" },
+const PAGES: Record<string, { title: string; uri: string }> = {
+  terms: { title: "利用規約", uri: `${BASE_URL}/terms` },
+  privacy: { title: "プライバシーポリシー", uri: `${BASE_URL}/privacy` },
+  tokushoho: { title: "特定商取引法に基づく表記", uri: `${BASE_URL}/tokushoho` },
+  help: { title: "ヘルプ", uri: `${BASE_URL}/help` },
+  eula: {
+    title: "利用規約（EULA）",
+    uri: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/",
+  },
 };
-
-const BASE_URL = "https://www.collecie.com";
 
 export default function SettingsWebView() {
   const { page } = useLocalSearchParams<{ page: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const target = PAGES[page ?? "terms"] ?? PAGES.terms;
+  const target = PAGES[page ?? "privacy"] ?? PAGES.privacy;
 
   return (
     <Screen>
@@ -35,7 +45,7 @@ export default function SettingsWebView() {
         <Text style={styles.headerTitle} numberOfLines={1}>{target.title}</Text>
         <View style={styles.headerButton} />
       </View>
-      <WebView source={{ uri: `${BASE_URL}${target.path}` }} style={{ flex: 1 }} />
+      <WebView source={{ uri: target.uri }} style={{ flex: 1 }} />
     </Screen>
   );
 }
