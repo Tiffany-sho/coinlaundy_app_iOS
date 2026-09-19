@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.collecie.app",
-      "buildNumber": "1",
+      "buildNumber": "18",
       "usesAppleSignIn": true,
       "associatedDomains": ["applinks:www.collecie.com"],
       "infoPlist": {
