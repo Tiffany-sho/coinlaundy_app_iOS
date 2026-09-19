@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -32,8 +32,9 @@ import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
  *
  * 見出し（「2026年 7月」）を押すと年 → 月と選び直せる。
  * 過去データの一括入力で数年前へ飛ぶのに月送りだけでは回数がかかりすぎるため。
- * ⚠️ 年の一覧は新しい年を先頭にした降順。数年前がスクロールなしで押せる並びなので、
- *    昇順に変えないこと。
+ * ⚠️ 年の一覧は新しい年を先頭にした降順。昇順に変えないこと。
+ *    先頭は未来 10 年ぶんなので、開いた時点で選択中の年まで自動スクロールする。
+ *    これが無いと 2036 年から始まって見え、過去に遡る用途で毎回スクロールが要る。
  */
 
 const WEEK_DAYS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -60,6 +61,11 @@ const DAY_COLOR: (string | null)[] = [
  */
 const YEARS_BACK = 50;
 const YEARS_AHEAD = 10;
+
+/** 年の一覧の段組み。スクロール位置を出すのに使うので、styles.jumpCell と必ず揃える */
+const YEAR_COLUMNS = 4;
+/** jumpChip の minHeight 40 + jumpCell の上下 padding 4+4 */
+const YEAR_ROW_HEIGHT = 48;
 
 type JstParts = { year: number; month: number; day: number };
 
@@ -146,6 +152,18 @@ export function CalendarPicker({
     for (let y = today.year + YEARS_AHEAD; y >= today.year - YEARS_BACK; y -= 1) list.push(y);
     return list;
   }, [today.year]);
+
+  const yearScrollRef = useRef<ScrollView>(null);
+
+  /** 選択中の年がいちばん上に来るよう合わせる。年の一覧を開いた直後に呼ぶ */
+  const scrollToSelectedYear = useCallback(() => {
+    const index = years.indexOf(view.year);
+    if (index < 0) return;
+    yearScrollRef.current?.scrollTo({
+      y: Math.floor(index / YEAR_COLUMNS) * YEAR_ROW_HEIGHT,
+      animated: false,
+    });
+  }, [years, view.year]);
 
   function pickYear(year: number) {
     Haptics.selectionAsync().catch(() => {});
@@ -238,8 +256,17 @@ export function CalendarPicker({
     return (
       <View style={[styles.panel, style]}>
         {header}
-        {/* 61 年ぶんあるので縦スクロール。降順なので直近の数年は最初の 2 行に入る */}
-        <ScrollView style={styles.jumpScroll} contentContainerStyle={styles.jumpGrid}>
+        {/*
+          61 年ぶんあるので縦スクロール。
+          onContentSizeChange は中身が並び終わってから来るので、ここで位置を合わせる
+          （useEffect だと web でまだ高さが 0 のことがあり、スクロールが効かない）
+        */}
+        <ScrollView
+          ref={yearScrollRef}
+          style={styles.jumpScroll}
+          contentContainerStyle={styles.jumpGrid}
+          onContentSizeChange={scrollToSelectedYear}
+        >
           {years.map((y) => {
             const isSelected = y === view.year;
             return (
