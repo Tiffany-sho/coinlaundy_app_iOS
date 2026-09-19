@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -28,6 +29,11 @@ import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
  *
  * npm パッケージを足さずに済ませるため View と Text だけで組んでいる。
  * Web ビルド（スマホのブラウザ）でも動くよう、iOS 専用 API は使っていない。
+ *
+ * 見出し（「2026年 7月」）を押すと年 → 月と選び直せる。
+ * 過去データの一括入力で数年前へ飛ぶのに月送りだけでは回数がかかりすぎるため。
+ * ⚠️ 年の一覧は新しい年を先頭にした降順。数年前がスクロールなしで押せる並びなので、
+ *    昇順に変えないこと。
  */
 
 const WEEK_DAYS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -117,6 +123,9 @@ export function CalendarPicker({
     setView({ year: next.year, month: next.month });
   }, [value]);
 
+  /** "day" = 日グリッド、"year" = 年の一覧、"month" = 12 か月グリッド */
+  const [mode, setMode] = useState<"day" | "year" | "month">("day");
+
   const minIndex = monthIndex(today.year - YEARS_BACK, 1);
   const maxIndex = monthIndex(today.year + YEARS_AHEAD, 12);
   const current = monthIndex(view.year, view.month);
@@ -130,6 +139,25 @@ export function CalendarPicker({
     for (let d = 1; d <= last; d += 1) list.push(d);
     return list;
   }, [view.year, view.month]);
+
+  /** 選べる年。新しい年が先頭（降順） */
+  const years = useMemo(() => {
+    const list: number[] = [];
+    for (let y = today.year + YEARS_AHEAD; y >= today.year - YEARS_BACK; y -= 1) list.push(y);
+    return list;
+  }, [today.year]);
+
+  function pickYear(year: number) {
+    Haptics.selectionAsync().catch(() => {});
+    setView((v) => ({ ...v, year }));
+    setMode("month");
+  }
+
+  function pickMonth(month: number) {
+    Haptics.selectionAsync().catch(() => {});
+    setView((v) => ({ ...v, month }));
+    setMode("day");
+  }
 
   function shiftMonth(delta: number) {
     const next = monthIndex(view.year, view.month) + delta;
@@ -149,30 +177,44 @@ export function CalendarPicker({
   function jumpToToday() {
     Haptics.selectionAsync().catch(() => {});
     setView({ year: today.year, month: today.month });
+    setMode("day");
     onChange(todayEpoch);
   }
 
-  return (
-    <View style={[styles.panel, style]}>
-      <View style={styles.navRow}>
-        <Pressable
-          onPress={() => shiftMonth(-1)}
-          disabled={current <= minIndex}
-          accessibilityRole="button"
-          accessibilityLabel="前の月"
-          style={({ pressed }) => [
-            styles.navButton,
-            pressed && { opacity: 0.7 },
-            current <= minIndex && styles.navButtonDisabled,
-          ]}
-        >
-          <Ionicons name="chevron-back" size={20} color={color.teal} />
-        </Pressable>
+  /** 見出し。押すと年 → 月と絞り込める */
+  const header = (
+    <View style={styles.navRow}>
+      <Pressable
+        onPress={() => (mode === "day" ? shiftMonth(-1) : setMode(mode === "month" ? "year" : "day"))}
+        disabled={mode === "day" && current <= minIndex}
+        accessibilityRole="button"
+        accessibilityLabel={mode === "day" ? "前の月" : "戻る"}
+        style={({ pressed }) => [
+          styles.navButton,
+          pressed && { opacity: 0.7 },
+          mode === "day" && current <= minIndex && styles.navButtonDisabled,
+        ]}
+      >
+        <Ionicons name="chevron-back" size={20} color={color.teal} />
+      </Pressable>
 
+      <Pressable
+        onPress={() => setMode(mode === "day" ? "year" : "day")}
+        accessibilityRole="button"
+        accessibilityLabel={mode === "day" ? "年月を選ぶ" : "カレンダーに戻る"}
+        style={({ pressed }) => [styles.navLabelButton, pressed && { opacity: 0.6 }]}
+      >
         <Text style={styles.navLabel}>
-          {view.year}年 {view.month}月
+          {mode === "year" ? "年を選ぶ" : mode === "month" ? `${view.year}年` : `${view.year}年 ${view.month}月`}
         </Text>
+        <Ionicons
+          name={mode === "day" ? "chevron-down" : "chevron-up"}
+          size={14}
+          color={color.tealDeeper}
+        />
+      </Pressable>
 
+      {mode === "day" ? (
         <Pressable
           onPress={() => shiftMonth(1)}
           disabled={current >= maxIndex}
@@ -186,7 +228,74 @@ export function CalendarPicker({
         >
           <Ionicons name="chevron-forward" size={20} color={color.teal} />
         </Pressable>
+      ) : (
+        <View style={styles.navButton} />
+      )}
+    </View>
+  );
+
+  if (mode === "year") {
+    return (
+      <View style={[styles.panel, style]}>
+        {header}
+        {/* 61 年ぶんあるので縦スクロール。降順なので直近の数年は最初の 2 行に入る */}
+        <ScrollView style={styles.jumpScroll} contentContainerStyle={styles.jumpGrid}>
+          {years.map((y) => {
+            const isSelected = y === view.year;
+            return (
+              <Pressable
+                key={y}
+                onPress={() => pickYear(y)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`${y}年`}
+                style={({ pressed }) => [styles.jumpCell, pressed && { opacity: 0.6 }]}
+              >
+                <View style={[styles.jumpChip, isSelected && styles.jumpChipSelected]}>
+                  <Text style={[styles.jumpLabel, isSelected && styles.jumpLabelSelected]}>
+                    {y}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
+    );
+  }
+
+  if (mode === "month") {
+    return (
+      <View style={[styles.panel, style]}>
+        {header}
+        <View style={styles.jumpGrid}>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+            const isSelected = m === view.month;
+            return (
+              <Pressable
+                key={m}
+                onPress={() => pickMonth(m)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`${m}月`}
+                style={({ pressed }) => [styles.jumpCell, pressed && { opacity: 0.6 }]}
+              >
+                <View style={[styles.jumpChip, isSelected && styles.jumpChipSelected]}>
+                  <Text style={[styles.jumpLabel, isSelected && styles.jumpLabelSelected]}>
+                    {m}月
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.panel, style]}>
+      {header}
 
       <View style={styles.weekRow}>
         {WEEK_DAYS.map((label, i) => (
@@ -278,7 +387,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   navButtonDisabled: { opacity: 0.35 },
+  navLabelButton: { flexDirection: "row", alignItems: "center", gap: 4, minHeight: HIT_SIZE, paddingHorizontal: spacing.sm },
   navLabel: { fontFamily: font.uiBold, fontSize: 16, color: color.tealDeeper },
+
+  // 年 / 月のジャンプ用。4 列で並べる
+  jumpScroll: { maxHeight: 260 },
+  jumpGrid: { flexDirection: "row", flexWrap: "wrap" },
+  jumpCell: { width: "25%", paddingVertical: 4, alignItems: "center", justifyContent: "center" },
+  jumpChip: {
+    minWidth: 62,
+    minHeight: 40,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  jumpChipSelected: { backgroundColor: color.teal },
+  jumpLabel: { fontFamily: font.mono, fontSize: 14, color: color.textMain },
+  jumpLabelSelected: { color: "#FFFFFF", fontFamily: font.uiBold },
 
   weekRow: { flexDirection: "row", marginBottom: spacing.xs },
   weekLabel: { fontFamily: font.uiBold, fontSize: 12 },
