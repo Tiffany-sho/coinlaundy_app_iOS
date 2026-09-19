@@ -352,7 +352,14 @@ export default function FundDetailScreen() {
               {calendarOpen && canEdit && (
                 <CalendarPicker
                   value={dateEpoch ?? savedDate!}
-                  onChange={(next) => setDateEpoch(next)}
+                  onChange={(next) => {
+                    setDateEpoch(next);
+                    // 日を選んだら畳む（集金入力・過去データ入力と同じ挙動）。
+                    // ⚠️ 畳むだけで保存はしない。dateEpoch は変わらないので
+                    //    dateDirty が立ったまま「この日付で保存」が出続ける。
+                    //    カレンダーが消えるぶん、その確定ボタンが見えやすくなる。
+                    setCalendarOpen(false);
+                  }}
                   style={{ marginTop: spacing.sm }}
                 />
               )}
