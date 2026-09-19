@@ -111,11 +111,20 @@ export function formatJstDateLong(epochMs: number): string {
 export function CalendarPicker({
   value,
   onChange,
+  minEpoch,
   style,
 }: {
   /** 選択中の日。JST 深夜 0 時の epoch（ミリ秒） */
   value: number;
   onChange: (epochMs: number) => void;
+  /**
+   * 選べるいちばん古い日（JST 深夜 0 時の epoch）。省略すると過去 50 年。
+   *
+   * ⚠️ 集金データを書き込む画面は、収益グラフが遡れる範囲を渡すこと。
+   *    それより古い日を入れても集計に出ず、登録できたのにどこにも現れない状態になる。
+   *    （monthIndex.ts の earliestSelectableEpoch() を使う）
+   */
+  minEpoch?: number;
   style?: StyleProp<ViewStyle>;
 }) {
   const selected = jstParts(value);
@@ -132,9 +141,18 @@ export function CalendarPicker({
   /** "day" = 日グリッド、"year" = 年の一覧、"month" = 12 か月グリッド */
   const [mode, setMode] = useState<"day" | "year" | "month">("day");
 
-  const minIndex = monthIndex(today.year - YEARS_BACK, 1);
+  // minEpoch が渡されたら、既定の下限（過去 50 年）より手前では切り詰める
+  const floor = useMemo(() => (minEpoch === undefined ? null : jstParts(minEpoch)), [minEpoch]);
+  const minIndex = floor
+    ? monthIndex(floor.year, floor.month)
+    : monthIndex(today.year - YEARS_BACK, 1);
   const maxIndex = monthIndex(today.year + YEARS_AHEAD, 12);
   const current = monthIndex(view.year, view.month);
+
+  /** その日が下限より前なら選ばせない */
+  function isBeforeFloor(year: number, month: number, day: number): boolean {
+    return minEpoch !== undefined && getEpochTimeInSeconds(year, month, day) < minEpoch;
+  }
 
   /** 先頭の空きマス + 1 日〜末日。7 列に並べる */
   const cells = useMemo(() => {
@@ -148,10 +166,11 @@ export function CalendarPicker({
 
   /** 選べる年。新しい年が先頭（降順） */
   const years = useMemo(() => {
+    const oldest = floor ? floor.year : today.year - YEARS_BACK;
     const list: number[] = [];
-    for (let y = today.year + YEARS_AHEAD; y >= today.year - YEARS_BACK; y -= 1) list.push(y);
+    for (let y = today.year + YEARS_AHEAD; y >= oldest; y -= 1) list.push(y);
     return list;
-  }, [today.year]);
+  }, [today.year, floor]);
 
   const yearScrollRef = useRef<ScrollView>(null);
 
@@ -269,14 +288,20 @@ export function CalendarPicker({
         >
           {years.map((y) => {
             const isSelected = y === view.year;
+            const disabled = isBeforeFloor(y, 12, 31);
             return (
               <Pressable
                 key={y}
                 onPress={() => pickYear(y)}
+                disabled={disabled}
                 accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
+                accessibilityState={{ selected: isSelected, disabled }}
                 accessibilityLabel={`${y}年`}
-                style={({ pressed }) => [styles.jumpCell, pressed && { opacity: 0.6 }]}
+                style={({ pressed }) => [
+                  styles.jumpCell,
+                  pressed && { opacity: 0.6 },
+                  disabled && styles.jumpCellDisabled,
+                ]}
               >
                 <View style={[styles.jumpChip, isSelected && styles.jumpChipSelected]}>
                   <Text style={[styles.jumpLabel, isSelected && styles.jumpLabelSelected]}>
@@ -298,14 +323,21 @@ export function CalendarPicker({
         <View style={styles.jumpGrid}>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
             const isSelected = m === view.month;
+            // その月の末日でも下限に届かないなら、その月は丸ごと選べない
+            const disabled = isBeforeFloor(view.year, m, daysInMonth(view.year, m));
             return (
               <Pressable
                 key={m}
                 onPress={() => pickMonth(m)}
+                disabled={disabled}
                 accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
+                accessibilityState={{ selected: isSelected, disabled }}
                 accessibilityLabel={`${m}月`}
-                style={({ pressed }) => [styles.jumpCell, pressed && { opacity: 0.6 }]}
+                style={({ pressed }) => [
+                  styles.jumpCell,
+                  pressed && { opacity: 0.6 },
+                  disabled && styles.jumpCellDisabled,
+                ]}
               >
                 <View style={[styles.jumpChip, isSelected && styles.jumpChipSelected]}>
                   <Text style={[styles.jumpLabel, isSelected && styles.jumpLabelSelected]}>
@@ -345,17 +377,23 @@ export function CalendarPicker({
             selected.day === day;
           const isToday =
             today.year === view.year && today.month === view.month && today.day === day;
+          const disabled = isBeforeFloor(view.year, view.month, day);
 
           return (
             <Pressable
               key={day}
               onPress={() => pick(day)}
+              disabled={disabled}
               accessibilityRole="button"
-              accessibilityState={{ selected: isSelected }}
+              accessibilityState={{ selected: isSelected, disabled }}
               accessibilityLabel={`${view.year}年${view.month}月${day}日`}
               // 7 列に割ると 1 マスの幅が 48pt を少し切る端末があるので hitSlop で補う
               hitSlop={4}
-              style={({ pressed }) => [styles.cell, pressed && { opacity: 0.6 }]}
+              style={({ pressed }) => [
+                styles.cell,
+                pressed && { opacity: 0.6 },
+                disabled && styles.cellDisabled,
+              ]}
             >
               <View
                 style={[
@@ -429,6 +467,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  jumpCellDisabled: { opacity: 0.3 },
   jumpChipSelected: { backgroundColor: color.teal },
   jumpLabel: { fontFamily: font.mono, fontSize: 14, color: color.textMain },
   jumpLabelSelected: { color: "#FFFFFF", fontFamily: font.uiBold },
@@ -443,6 +482,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  cellDisabled: { opacity: 0.3 },
   day: {
     width: 38,
     height: 38,

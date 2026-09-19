@@ -38,3 +38,23 @@ export function monthLabel(index: MonthIndex): string {
   const { year, month } = fromMonthIndex(index);
   return `${year}年${month}月`;
 }
+
+/**
+ * 収益グラフが遡れる上限。Web の SegmentedPeriod.jsx の MAX_MONTHS と同じ 60 か月（5 年）。
+ *
+ * ⚠️ 集金データを書き込む画面は、ここより古い日付を入力させないこと。
+ *    入れても月別売上カードに出せず、「登録できたのにどこにも出てこない」状態になる。
+ *    過去データの一括入力（app/backfill/[storeId].tsx）がこれを下限に使っている。
+ *
+ * ⚠️ 月次サマリー表はさらに狭く、BFF の /funds/summary/monthly が前年同月比のため
+ *    過去 2 年に固定されている。2 年より前のぶんは月別売上カードにだけ出る。
+ */
+export const MAX_MONTHS_BACK = 60;
+
+/**
+ * 遡れるいちばん古い日。MAX_MONTHS_BACK か月前の 1 日 0 時（JST）の epoch。
+ * 集金日の入力欄の下限として使う。
+ */
+export function earliestSelectableEpoch(): number {
+  return monthStartEpoch(currentMonthIndex() - (MAX_MONTHS_BACK - 1));
+}

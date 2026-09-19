@@ -25,6 +25,7 @@ export function BackfillRow({
   entry,
   expanded,
   duplicated,
+  minEpoch,
   onToggleCalendar,
   onChangeDate,
   onChangeAmount,
@@ -35,6 +36,8 @@ export function BackfillRow({
   expanded: boolean;
   /** 同じ日付が他の行にもあるとき true。警告表示だけで、登録は妨げない */
   duplicated: boolean;
+  /** 選べるいちばん古い日。収益グラフに出せない古さを塞ぐためのもの */
+  minEpoch: number;
   onToggleCalendar: () => void;
   onChangeDate: (epochMs: number) => void;
   onChangeAmount: (text: string) => void;
@@ -91,6 +94,7 @@ export function BackfillRow({
         <CalendarPicker
           value={entry.date}
           onChange={onChangeDate}
+          minEpoch={minEpoch}
           style={{ marginTop: spacing.sm }}
         />
       )}

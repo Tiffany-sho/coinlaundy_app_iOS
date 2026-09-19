@@ -15,6 +15,7 @@ import { MonthlyStackedBarChart, type StackedPoint, type StackSeries } from "@/c
 import { MonthRangePicker } from "@/components/revenue/MonthRangePicker";
 import {
   currentMonthIndex,
+  MAX_MONTHS_BACK,
   monthKey,
   monthLabel,
   monthStartEpoch,
@@ -38,9 +39,6 @@ import type { StoreRevenue } from "@/api/types";
  *    chart 側は店舗ごとの内訳（byStore）も一緒に返すので、積み上げのために
  *    店舗数ぶんリクエストを投げる必要もない。
  */
-
-/** 遡れる上限。Web の SegmentedPeriod.jsx の MAX_MONTHS と同じ 60 か月（5 年） */
-const MAX_MONTHS_BACK = 60;
 
 /** 既定は直近 12 か月 */
 const DEFAULT_MONTHS = 12;

@@ -16,6 +16,7 @@ import { BackfillRow, type BackfillEntry } from "@/components/backfill/BackfillR
 import { useDialog } from "@/components/common/dialog";
 import { useToast } from "@/components/common/toast";
 import { Button, CenterMessage, MoneyText, Muted, Screen } from "@/components/common/ui";
+import { earliestSelectableEpoch, MAX_MONTHS_BACK } from "@/components/revenue/monthIndex";
 import { enqueue, OUTBOX_LIMIT } from "@/offline/outbox";
 import { useOutbox } from "@/offline/OutboxProvider";
 import { nowInJst, toJstMidnightEpoch } from "@/shared/date";
@@ -42,6 +43,12 @@ export default function Backfill() {
   const { data: store, isLoading } = useStore(storeId);
 
   const todayEpoch = useMemo(() => toJstMidnightEpoch(nowInJst()), []);
+  /**
+   * 選べるいちばん古い日。
+   * ⚠️ これより古い日付を入れても収益グラフに出せないので、最初から選ばせない
+   *    （月別売上カードが遡れるのは MAX_MONTHS_BACK か月ぶんまで）。
+   */
+  const minEpoch = useMemo(() => earliestSelectableEpoch(), []);
   const [rows, setRows] = useState<BackfillEntry[]>(() => [
     { id: makeUuid(), date: todayEpoch, amount: "" },
   ]);
@@ -182,6 +189,7 @@ export default function Backfill() {
             <Ionicons name="information-circle-outline" size={16} color={color.teal} />
             <Text style={styles.noteText}>
               過去分は「集金日」と「合計金額」だけを登録します。機種ごとの内訳は残りません。
+              収益グラフに出せる範囲に合わせ、さかのぼれるのは{Math.floor(MAX_MONTHS_BACK / 12)}年前までです。
             </Text>
           </View>
 
@@ -192,6 +200,7 @@ export default function Backfill() {
               entry={entry}
               expanded={openRowId === entry.id}
               duplicated={duplicatedDates.has(entry.date)}
+              minEpoch={minEpoch}
               onToggleCalendar={() =>
                 setOpenRowId((cur) => (cur === entry.id ? null : entry.id))
               }
