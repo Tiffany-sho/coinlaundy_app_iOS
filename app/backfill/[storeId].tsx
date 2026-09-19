@@ -195,7 +195,14 @@ export default function Backfill() {
               onToggleCalendar={() =>
                 setOpenRowId((cur) => (cur === entry.id ? null : entry.id))
               }
-              onChangeDate={(date) => updateRow(entry.id, { date })}
+              onChangeDate={(date) => {
+                updateRow(entry.id, { date });
+                // 日を選んだらカレンダーは閉じる。行が多いと開きっぱなしでは
+                // 次の行に届くまで延々スクロールすることになるため。
+                // ⚠️ 年・月を選んだ時点では閉じない（CalendarPicker が onChange を
+                //    呼ぶのは日を選んだときと「今日」だけ）
+                setOpenRowId(null);
+              }}
               onChangeAmount={(amount) =>
                 // 数字以外は捨てる。全角や記号が混ざると Number() が NaN になるため
                 updateRow(entry.id, { amount: amount.replace(/[^0-9]/g, "") })
