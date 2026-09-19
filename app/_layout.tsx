@@ -58,6 +58,11 @@ export default function RootLayout() {
                 name="collect/[storeId]"
                 options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
               />
+              {/* 過去データの一括入力。集金入力と同じ扱いにする */}
+              <Stack.Screen
+                name="backfill/[storeId]"
+                options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
+              />
             </Stack>
             </ToastProvider>
             </DialogProvider>

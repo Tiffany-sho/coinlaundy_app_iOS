@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -28,6 +29,12 @@ import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
  *
  * npm パッケージを足さずに済ませるため View と Text だけで組んでいる。
  * Web ビルド（スマホのブラウザ）でも動くよう、iOS 専用 API は使っていない。
+ *
+ * 見出し（「2026年 7月」）を押すと年 → 月と選び直せる。
+ * 過去データの一括入力で数年前へ飛ぶのに月送りだけでは回数がかかりすぎるため。
+ * ⚠️ 年の一覧は新しい年を先頭にした降順。昇順に変えないこと。
+ *    先頭は未来 10 年ぶんなので、開いた時点で選択中の年まで自動スクロールする。
+ *    これが無いと 2036 年から始まって見え、過去に遡る用途で毎回スクロールが要る。
  */
 
 const WEEK_DAYS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -54,6 +61,11 @@ const DAY_COLOR: (string | null)[] = [
  */
 const YEARS_BACK = 50;
 const YEARS_AHEAD = 10;
+
+/** 年の一覧の段組み。スクロール位置を出すのに使うので、styles.jumpCell と必ず揃える */
+const YEAR_COLUMNS = 4;
+/** jumpChip の minHeight 40 + jumpCell の上下 padding 4+4 */
+const YEAR_ROW_HEIGHT = 48;
 
 type JstParts = { year: number; month: number; day: number };
 
@@ -99,11 +111,20 @@ export function formatJstDateLong(epochMs: number): string {
 export function CalendarPicker({
   value,
   onChange,
+  minEpoch,
   style,
 }: {
   /** 選択中の日。JST 深夜 0 時の epoch（ミリ秒） */
   value: number;
   onChange: (epochMs: number) => void;
+  /**
+   * 選べるいちばん古い日（JST 深夜 0 時の epoch）。省略すると過去 50 年。
+   *
+   * ⚠️ 集金データを書き込む画面は、収益グラフが遡れる範囲を渡すこと。
+   *    それより古い日を入れても集計に出ず、登録できたのにどこにも現れない状態になる。
+   *    （monthIndex.ts の earliestSelectableEpoch() を使う）
+   */
+  minEpoch?: number;
   style?: StyleProp<ViewStyle>;
 }) {
   const selected = jstParts(value);
@@ -117,9 +138,21 @@ export function CalendarPicker({
     setView({ year: next.year, month: next.month });
   }, [value]);
 
-  const minIndex = monthIndex(today.year - YEARS_BACK, 1);
+  /** "day" = 日グリッド、"year" = 年の一覧、"month" = 12 か月グリッド */
+  const [mode, setMode] = useState<"day" | "year" | "month">("day");
+
+  // minEpoch が渡されたら、既定の下限（過去 50 年）より手前では切り詰める
+  const floor = useMemo(() => (minEpoch === undefined ? null : jstParts(minEpoch)), [minEpoch]);
+  const minIndex = floor
+    ? monthIndex(floor.year, floor.month)
+    : monthIndex(today.year - YEARS_BACK, 1);
   const maxIndex = monthIndex(today.year + YEARS_AHEAD, 12);
   const current = monthIndex(view.year, view.month);
+
+  /** その日が下限より前なら選ばせない */
+  function isBeforeFloor(year: number, month: number, day: number): boolean {
+    return minEpoch !== undefined && getEpochTimeInSeconds(year, month, day) < minEpoch;
+  }
 
   /** 先頭の空きマス + 1 日〜末日。7 列に並べる */
   const cells = useMemo(() => {
@@ -130,6 +163,38 @@ export function CalendarPicker({
     for (let d = 1; d <= last; d += 1) list.push(d);
     return list;
   }, [view.year, view.month]);
+
+  /** 選べる年。新しい年が先頭（降順） */
+  const years = useMemo(() => {
+    const oldest = floor ? floor.year : today.year - YEARS_BACK;
+    const list: number[] = [];
+    for (let y = today.year + YEARS_AHEAD; y >= oldest; y -= 1) list.push(y);
+    return list;
+  }, [today.year, floor]);
+
+  const yearScrollRef = useRef<ScrollView>(null);
+
+  /** 選択中の年がいちばん上に来るよう合わせる。年の一覧を開いた直後に呼ぶ */
+  const scrollToSelectedYear = useCallback(() => {
+    const index = years.indexOf(view.year);
+    if (index < 0) return;
+    yearScrollRef.current?.scrollTo({
+      y: Math.floor(index / YEAR_COLUMNS) * YEAR_ROW_HEIGHT,
+      animated: false,
+    });
+  }, [years, view.year]);
+
+  function pickYear(year: number) {
+    Haptics.selectionAsync().catch(() => {});
+    setView((v) => ({ ...v, year }));
+    setMode("month");
+  }
+
+  function pickMonth(month: number) {
+    Haptics.selectionAsync().catch(() => {});
+    setView((v) => ({ ...v, month }));
+    setMode("day");
+  }
 
   function shiftMonth(delta: number) {
     const next = monthIndex(view.year, view.month) + delta;
@@ -149,30 +214,44 @@ export function CalendarPicker({
   function jumpToToday() {
     Haptics.selectionAsync().catch(() => {});
     setView({ year: today.year, month: today.month });
+    setMode("day");
     onChange(todayEpoch);
   }
 
-  return (
-    <View style={[styles.panel, style]}>
-      <View style={styles.navRow}>
-        <Pressable
-          onPress={() => shiftMonth(-1)}
-          disabled={current <= minIndex}
-          accessibilityRole="button"
-          accessibilityLabel="前の月"
-          style={({ pressed }) => [
-            styles.navButton,
-            pressed && { opacity: 0.7 },
-            current <= minIndex && styles.navButtonDisabled,
-          ]}
-        >
-          <Ionicons name="chevron-back" size={20} color={color.teal} />
-        </Pressable>
+  /** 見出し。押すと年 → 月と絞り込める */
+  const header = (
+    <View style={styles.navRow}>
+      <Pressable
+        onPress={() => (mode === "day" ? shiftMonth(-1) : setMode(mode === "month" ? "year" : "day"))}
+        disabled={mode === "day" && current <= minIndex}
+        accessibilityRole="button"
+        accessibilityLabel={mode === "day" ? "前の月" : "戻る"}
+        style={({ pressed }) => [
+          styles.navButton,
+          pressed && { opacity: 0.7 },
+          mode === "day" && current <= minIndex && styles.navButtonDisabled,
+        ]}
+      >
+        <Ionicons name="chevron-back" size={20} color={color.teal} />
+      </Pressable>
 
+      <Pressable
+        onPress={() => setMode(mode === "day" ? "year" : "day")}
+        accessibilityRole="button"
+        accessibilityLabel={mode === "day" ? "年月を選ぶ" : "カレンダーに戻る"}
+        style={({ pressed }) => [styles.navLabelButton, pressed && { opacity: 0.6 }]}
+      >
         <Text style={styles.navLabel}>
-          {view.year}年 {view.month}月
+          {mode === "year" ? "年を選ぶ" : mode === "month" ? `${view.year}年` : `${view.year}年 ${view.month}月`}
         </Text>
+        <Ionicons
+          name={mode === "day" ? "chevron-down" : "chevron-up"}
+          size={14}
+          color={color.tealDeeper}
+        />
+      </Pressable>
 
+      {mode === "day" ? (
         <Pressable
           onPress={() => shiftMonth(1)}
           disabled={current >= maxIndex}
@@ -186,7 +265,96 @@ export function CalendarPicker({
         >
           <Ionicons name="chevron-forward" size={20} color={color.teal} />
         </Pressable>
+      ) : (
+        <View style={styles.navButton} />
+      )}
+    </View>
+  );
+
+  if (mode === "year") {
+    return (
+      <View style={[styles.panel, style]}>
+        {header}
+        {/*
+          61 年ぶんあるので縦スクロール。
+          onContentSizeChange は中身が並び終わってから来るので、ここで位置を合わせる
+          （useEffect だと web でまだ高さが 0 のことがあり、スクロールが効かない）
+        */}
+        <ScrollView
+          ref={yearScrollRef}
+          style={styles.jumpScroll}
+          contentContainerStyle={styles.jumpGrid}
+          onContentSizeChange={scrollToSelectedYear}
+        >
+          {years.map((y) => {
+            const isSelected = y === view.year;
+            const disabled = isBeforeFloor(y, 12, 31);
+            return (
+              <Pressable
+                key={y}
+                onPress={() => pickYear(y)}
+                disabled={disabled}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected, disabled }}
+                accessibilityLabel={`${y}年`}
+                style={({ pressed }) => [
+                  styles.jumpCell,
+                  pressed && { opacity: 0.6 },
+                  disabled && styles.jumpCellDisabled,
+                ]}
+              >
+                <View style={[styles.jumpChip, isSelected && styles.jumpChipSelected]}>
+                  <Text style={[styles.jumpLabel, isSelected && styles.jumpLabelSelected]}>
+                    {y}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
+    );
+  }
+
+  if (mode === "month") {
+    return (
+      <View style={[styles.panel, style]}>
+        {header}
+        <View style={styles.jumpGrid}>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+            const isSelected = m === view.month;
+            // その月の末日でも下限に届かないなら、その月は丸ごと選べない
+            const disabled = isBeforeFloor(view.year, m, daysInMonth(view.year, m));
+            return (
+              <Pressable
+                key={m}
+                onPress={() => pickMonth(m)}
+                disabled={disabled}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected, disabled }}
+                accessibilityLabel={`${m}月`}
+                style={({ pressed }) => [
+                  styles.jumpCell,
+                  pressed && { opacity: 0.6 },
+                  disabled && styles.jumpCellDisabled,
+                ]}
+              >
+                <View style={[styles.jumpChip, isSelected && styles.jumpChipSelected]}>
+                  <Text style={[styles.jumpLabel, isSelected && styles.jumpLabelSelected]}>
+                    {m}月
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.panel, style]}>
+      {header}
 
       <View style={styles.weekRow}>
         {WEEK_DAYS.map((label, i) => (
@@ -209,17 +377,23 @@ export function CalendarPicker({
             selected.day === day;
           const isToday =
             today.year === view.year && today.month === view.month && today.day === day;
+          const disabled = isBeforeFloor(view.year, view.month, day);
 
           return (
             <Pressable
               key={day}
               onPress={() => pick(day)}
+              disabled={disabled}
               accessibilityRole="button"
-              accessibilityState={{ selected: isSelected }}
+              accessibilityState={{ selected: isSelected, disabled }}
               accessibilityLabel={`${view.year}年${view.month}月${day}日`}
               // 7 列に割ると 1 マスの幅が 48pt を少し切る端末があるので hitSlop で補う
               hitSlop={4}
-              style={({ pressed }) => [styles.cell, pressed && { opacity: 0.6 }]}
+              style={({ pressed }) => [
+                styles.cell,
+                pressed && { opacity: 0.6 },
+                disabled && styles.cellDisabled,
+              ]}
             >
               <View
                 style={[
@@ -278,7 +452,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   navButtonDisabled: { opacity: 0.35 },
+  navLabelButton: { flexDirection: "row", alignItems: "center", gap: 4, minHeight: HIT_SIZE, paddingHorizontal: spacing.sm },
   navLabel: { fontFamily: font.uiBold, fontSize: 16, color: color.tealDeeper },
+
+  // 年 / 月のジャンプ用。4 列で並べる
+  jumpScroll: { maxHeight: 260 },
+  jumpGrid: { flexDirection: "row", flexWrap: "wrap" },
+  jumpCell: { width: "25%", paddingVertical: 4, alignItems: "center", justifyContent: "center" },
+  jumpChip: {
+    minWidth: 62,
+    minHeight: 40,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  jumpCellDisabled: { opacity: 0.3 },
+  jumpChipSelected: { backgroundColor: color.teal },
+  jumpLabel: { fontFamily: font.mono, fontSize: 14, color: color.textMain },
+  jumpLabelSelected: { color: "#FFFFFF", fontFamily: font.uiBold },
 
   weekRow: { flexDirection: "row", marginBottom: spacing.xs },
   weekLabel: { fontFamily: font.uiBold, fontSize: 12 },
@@ -290,6 +482,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  cellDisabled: { opacity: 0.3 },
   day: {
     width: 38,
     height: 38,

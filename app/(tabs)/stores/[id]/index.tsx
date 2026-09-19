@@ -71,16 +71,22 @@ export default function StoreDetail() {
   const dialog = useDialog();
   const { confirmDelete } = useDeleteStoreAction(id, data?.store ?? "");
 
-  /** 編集 / 削除。Web の ActionMenu と同じ 2 択 */
+  /** 編集 / 過去データ / 削除。Web の ActionMenu に過去データ入力を足したもの */
   async function openActionMenu() {
-    const picked = await dialog.choose<"edit" | "delete">({
+    const picked = await dialog.choose<"edit" | "backfill" | "delete">({
       title: `${data?.store ?? ""}店`,
       options: [
         { label: "店舗情報を編集", value: "edit" },
+        // 新規ユーザーがこれまでの記録をまとめて入れるための導線。
+        // 店舗登録の直後には出さない（長い入力を必須に見せると離脱するため）
+        { label: "過去の集金データを入力", value: "backfill" },
         { label: "この店舗を削除", value: "delete", destructive: true },
       ],
     });
     if (picked === "edit") router.push({ pathname: "/stores/[id]/edit", params: { id } });
+    if (picked === "backfill") {
+      router.push({ pathname: "/backfill/[storeId]", params: { storeId: id } });
+    }
     // 削除の確認（2 段階）は useDeleteStoreAction 側。編集ページと同じものを使う
     if (picked === "delete") await confirmDelete();
   }
