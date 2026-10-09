@@ -1,17 +1,34 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { FlashList } from "@shopify/flash-list";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import { Appear } from "@/components/common/Appear";
+import { ScreenTitleRow } from "@/components/common/SettingsButton";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useBootstrap, useLaundryStates, useStores } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { Input } from "@/components/common/form";
-import { useDialog } from "@/components/common/dialog";
-import { SegmentedTabs } from "@/components/common/SegmentedTabs";
+import {
+  SortControls,
+  type SortAxis,
+  type SortDirection,
+} from "@/components/common/SortControls";
+import { RegionFilter } from "@/components/stores/RegionFilter";
+import { NoStoresNotice } from "@/components/stores/NoStoresNotice";
+import { PLAN_STORE_LIMIT } from "@/billing/products";
+import {
+  CollectScopeSheet,
+  useCollectLauncher,
+} from "@/components/collect/CollectScopeSheet";
+import {
+  buildRegionOptions,
+  prefectureOf,
+  UNKNOWN_REGION,
+} from "@/components/stores/prefecture";
 import { needsAttention } from "@/components/manage/laundryState";
-import { CenterMessage, Card, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
+import { CenterMessage, Card, Muted, OfflineBanner, Screen } from "@/components/common/ui";
 import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
 import type { LaundryState, Store } from "@/api/types";
 
@@ -20,44 +37,102 @@ const NO_IMAGE =
   "https://hhdipgftsrsmmuqyifgt.supabase.co/storage/v1/object/public/Laundry-Images/public/no-image.png";
 
 /**
- * 絞り込みの軸。
- *   すべて   … Web の一覧と同じ（Web には状態での絞り込みがない）
- *   要対応   … 在庫不足か故障機のある店舗だけ。巡回先を決めるための軸で、
- *              判定は Web の getStockStates / getMachinesStates と同じ条件を使う
- *              （src/components/manage/laundryState.ts）
+ * 並び替えの軸。Web の一覧は DB の返り順のままで並び替えを持たないので、ここで決めている。
+ *
+ * ⚠️ **「店舗名順」は廃止した**（2026-07-31）。店名にフリガナが無く、漢字を
+ *    `localeCompare` で並べてもコードポイント順にしかならないので、利用者からは
+ *    「押しても意味のない順番になる」としか見えなかった。地域で絞るほうが実務に合う
+ *    （`RegionFilter`）。⚠️ 内部の同点処理では今も店名を使っている（並びを安定させるため）。
+ *
+ * ⚠️ かつてあった「要対応が先」も廃止済み。
  */
-type StoreFilter = "all" | "alert";
+type StoreSort = "created";
 
-/** 並び替えの軸。Web の一覧は DB の返り順のままで並び替えを持たないので、ここで決めている */
-type StoreSort = "name" | "alert" | "newest";
+/**
+ * 店舗の登録日時（epoch ミリ秒）。取れなければ null。
+ *
+ * ⚠️ `Date.parse(...)` の結果をそのまま比較に使わないこと。壊れた文字列だと NaN が返り、
+ *    比較関数が NaN を返す＝**並び順が変わらない**（エラーも出ない）。
+ *    Postgres の timestamptz は小数第 6 位まで返ってくるので、実際に取りこぼしうる。
+ *
+ * ⚠️ そもそも created_at は laundry_store の DB 既定値まかせで、Web の createStore は
+ *    書いていない。列が後から足された環境では既存行が NULL のままになる。
+ */
+function createdAtOf(store: Store): number | null {
+  if (!store.created_at) return null;
+  const ms = Date.parse(store.created_at);
+  return Number.isFinite(ms) ? ms : null;
+}
 
-const FILTERS = [
-  { value: "all", label: "すべて" },
-  { value: "alert", label: "要対応" },
-] as const satisfies readonly { value: StoreFilter; label: string }[];
-
-const SORT_LABEL: Record<StoreSort, string> = {
-  name: "店舗名順",
-  alert: "要対応が先",
-  newest: "登録が新しい順",
-};
+/**
+ * ⚠️ 軸が 1 つなので、実質「新しい順 ↔ 古い順」のトグルとして働く
+ *    （`SortControls` は軸が 1 つなら常に効いている状態で描く）。
+ */
+const SORT_AXES = [
+  {
+    value: "created",
+    label: "登録日",
+    // 「降順」では中身が伝わらないので、実際の並びで書く
+    hint: { desc: "新しい順", asc: "古い順" },
+    defaultDirection: "desc",
+  },
+] as const satisfies readonly SortAxis<StoreSort>[];
 
 export default function Stores() {
   const insets = useSafeAreaInsets();
+  /** タブをもう一度押したら先頭へ戻す（今いる画面がタブの 1 枚目のときだけ動く） */
+  const listRef = useRef<FlashListRef<Store>>(null);
+  useScrollToTop(listRef);
   const router = useRouter();
-  const dialog = useDialog();
+  /* ⚠️ 集金への遷移はこれを通す。支払方法がある店舗では何を集金するか聞く */
+  const collect = useCollectLauncher();
   const { data, isLoading, isRefetching, refetch, error } = useStores();
-  // 在庫・設備の状況。「要対応」の絞り込みと並び替えに使う
+  // 在庫・設備の状況。「要対応」の絞り込みに使う
   const states = useLaundryStates();
   const bootstrap = useBootstrap();
 
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<StoreFilter>("all");
-  const [sort, setSort] = useState<StoreSort>("name");
+  /** 都道府県での絞り込み。null = すべての地域 */
+  const [region, setRegion] = useState<string | null>(null);
+  /** ⚠️ 軸は登録日だけなので、持つのは向きだけでよい */
+  const [direction, setDirection] = useState<SortDirection>("desc");
 
   const isOffline = error instanceof ApiError && error.code === "OFFLINE";
   // 店舗の作成は admin だけ（Web の createStore も myRole !== "admin" を弾く）
   const canAddStore = bootstrap.data?.organization?.myRole === "admin";
+  /**
+   * 集金の入口を出すか。
+   *
+   * ⚠️ **`!== "viewer"` で書く。`=== "collecter"` にすると admin が漏れる。**
+   * ⚠️ **役割が読めていないうちは出さない。** 開くほうへ倒すと、閲覧者の画面に
+   *    一瞬ボタンが出て、そこで押されると入力し終えてから 400 で詰まる。
+   *    集金は**入力を捨てさせる操作**なので、閉じるほうへ倒す。
+   */
+  const canCollect =
+    bootstrap.data?.organization?.myRole !== undefined &&
+    bootstrap.data.organization.myRole !== "viewer";
+
+  /**
+   * 店舗数が上限に達しているか。**「追加」の行き先をプラン画面に切り替える**のに使う。
+   *
+   * ⚠️ **表示の出し分けだけ。** 実際に弾くのは Server Action（`PLAN_LIMITS`）。
+   *    ここを緩めてもサーバが 1 件も余分に作らせない。
+   * ⚠️ **`data.length` を使ってよいのは admin のときだけ。** `getStores()` は
+   *    担当店舗（011）で絞るので、非管理者では組織の実際の店舗数より少なくなる。
+   *    このボタン自体が admin 限定（`canAddStore`）なので成立している。
+   *    **判定を非管理者にも使い回さないこと。**
+   * ⚠️ **`null` は無制限**（Max）。`?? 0` のような既定値に倒すと、
+   *    Max の組織が「上限」と表示されて店舗を追加できなくなる。
+   * ⚠️ **プランが分からないうちは「上限なし」に倒す**（開くほうへ）。
+   *    `?? "free"` で埋めないこと。bootstrap の読み込み中や綴り違いのときに
+   *    **Max の組織が一瞬「上限」と表示され、押すとプラン画面へ飛ぶ。**
+   *    サーバが必ず弾くので開くほうに倒しても実害が無く、逆に倒すと
+   *    登録できるはずの人が止まる。
+   */
+  const planKey = bootstrap.data?.plan?.plan;
+  const storeLimit = planKey ? PLAN_STORE_LIMIT[planKey] : null;
+  const atStoreLimit =
+    typeof storeLimit === "number" && (data?.length ?? 0) >= storeLimit;
 
   /** laundryId は laundry_store.id と同じ値。店舗 ID から状態を引けるようにしておく */
   const stateById = useMemo(() => {
@@ -66,20 +141,18 @@ export default function Stores() {
     return map;
   }, [states.data]);
 
-  const alertIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const state of states.data ?? []) {
-      if (needsAttention(state)) ids.add(state.laundryId);
-    }
-    return ids;
-  }, [states.data]);
+  /** 地域タブの選択肢。店舗数の多い順に並ぶ（先頭 3 つがタブに出る） */
+  const regionOptions = useMemo(() => buildRegionOptions(data ?? []), [data]);
 
   const visibleStores = useMemo(() => {
     const keyword = query.trim().toLowerCase();
 
     // 検索の当たり判定は Web の SearchBox と同じ：店舗名か住所の部分一致（大文字小文字は無視）
     const filtered = (data ?? []).filter((store) => {
-      if (filter === "alert" && !alertIds.has(store.id)) return false;
+      // 住所から判定できなかった店舗は UNKNOWN_REGION（＝「その他」）に入る
+      if (region !== null && (prefectureOf(store.location) ?? UNKNOWN_REGION) !== region) {
+        return false;
+      }
       if (!keyword) return true;
       return (
         store.store.toLowerCase().includes(keyword) ||
@@ -87,44 +160,55 @@ export default function Stores() {
       );
     });
 
+    /**
+     * 同点のときのよりどころ。
+     * ⚠️ **これは並びを安定させるためだけのもので、利用者向けの「店舗名順」ではない**
+     *    （漢字は読み順にならないので、軸としては廃止した）。
+     */
+    const byName = (a: Store, b: Store) => a.store.localeCompare(b.store, "ja");
+
     return [...filtered].sort((a, b) => {
-      if (sort === "alert") {
-        const diff = Number(alertIds.has(b.id)) - Number(alertIds.has(a.id));
-        if (diff !== 0) return diff;
+      /**
+       * ⚠️ 登録日が欠けている店舗は**向きに関係なく末尾**へ回すこと。
+       *    -Infinity を入れて差で比べると、古い順にしたとたん先頭に固まる。
+       */
+      const at = createdAtOf(a);
+      const bt = createdAtOf(b);
+      if (at === null || bt === null) {
+        if (at !== bt) return at === null ? 1 : -1;
+      } else if (at !== bt) {
+        // ⚠️ 日付は desc が「新しい順」。向きの意味が数値の大小と逆になる
+        return direction === "desc" ? bt - at : at - bt;
       }
-      if (sort === "newest") {
-        // created_at は省略されうる。欠けているものは末尾へ回す
-        const at = a.created_at ? Date.parse(a.created_at) : Number.NEGATIVE_INFINITY;
-        const bt = b.created_at ? Date.parse(b.created_at) : Number.NEGATIVE_INFINITY;
-        if (at !== bt) return bt - at;
-      }
-      // 既定と同点時のよりどころ。日本語の店名を辞書順で並べる
-      return a.store.localeCompare(b.store, "ja");
+      return byName(a, b);
     });
-  }, [data, query, filter, sort, alertIds]);
+  }, [data, query, region, direction]);
+
+  /**
+   * 登録日で並べられるか。1 店舗でも日付が取れれば並べる意味がある。
+   * ⚠️ 取れないときに黙って店舗名順になると「押しても効かない」としか見えないので、
+   *    理由を出す（実際にこれで「並び替えが適用されない」と報告を受けた）。
+   */
+  const canSortByCreated = useMemo(
+    () => (data ?? []).some((store) => createdAtOf(store) !== null),
+    [data]
+  );
+
+  /** 選択中の地域の表示名。「その他」も含めてここから取る */
+  const regionLabel = useMemo(
+    () => regionOptions.find((option) => option.value === region)?.label ?? null,
+    [regionOptions, region]
+  );
 
   /** 件数の出し方は Web の countText と同じ */
   const countText = useMemo(() => {
     const total = data?.length ?? 0;
     if (total === 0) return "店舗を追加してください";
-    if (query.trim() || filter === "alert") return `${visibleStores.length}件 / 全${total}店舗`;
+    if (query.trim() || region !== null) {
+      return `${visibleStores.length}件 / 全${total}店舗`;
+    }
     return `全${total}店舗`;
-  }, [data?.length, visibleStores.length, query, filter]);
-
-  async function chooseSort() {
-    const picked = await dialog.choose<StoreSort>({
-      title: "並び替え",
-      options: (Object.keys(SORT_LABEL) as StoreSort[]).map((value) => ({
-        value,
-        label: SORT_LABEL[value],
-        selected: value === sort,
-      })),
-    });
-    if (picked) setSort(picked);
-  }
-
-  /** 既定（店舗名順）から外れているか。外れているときだけボタンを塗る */
-  const isSortActive = sort !== "name";
+  }, [data?.length, visibleStores.length, query, region]);
 
   if (isLoading && !data) {
     return (
@@ -152,8 +236,13 @@ export default function Stores() {
 
       {/* 検索欄はリストの外に置く。FlashList の ListHeaderComponent に入れると
           再描画のたびに作り直されて入力途中でフォーカスが外れる */}
-      <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
-        <Title style={{ fontSize: 22 }}>店舗一覧</Title>
+      {/*
+        ⚠️ **登場アニメーションを付けてよいのはこの検索・絞り込みの塊だけ。**
+           一覧の行は FlashList のセルで使い回されるので、Appear を付けると
+           スクロールのたびに古い行が「現れ直す」ように見える（Appear のコメント参照）。
+      */}
+      <Appear index={0} style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
+        <ScreenTitleRow title="店舗一覧" />
 
         {hasStores && (
           <>
@@ -184,64 +273,76 @@ export default function Stores() {
               )}
             </View>
 
-            <SegmentedTabs
-              options={FILTERS}
-              value={filter}
-              onChange={setFilter}
-              style={{ marginBottom: spacing.sm }}
-            />
+            {/* 地域（都道府県）での絞り込み。
+                ⚠️ 1 地域しか無いときは出さない。押しても結果が変わらないうえ、
+                   全店舗が同じ県にある組織のほうが多いので常設すると邪魔になる */}
+            {regionOptions.length > 1 && (
+              <RegionFilter options={regionOptions} value={region} onChange={setRegion} />
+            )}
 
             <View style={styles.metaRow}>
               <Muted style={{ flex: 1, fontSize: 13 }}>{countText}</Muted>
-              <Pressable
-                onPress={chooseSort}
-                accessibilityLabel="並び替えを変える"
-                style={({ pressed }) => [
-                  styles.sortButton,
-                  isSortActive && styles.sortButtonActive,
-                  pressed && { opacity: 0.7 },
-                ]}
-              >
-                <Ionicons
-                  name="swap-vertical"
-                  size={15}
-                  color={isSortActive ? "#FFFFFF" : color.teal}
-                />
-                <Text style={[styles.sortLabel, isSortActive && styles.sortLabelActive]}>
-                  {SORT_LABEL[sort]}
-                </Text>
-              </Pressable>
+              {/* 軸は登録日だけ。押すたびに新しい順 ↔ 古い順が入れ替わる */}
+              <SortControls
+                axes={SORT_AXES}
+                field="created"
+                direction={direction}
+                onChange={(_field, nextDirection) => setDirection(nextDirection)}
+              />
             </View>
+
+            {/* 押しても並びが変わらない理由を出す。黙って別の順に落ちると故障に見える */}
+            {!canSortByCreated && (
+              <View style={styles.sortNote}>
+                <Ionicons name="information-circle-outline" size={14} color={color.orange500} />
+                <Text style={styles.sortNoteLabel}>
+                  登録日が記録されていないため、並び替えは反映されません
+                </Text>
+              </View>
+            )}
           </>
         )}
-      </View>
+      </Appear>
 
       <FlashList
+        ref={listRef}
         data={visibleStores}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl }}
         ListEmptyComponent={
-          <Card>
-            {!hasStores ? (
-              <>
-                <Muted>登録された店舗がありません</Muted>
-                {canAddStore && (
+          /*
+            ⚠️ **担当店舗（011）が 0 件でも同じ「0 件」になる。**
+               `getStores` が担当ぶんしか返さないので、アプリからは
+               「組織に店舗が無い」のか「自分が担当していない」のか区別が付かない。
+               管理者は常に全店舗なので、**非管理者のときは担当を疑うほうが当たる。**
+            ⚠️ 文面と「登録する」ボタンの出し分けは NoStoresNotice に集約してある
+               （ホーム・管理と同じものを出す）。ここに書き写さないこと。
+          */
+          !hasStores ? (
+            <NoStoresNotice isAdmin={canAddStore} />
+          ) : (
+            <Card>
+              {query.trim() ? (
+                <>
+                  <Muted>「{query.trim()}」に一致する店舗がありません</Muted>
                   <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
-                    右下のボタンから新しい店舗を追加できます
+                    別のキーワードで検索してみてください
                   </Muted>
-                )}
-              </>
-            ) : query.trim() ? (
-              <>
-                <Muted>「{query.trim()}」に一致する店舗がありません</Muted>
-                <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
-                  別のキーワードで検索してみてください
-                </Muted>
-              </>
-            ) : (
-              <Muted>要対応の店舗はありません</Muted>
-            )}
-          </Card>
+                </>
+              ) : region !== null ? (
+                /* 絞り込んだ地域の店舗が消えた（他の条件と重なった / 住所を直した）とき。
+                   何で 0 件になっているのかを出さないと、店舗ごと消えたように見える */
+                <>
+                  <Muted>{regionLabel ?? "この地域"}の店舗がありません</Muted>
+                  <Muted style={{ marginTop: spacing.xs, fontSize: 12 }}>
+                    上のタブから別の地域を選んでください
+                  </Muted>
+                </>
+              ) : (
+                <Muted>該当する店舗がありません</Muted>
+              )}
+            </Card>
+          )
         }
         refreshControl={
           <RefreshControl
@@ -258,24 +359,29 @@ export default function Stores() {
             store={item}
             state={stateById.get(item.id)}
             onPress={() => router.push({ pathname: "/stores/[id]", params: { id: item.id } })}
-            onCollect={() =>
-              router.push({ pathname: "/collect/[storeId]", params: { storeId: item.id } })
-            }
+            /* ⚠️ 直接 push しない。支払方法がある店舗では何を集金するか聞く。
+                  ⚠️ 閲覧者には null（ボタンごと出さない）。押せると入力し終えてから詰まる */
+            onCollect={canCollect ? () => collect.launch(item) : null}
           />
         )}
       />
 
+      <CollectScopeSheet {...collect.sheetProps} />
+
       {/* 店舗の追加。Web の AddBtn と同じ右下固定の丸ボタン。admin だけに出す。
-          ⚠️ Web の AddBtn は上限到達時にプラン画面へ誘導するが、そちらは移植しない
-             （App Store Guideline 3.1.3(a)：課金への導線・言及を置かない） */}
+          ⚠️ **上限に達していたらプラン画面へ送る**（2026-08-05。書き出しと同じ扱い）。
+             それまでは「移植しない（Guideline 3.1.3(a)）」としていたが、**その理由は
+             誤り。** 3.1.3(a) が禁じるのは**アプリ外**の購入手段への誘導で、
+             アプリ内課金の画面へ送ることではない。送らないと、上限に達した人は
+             **何をすれば増やせるのか分からないまま**登録に失敗する。 */}
       {canAddStore && (
         <Pressable
-          onPress={() => router.push("/stores/new")}
-          accessibilityLabel="店舗を追加"
+          onPress={() => router.push(atStoreLimit ? "/settings/plan" : "/stores/new")}
+          accessibilityLabel={atStoreLimit ? "店舗数の上限。プランを見る" : "店舗を追加"}
           style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
         >
-          <Ionicons name="add" size={26} color="#FFFFFF" />
-          <Text style={styles.fabLabel}>追加</Text>
+          <Ionicons name={atStoreLimit ? "lock-closed" : "add"} size={26} color="#FFFFFF" />
+          <Text style={styles.fabLabel}>{atStoreLimit ? "上限" : "追加"}</Text>
         </Pressable>
       )}
     </Screen>
@@ -296,7 +402,14 @@ function StoreCard({
   store: Store;
   state: LaundryState | undefined;
   onPress: () => void;
-  onCollect: () => void;
+  /**
+   * ⚠️ **閲覧者には `null` を渡す（＝ボタンごと出さない）。**
+   *    サーバの `createData` が viewer を 400 で弾くので、押せると
+   *    **入力し終えたあとに Outbox で「送信失敗」になって詰まる。**
+   *    店舗詳細（`canEdit`）とホームのクイックアクション（`isViewer`）は
+   *    最初から出しておらず、**ここだけ漏れていた。**
+   */
+  onCollect: (() => void) | null;
 }) {
   const uri = store.images?.[0]?.url ?? NO_IMAGE;
   const isAlert = state ? needsAttention(state) : false;
@@ -328,13 +441,23 @@ function StoreCard({
       </Pressable>
 
       <View style={styles.footerArea}>
-        <Pressable onPress={onPress} style={({ pressed }) => [styles.ghostButton, pressed && { opacity: 0.8 }]}>
+        {/* ⚠️ 集金が無いときは「詳細」を横いっぱいに伸ばす。半分のまま残すと
+               右半分が空いて、ボタンが消えているのではなく壊れて見える */}
+        <Pressable
+          onPress={onPress}
+          style={({ pressed }) => [styles.ghostButton, pressed && { opacity: 0.8 }]}
+        >
           <Text style={styles.ghostLabel}>詳細</Text>
         </Pressable>
-        <Pressable onPress={onCollect} style={({ pressed }) => [styles.primaryButton, pressed && { opacity: 0.85 }]}>
-          <Ionicons name="cash-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.primaryLabel}>集金</Text>
-        </Pressable>
+        {onCollect && (
+          <Pressable
+            onPress={onCollect}
+            style={({ pressed }) => [styles.primaryButton, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons name="cash-outline" size={16} color="#FFFFFF" />
+            <Text style={styles.primaryLabel}>集金</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -347,18 +470,8 @@ const styles = StyleSheet.create({
   searchInput: { paddingLeft: 38, paddingRight: 42 },
   searchClear: { position: "absolute", right: spacing.md },
   metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  sortButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    minHeight: HIT_SIZE,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-  },
-  /* 既定以外の軸で並べているときは塗って、効いていることを一目で分かるようにする */
-  sortButtonActive: { backgroundColor: color.teal },
-  sortLabel: { fontFamily: font.uiBold, fontSize: 13, color: color.teal },
-  sortLabelActive: { color: "#FFFFFF" },
+  sortNote: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  sortNoteLabel: { flex: 1, fontFamily: font.ui, fontSize: 11, color: color.orange500 },
 
   card: {
     backgroundColor: color.cardBg,

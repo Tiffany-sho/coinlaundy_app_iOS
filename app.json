@@ -7,13 +7,14 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.collecie.app",
-      "buildNumber": "18",
+      "buildNumber": "1",
       "usesAppleSignIn": true,
-      "associatedDomains": ["applinks:www.collecie.com"],
+      "associatedDomains": [
+        "applinks:www.collecie.com"
+      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -52,6 +53,14 @@
       "expo-image",
       "expo-font",
       "expo-apple-authentication",
+      "expo-iap",
+      [
+        "expo-notifications",
+        {
+          "color": "#0891B2",
+          "defaultChannel": "default"
+        }
+      ],
       [
         "expo-image-picker",
         {
@@ -71,6 +80,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f3f39a07-51eb-46bf-bcda-b7daed02e008"
+      }
+    },
+    "owner": "tiffany1111"
   }
 }

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, startSessionAutoRefresh } from "@/api/supabase";
 import { queryClient } from "@/api/queryClient";
+import { unregisterPushToken } from "@/push/pushToken";
 
 type AuthState = {
   session: Session | null;
@@ -70,6 +71,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { needsEmailConfirmation: !data.session };
       },
       async signOut() {
+        // ⚠️ サインアウトの「前」に外すこと。後にすると access_token が失効していて
+        //    401 になり、device_tokens に行が残る。残った行に通知を送ると、
+        //    同じ端末を引き継いだ別のユーザーに前の組織の集金予定が届く。
+        await unregisterPushToken();
         await supabase.auth.signOut();
         queryClient.clear();
       },

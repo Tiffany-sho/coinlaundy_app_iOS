@@ -9,19 +9,30 @@ import {
   Text,
   View,
 } from "react-native";
-import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useBootstrap, useFundList, useLaundryStates, useStore } from "@/api/queries";
+import {
+  activePaymentMethods,
+  useBootstrap,
+  useLaundryStates,
+  useStore,
+  useStoreRevenue,
+} from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { MachineListSheet } from "@/components/stores/MachineListSheet";
+import {
+  CollectScopeSheet,
+  useCollectLauncher,
+} from "@/components/collect/CollectScopeSheet";
+import { StoreImageCarousel } from "@/components/stores/StoreImageCarousel";
 import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
 import { useDialog } from "@/components/common/dialog";
 import { useDeleteStoreAction } from "@/components/stores/useDeleteStoreAction";
 import { CenterMessage, Screen } from "@/components/common/ui";
-import { color, font, radius, shadow, spacing } from "@/theme/tokens";
+import { expensesEnabled } from "@/components/expenses/expensesEnabled";
+import { color, font, radius, shadow, spacing, numeric } from "@/theme/tokens";
 
 const NO_IMAGE =
   "https://hhdipgftsrsmmuqyifgt.supabase.co/storage/v1/object/public/Laundry-Images/public/no-image.png";
@@ -56,15 +67,19 @@ export default function StoreDetail() {
   const { data, isLoading, error } = useStore(id);
   const bootstrap = useBootstrap();
   const states = useLaundryStates(Boolean(id));
-  const funds = useFundList(id);
+  const revenue = useStoreRevenue();
 
   /** 編集シートで開いているタブ。null なら閉じている */
   const [editingMode, setEditingMode] = useState<StateEditMode | null>(null);
   /** 設置機種の詳細シートを開いているか */
   const [machinesOpen, setMachinesOpen] = useState(false);
+  /* ⚠️ 集金への遷移はこれを通す。支払方法がある店舗では何を集金するか聞く */
+  const collect = useCollectLauncher();
 
   const myRole = bootstrap.data?.organization?.myRole;
   const canEdit = myRole !== "viewer";
+  /* ⚠️ 判定は必ず expensesEnabled() を通す（`?? true` などを画面に書かない） */
+  const useExpenses = expensesEnabled(bootstrap.data?.organization);
   // 権限は UI の出し分けにだけ使う。正は Server Action 側（admin 以外は updateStore / deleteStore が弾く）
   const isAdmin = myRole === "admin";
 
@@ -90,14 +105,29 @@ export default function StoreDetail() {
   // （laundryState/action.js の getAllLaundryStates）ので、店舗詳細の id をそのまま使える。
   const state = states.data?.find((s) => s.laundryId === id);
 
-  // 総売上。無限スクロールの読み込み済みぶんから概算する
-  const { total, count } = useMemo(() => {
-    const rows = funds.data?.pages.flat() ?? [];
-    return {
-      total: rows.reduce((sum, r) => sum + (r.totalFunds ?? 0), 0),
-      count: rows.length,
-    };
-  }, [funds.data]);
+  /**
+   * この店舗の**全期間**の売上総額と集金回数。
+   *
+   * ⚠️ **`useFundList` から出さないこと。** 2 つの理由で必ず実際より小さくなる:
+   *   1. 無限スクロールで**読み込み済みのページしか手元に無い**（初回は 30 件）
+   *   2. ⚠️ そもそも `GET /funds` の `offset` + `limit` は**直近 2 か月しか返さない**
+   *      （`getStoreFundsPaginated` が startEpoch を固定している）。
+   *      ページを最後までめくっても、それより古い集金には**絶対に届かない**
+   *
+   * 実際これで「総売上」に**最初の 30 件ぶんの合計**が出ていた。
+   * `/funds/summary/stores` は全件を店舗ごとに畳んだものなので、これが正。
+   * 収益ページ（`funds.tsx`）も同じものを使っている。
+   *
+   * ⚠️ 集金実績のある店舗しか返らないので、1 件も無い店舗では undefined になる。
+   * ⚠️ `count` は後から足した項目で、**MMKV に残る前のバージョンのキャッシュには無い**。
+   *    `?? 0` を外すと起動直後に NaN が出る（docs/traps.md の永続キャッシュの節）。
+   */
+  const summary = useMemo(
+    () => (revenue.data ?? []).find((s) => s.laundryId === id),
+    [revenue.data, id]
+  );
+  const total = summary?.total ?? 0;
+  const count = summary?.count ?? 0;
 
   if (isLoading && !data) {
     return (
@@ -136,46 +166,47 @@ export default function StoreDetail() {
       (state.softener ?? 0) <= (state.stock_thresholds?.softener ?? 1)
     : false;
   const brokenCount = (state?.machines ?? []).filter((m) => m.break).length;
+  /* ⚠️ 現金は含まれない（暗黙の方法）。使用停止のものも出さない */
+  const paymentMethods = activePaymentMethods(data);
 
   return (
     <Screen>
       {/* タブバーは画面の下に「並ぶ」ので（重ならない）、下端の余白に insets.bottom は足さない。
           足すと最後の「集金する」の下に安全領域ぶんの空白が二重に入る */}
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxl }}>
-        {/* 画像カルーセル。Web は 16:9 で横スワイプ */}
-        <View>
-          <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
-            {(images.length > 0 ? images : [{ url: NO_IMAGE }]).map((img, i) => (
-              <Image
-                key={`${img.url}-${i}`}
-                source={{ uri: img.url }}
-                style={{ width: SCREEN_WIDTH, aspectRatio: 16 / 9 }}
-                contentFit="cover"
-                transition={150}
-              />
-            ))}
-          </ScrollView>
-
-          <Pressable
-            onPress={() => router.back()}
-            style={[styles.floatingBack, { top: insets.top + spacing.sm }]}
-            hitSlop={12}
+        {/*
+          画像カルーセル。Web は 16:9 で横スワイプ。
+          ⚠️ 上と左右に余白を取る。画面の端まで画像を伸ばすとステータスバーの
+             真下から始まって見づらく、戻る／メニューのボタンも写真に埋もれる。
+        */}
+        <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.lg }}>
+          <StoreImageCarousel
+            images={images}
+            width={SCREEN_WIDTH - spacing.lg * 2}
+            fallbackUrl={NO_IMAGE}
           >
-            <Ionicons name="chevron-back" size={22} color={color.textMain} />
-          </Pressable>
-
-          {/* Web の MonoCard も isOwner のときだけ ActionMenu（編集 / 削除）を出す */}
-          {isAdmin && (
+            {/* 位置は画像の内側。カルーセルの上に重ねる */}
             <Pressable
-              onPress={() => void openActionMenu()}
-              style={[styles.floatingMenu, { top: insets.top + spacing.sm }]}
+              onPress={() => router.back()}
+              style={[styles.floatingBack, { top: spacing.sm }]}
               hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="店舗の操作"
             >
-              <Ionicons name="ellipsis-horizontal" size={22} color={color.textMain} />
+              <Ionicons name="chevron-back" size={22} color={color.textMain} />
             </Pressable>
-          )}
+
+            {/* Web の MonoCard も isOwner のときだけ ActionMenu（編集 / 削除）を出す */}
+            {isAdmin && (
+              <Pressable
+                onPress={() => void openActionMenu()}
+                style={[styles.floatingMenu, { top: spacing.sm }]}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="店舗の操作"
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color={color.textMain} />
+              </Pressable>
+            )}
+          </StoreImageCarousel>
         </View>
 
         <View style={{ padding: spacing.lg }}>
@@ -202,9 +233,13 @@ export default function StoreDetail() {
                 router.push({ pathname: "/stores/[id]/funds", params: { id: data.id } })
               }
             >
-              <Text style={styles.tileMoney}>¥{total.toLocaleString()}</Text>
+              {/* ⚠️ 取得前に ¥0 を出さない。実際に 0 円なのか未取得なのか区別が付かない */}
+              <Text style={styles.tileMoney}>
+                {revenue.isLoading && !revenue.data ? "—" : `¥${total.toLocaleString()}`}
+              </Text>
               <Text style={styles.tileSub}>
-                {count > 0 ? `直近 ${count}回の集金` : "集金データがありません"}
+                {/* ⚠️「直近」と書かない。全期間の合計になった */}
+                {count > 0 ? `全 ${count}回の集金` : "集金データがありません"}
               </Text>
               <View style={styles.tileLink}>
                 <Text style={styles.tileLinkLabel}>収益レポートへ</Text>
@@ -239,13 +274,28 @@ export default function StoreDetail() {
                 {state ? `全 ${(state.machines ?? []).length}台` : ""}
               </Text>
             </Tile>
+
+            {/*
+              支払方法。⚠️ **現金は行として持っていない**（常に記録される暗黙の方法）ので、
+              ここに出るのは現金以外だけ。「現金のみ」は 0 件と同じ意味。
+              ⚠️ 使用停止にしたもの（`isActive: false`）は出さない。過去の集金には
+              残っているが、これから使う方法の一覧なので混ぜない。
+            */}
+            <Tile label="支払方法">
+              <Text style={styles.tileStatus}>
+                {paymentMethods.length === 0 ? "現金のみ" : `現金 + ${paymentMethods.length}種類`}
+              </Text>
+              <Text style={styles.tileSub} numberOfLines={2}>
+                {paymentMethods.map((m) => m.name).join("・") || "現金以外の登録はありません"}
+              </Text>
+              {canEdit && <Text style={styles.tileHint}>編集画面から追加できます</Text>}
+            </Tile>
           </View>
 
           {canEdit && (
             <Pressable
-              onPress={() =>
-                router.push({ pathname: "/collect/[storeId]", params: { storeId: data.id } })
-              }
+              /* ⚠️ 直接 push しない。支払方法がある店舗では何を集金するか聞く */
+              onPress={() => collect.launch(data)}
               style={({ pressed }) => [pressed && { opacity: 0.85 }, { marginTop: spacing.xl }]}
             >
               <LinearGradient
@@ -259,8 +309,38 @@ export default function StoreDetail() {
               </LinearGradient>
             </Pressable>
           )}
+
+          {/*
+            経費の追加。**集金の下に副操作として置く。**
+
+            ⚠️ **`storeId` を載せる。** この店舗を見ているのに「対象」を
+               選び直させない（フォームでは変えられる＝初期値であって固定ではない）。
+            ⚠️ **主操作（集金）と同じ塗りにしない。** 並べると押し間違える。
+            ⚠️ **経費を使わない組織では出さない**（012）。
+            ⚠️ **viewer には出さない**（サーバが 403 を返すため）。
+            ⚠️ **店舗タブ → 収益タブのまたぐ遷移。** `(tabs)/_layout.tsx` の
+               `backToTabRoot("/revenue")` が戻り道を作っている。外さないこと。
+          */}
+          {canEdit && useExpenses && (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/expenses/new",
+                  params: { storeId: data.id },
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel="この店舗の経費を追加"
+              style={({ pressed }) => [styles.expenseButton, pressed && { opacity: 0.85 }]}
+            >
+              <Ionicons name="receipt-outline" size={18} color={color.tealDeeper} />
+              <Text style={styles.expenseLabel}>経費を追加</Text>
+            </Pressable>
+          )}
         </View>
       </ScrollView>
+
+      <CollectScopeSheet {...collect.sheetProps} />
 
       <MachineListSheet
         visible={machinesOpen}
@@ -377,8 +457,8 @@ const styles = StyleSheet.create({
   tileTappable: { borderWidth: 2, borderColor: color.cyan200 },
   tileHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   tileLabel: { fontFamily: font.uiBold, fontSize: 12, color: color.textMuted },
-  tileMoney: { fontFamily: font.mono, fontSize: 22, color: color.tealDeeper },
-  tileNumber: { fontFamily: font.mono, fontSize: 24, color: color.tealDeeper },
+  tileMoney: { ...numeric, fontSize: 22, color: color.tealDeeper },
+  tileNumber: { ...numeric, fontSize: 24, color: color.tealDeeper },
   tileStatus: { fontFamily: font.uiBold, fontSize: 16 },
   tileSub: { fontFamily: font.ui, fontSize: 11, color: color.textMuted, marginTop: 2 },
   // 押した先があることを文字でも出す。アイコンだけだと現場で気付かれない
@@ -395,4 +475,18 @@ const styles = StyleSheet.create({
     ...shadow.hero,
   },
   collectLabel: { fontFamily: font.uiBold, fontSize: 17, color: "#FFFFFF" },
+  /* 経費の追加。⚠️ 副操作なので塗らない（集金と並べたときに押し間違えないように） */
+  expenseButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    minHeight: 48,
+    marginTop: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.cyan200,
+    backgroundColor: color.cardBg,
+  },
+  expenseLabel: { fontFamily: font.uiBold, fontSize: 14, color: color.tealDeeper },
 });

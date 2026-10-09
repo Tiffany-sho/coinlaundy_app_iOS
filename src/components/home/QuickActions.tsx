@@ -6,6 +6,10 @@ import * as Haptics from "expo-haptics";
 import { useLaundryStates, useStores } from "@/api/queries";
 import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
 import { StorePickerSheet, type StorePickerMode } from "@/components/home/StorePickerSheet";
+import {
+  CollectScopeSheet,
+  useCollectLauncher,
+} from "@/components/collect/CollectScopeSheet";
 import type { Role } from "@/api/types";
 import { color, font, radius, shadow, spacing } from "@/theme/tokens";
 
@@ -39,10 +43,19 @@ type QuickActionDef = {
   pickerTitle: string;
   /** viewer には出さない操作 */
   hideForViewer?: boolean;
-  /** 店舗を選んだあとの行き先。在庫・設備管理は遷移しないので持たない */
+  /** 店舗を選んだあとの行き先。在庫・設備管理と集金は遷移を自分で組むので持たない */
   href?: (storeId: string) => Href;
   /** true なら店舗行に「在庫 / 設備」を並べ、その場で編集シートを開く */
   opensStateSheet?: boolean;
+  /**
+   * true なら店舗を選んだあとに「現金 / 現金以外 / 両方」を聞く。
+   *
+   * ⚠️ **店舗行にボタンを並べない**（在庫・設備とは別の作りにしてある）。
+   *    集金の入口は店舗一覧・店舗詳細にもあり、そちらは
+   *    「店舗を選ぶ → 聞く」なので、ここだけ 1 段で選ばせると揃わない。
+   *    ⚠️ Modal が 2 枚重なるので、**picker が閉じ切ってから**開くこと。
+   */
+  asksCollectScope?: boolean;
 };
 
 const ACTIONS: QuickActionDef[] = [
@@ -52,7 +65,12 @@ const ACTIONS: QuickActionDef[] = [
     icon: "cash-outline",
     pickerTitle: "集金したい店舗を選択してください",
     hideForViewer: true,
-    href: (storeId) => ({ pathname: "/collect/[storeId]", params: { storeId } }),
+    /*
+      ⚠️ 遷移は `useCollectLauncher` が組む（scope を聞いてから push する）。
+         ここに href を書かないこと。書くと scope 無しで開いて既定の
+         "both" に落ち、「現金のみ」を選んでも現金以外の欄が出る。
+    */
+    asksCollectScope: true,
   },
   {
     key: "stock",
@@ -80,12 +98,38 @@ const ACTIONS: QuickActionDef[] = [
 
 type SheetTarget = { laundryId: string; mode: StateEditMode };
 
+/**
+ * 店舗選択シートが閉じ切ってから行う動作。
+ *
+ * ⚠️ **遷移も「待つ」側に入れること。** 2026-08-01 まで編集シートだけが待っていて、
+ *    `router.push` は**シートが閉じ切る前に走っていた。** iOS ではモーダルを出したまま
+ *    画面を積むことになり、
+ *      - 行き先が `/collect/[storeId]`（`fullScreenModal`）だと VC の多重表示になる
+ *      - そうでなくても画面の階層が壊れ、**以降タブを切り替えても何も表示されない**
+ *    という形で出る。閉じるアニメーションとの競合なので**毎回は起きない。**
+ */
+type PendingAction =
+  | { kind: "sheet"; target: SheetTarget }
+  /**
+   * 集金。⚠️ **ここでは push しない。** さらに「何を集金するか」を聞く
+   * Modal が開くので、`useCollectLauncher` に渡して待ち合わせを任せる
+   * （支払方法が無い店舗はそのまま遷移する）。
+   */
+  | { kind: "collect"; storeId: string }
+  | { kind: "navigate"; href: Href };
+
 export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
   const router = useRouter();
   const [picker, setPicker] = useState<QuickActionDef | null>(null);
-  /** 店舗選択シートが閉じ切るのを待っている編集シート */
-  const [pending, setPending] = useState<SheetTarget | null>(null);
+  /** 店舗選択シートが閉じ切るのを待っている動作 */
+  const [pending, setPending] = useState<PendingAction | null>(null);
   const [sheet, setSheet] = useState<SheetTarget | null>(null);
+  /*
+    ⚠️ 集金は「店舗を選ぶ → 何を集金するか聞く → 遷移」の 3 段。
+       店舗一覧・店舗詳細と同じシートを使う（揃えるため）。
+       Modal の重なりと遷移の待ち合わせはこのフックが持っている。
+  */
+  const collect = useCollectLauncher();
 
   /**
    * 店舗一覧はボタンを押すまで取りに行かない。ホームの起動時に 1 本増やすより、
@@ -99,20 +143,30 @@ export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
   const actions = ACTIONS.filter((action) => !(isViewer && action.hideForViewer));
 
   /**
-   * ⚠️ iOS は Modal の上に Modal を重ねると表示に失敗する。
-   *    店舗選択シートが閉じ切ってから編集シートを開く。
-   *    onDismiss は iOS だけなので、他プラットフォームは閉じた次のフレームで開く。
+   * ⚠️ **iOS はモーダルを出したまま次のモーダルも画面遷移も行えない。**
+   *    店舗選択シートが閉じ切ってから、編集シートを開く／遷移する。
+   *    `onDismiss` は iOS だけなので、他プラットフォームは閉じた次のフレームで走らせる。
    */
-  function openPending() {
-    setPending((target) => {
-      if (target) setSheet(target);
-      return null;
-    });
+  function runPending() {
+    if (!pending) return;
+    const next = pending;
+    setPending(null);
+    if (next.kind === "sheet") {
+      setSheet(next.target);
+      return;
+    }
+    if (next.kind === "collect") {
+      const store = (stores.data ?? []).find((s) => s.id === next.storeId);
+      // ⚠️ 一覧に無ければ何もしない（取得前に押される経路は無いが、握り潰さず素通りさせる）
+      if (store) collect.launch(store);
+      return;
+    }
+    router.push(next.href);
   }
 
   useEffect(() => {
     if (Platform.OS === "ios" || pending === null || picker !== null) return;
-    const id = requestAnimationFrame(openPending);
+    const id = requestAnimationFrame(runPending);
     return () => cancelAnimationFrame(id);
   }, [pending, picker]);
 
@@ -127,10 +181,15 @@ export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
     if (!target) return;
 
     if (target.opensStateSheet) {
-      if (mode) setPending({ laundryId: storeId, mode });
+      if (mode) setPending({ kind: "sheet", target: { laundryId: storeId, mode } });
       return;
     }
-    if (target.href) router.push(target.href(storeId));
+    /* ⚠️ ここで直接 router.push しないこと。シートが閉じ切るのを待つ（PendingAction 参照） */
+    if (target.asksCollectScope) {
+      setPending({ kind: "collect", storeId });
+      return;
+    }
+    if (target.href) setPending({ kind: "navigate", href: target.href(storeId) });
   }
 
   const editing = sheet
@@ -162,8 +221,11 @@ export function QuickActions({ myRole }: { myRole: Role | null | undefined }) {
         modes={picker?.opensStateSheet ? STATE_MODES : undefined}
         onPick={pick}
         onClose={() => setPicker(null)}
-        onDismiss={openPending}
+        onDismiss={runPending}
       />
+
+      {/* 店舗選択シートが閉じ切ってから開く。⚠️ 同時に出すと iOS で表示に失敗する */}
+      <CollectScopeSheet {...collect.sheetProps} />
 
       {/* 管理タブ・店舗詳細と同じシート。在庫の保存は 4 項目まとめて送る必要があるので
           ここに 2 つ目の実装を作らないこと（StateEditSheet 側のコメント参照） */}

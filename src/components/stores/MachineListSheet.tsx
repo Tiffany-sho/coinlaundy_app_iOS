@@ -55,7 +55,11 @@ export function MachineListSheet({
             </Pressable>
           </View>
 
-          <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ padding: spacing.lg }}>
+          {/* ⚠️ 高さの上限は sheet 側に持たせる。ScrollView に maxHeight を付けると
+                 高さが中身から決まり、モーダルのスライド中の 1 回目のレイアウトでは
+                 「中身 = 枠」＝スクロール不要の状態になって**1 回目の指が空振りする**
+                 （docs/traps.md の「シート」を参照） */}
+          <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ padding: spacing.lg }}>
             {machines.length === 0 ? (
               <Muted>設備が登録されていません。</Muted>
             ) : (
@@ -125,6 +129,8 @@ const styles = StyleSheet.create({
     backgroundColor: color.cardBg,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    // ⚠️ 高さの上限はここで持つ（中の ScrollView ではなく）。理由は ScrollView のコメント
+    maxHeight: "88%",
     ...shadow.hero,
   },
   sheetHeader: {

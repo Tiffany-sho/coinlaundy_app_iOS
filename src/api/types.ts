@@ -3,6 +3,13 @@
  * 形は Web の Server Action の戻り値に合わせてある。勝手に変えないこと。
  */
 
+/*
+  ⚠️ キャッシュレスの 1 行は**下書き・送信キューと同じ型**を使う。
+     2 か所に同じ形を書くと、片方だけ直したときに型エラーの出ない
+     食い違いが生まれる（`fundsArray` がその状態で、単位の取り違えを招いている）。
+*/
+import type { CashlessEntry } from "@/offline/types";
+
 export type Role = "admin" | "collecter" | "viewer";
 
 /** laundry_store.machines の 1 要素 */
@@ -32,6 +39,15 @@ export type Store = {
   owner: string;
   organization_id: string;
   created_at?: string;
+  /**
+   * この店舗の支払方法。**無効にしたものも含む**（店舗フォームで戻せるように）。
+   *
+   * ⚠️ **集金画面は必ず `isActive` で絞る。**
+   * ⚠️ **`undefined` のことがある。** 009 より前の応答が react-query の永続
+   *    キャッシュ（MMKV）から最大 7 日復元されるため。型は新しいので
+   *    TypeScript は何も言わない。`?? []` を通すこと。
+   */
+  paymentMethods?: PaymentMethod[];
 };
 
 export type Profile = {
@@ -42,14 +58,62 @@ export type Profile = {
   avatar_url: string | null;
 };
 
+/**
+ * 開発者からのお知らせ。組織に関係なく全ユーザー共通。
+ *
+ * ⚠️ 下書き（`published = false`）と期限切れは BFF が落とすので、ここには来ない。
+ * ⚠️ 投稿は Supabase の Table Editor から手で行う。アプリからは読むだけ。
+ */
+export type Announcement = {
+  id: string;
+  /**
+   * 公開日時の epoch（ミリ秒）。
+   * ⚠️ BFF が ISO 文字列から畳んで返している。**アプリで ISO をパースしない**
+   *    （Hermes のパースに寄りかかると実機だけ NaN になる。docs/traps.md 参照）。
+   */
+  publishedAt: number;
+  /** "info" | "feature" | "maintenance" | "incident"。⚠️ 未知の値も来うる */
+  category: string;
+  title: string;
+  /** プレーンテキスト。改行はそのまま出す（Markdown は解釈しない） */
+  body: string;
+};
+
 export type Organization = {
   id: string;
   name: string;
   myRole: Role;
+  /**
+   * 経費の機能を使うか（012）。初期設定で聞き、設定 → 組織で変えられる。
+   *
+   * ⚠️ **`=== false` で判定すること。** この項目を返す前の応答が react-query の
+   *    永続キャッシュ（MMKV）から最大 7 日復元されるので `undefined` になり得る。
+   *    `Boolean(...)` で畳むと、**アップデート直後だけ経費が消えて見える。**
+   * ⚠️ **表示の設定であって認可ではない。** false でも経費のデータは残り、
+   *    API も 403 にしない（戻せば以前の記録がそのまま出る）。
+   */
+  expensesEnabled?: boolean;
 };
 
+/**
+ * ⚠️ **キーは Apple の商品 ID の中身と揃えてある**（`proplus` ↔
+ *    `com.collecie.app.proplus.monthly`）。サーバが商品 ID からこのキーを引いて
+ *    `organizations.plan` にそのまま入れるので、綴りが違うと**購入は成立するのに
+ *    プランが上がらない。** Web の `src/functions/plans.js` と同じ 4 つ。
+ */
+export type PlanKey = "free" | "pro" | "proplus" | "max";
+
+/**
+ * 契約の出どころ。null = 有料契約なし。
+ *
+ * ⚠️ `"stripe"` の組織にアプリから購入させない。Apple と Stripe の両方から
+ *    引き落とされ、Apple 側は Web から解約できないので返金対応になる。
+ *    判定の正はサーバ（applyAppleTransaction）で、ここは UI の出し分け用。
+ */
+export type PlanSource = "stripe" | "apple" | null;
+
 export type Plan = {
-  plan: "free" | "pro" | "max" | string;
+  plan: PlanKey | string;
   storeCount: number;
   /** 無制限プランは null */
   storeLimit: number | null;
@@ -57,6 +121,19 @@ export type Plan = {
   stripeCustomerId: string | null;
   orgId: string;
   myRole: Role;
+  planSource: PlanSource;
+  appleProductId: string | null;
+  /** ISO8601。App Store 側の失効時刻 */
+  appleExpiresAt: string | null;
+};
+
+/** POST /api/v1/billing/apple/verify の戻り */
+export type ApplePurchaseResult = {
+  plan: PlanKey | string;
+  planSource: PlanSource;
+  productId: string | null;
+  expiresAt: string | null;
+  active: boolean;
 };
 
 /** organizations.collect_schedule。weekly は 0=日…6=土、monthly は 1…31 */
@@ -65,7 +142,20 @@ export type CollectSchedule =
   | { type: "monthly"; days: number[] };
 
 export type Bootstrap = {
-  user: { id: string; email: string | null };
+  user: {
+    id: string;
+    email: string | null;
+    /**
+     * アカウントを作った時刻の epoch（ミリ秒）。
+     *
+     * ⚠️ **`undefined` になり得る。** この項目を返す前の応答が react-query の
+     *    永続キャッシュ（MMKV）から最大 7 日復元されるため。型は必須に見えるが
+     *    実体は無いことがあるので、**必ず既定値を用意すること。**
+     * ⚠️ `null` は「サーバが時刻を読めなかった」。どちらも 0 に倒してよい
+     *    （＝登録時刻で絞らない＝これまでどおりの挙動）。
+     */
+    createdAt?: number | null;
+  };
   /** 未登録なら null → 初回セットアップへ */
   profile: Profile | null;
   /** 未所属なら null → 組織参加画面へ */
@@ -100,7 +190,16 @@ export type FundListItem = {
   laundryId: string;
   laundryName: string;
   date: number;
+  /** ⚠️ 現金 + キャッシュレスの**総額**。現金だけの額ではない */
   totalFunds: number;
+  /**
+   * 支払方法ごとの内訳。
+   * ⚠️ **`undefined` になり得る**（この項目を返す前の応答が react-query の
+   *    永続キャッシュから最大 7 日復元される）。`?? []` を通すこと。
+   * ⚠️ **現金の行は入っていない。** 現金額は `totalFunds − sum(cashless)`
+   *    で出す（`methodBreakdown()` を通すこと）。
+   */
+  cashless?: CashlessEntry[] | null;
   collecter: string | null;
   profiles?: { username: string | null } | null;
 };
@@ -117,18 +216,180 @@ export type FundEntry = {
   name: string;
   /** コインの枚数。金額は ×100 */
   funds: number;
+  /**
+   * この機器で受け取ったキャッシュレス（機種別入力のときだけ）。
+   * ⚠️ **`amount` は「円」。** 同じ行の `funds` は枚数なので単位が違う。
+   * ⚠️ 合計入力で登録された集金と、007 時代の記録では `undefined`。
+   */
+  cashless?: CashlessEntry[];
   [key: string]: unknown;
 };
 
 /** 集金 1 件の明細。一覧には含まれないので詳細を開いたときだけ取る */
 export type FundDetail = {
   fundsArray: FundEntry[] | null;
+  /**
+   * その集金の**合計**キャッシュレス。
+   *
+   * ⚠️ **機種別入力では `fundsArray[].cashless` の和と一致する。**
+   *    どちらを編集するかは記録の形で決めること（両方送るとサーバが
+   *    機器の側を正としてこちらを捨てる）。
+   * ⚠️ **`undefined` になり得る**（この項目を返す前の応答が react-query の
+   *    永続キャッシュから最大 7 日復元される）。`?? []` を通すこと。
+   */
+  cashless?: CashlessEntry[] | null;
+  /** ⚠️ 現金 + キャッシュレスの**総額**。合計欄に出す「現金ぶん」とは別物 */
+  totalFunds?: number | null;
+  /** その店舗の支払方法を引くのに使う */
+  laundryId?: string | null;
 };
 
+/**
+ * 店舗ごとの累計（/funds/summary/stores）。
+ *
+ * ⚠️ **全期間を見ている唯一の集計。** 月次サマリー（/funds/summary/monthly）は
+ *    前年同月比のため過去 2 年に固定されているので、「いつから いつまで」「何回」を
+ *    正しく出せるのはこちらだけ。総額収益カードの期間はここから作る。
+ */
 export type StoreRevenue = {
   laundryId: string;
   laundryName: string;
   total: number;
+  /** 集金レコード数（全期間） */
+  count: number;
+  /** 最初の集金日。JST 深夜 0 時の epoch（ミリ秒）。1 件も無ければ null */
+  firstDate: number | null;
+  /** 最後の集金日。同上 */
+  lastDate: number | null;
+};
+
+/**
+ * 機器ごとの売上内訳（`GET /funds/summary/machines`）。金額はすべて**円**。
+ *
+ * ⚠️ **`machines` の和だけでは店舗の総額に届かない。**
+ *    合計入力モードで登録された集金は `fundsArray` が空配列なので機器に
+ *    割り振れず、`unattributed` に入る。**必ず両方を足して `total` と突き合わせること。**
+ */
+export type MachineBreakdown = {
+  /** 売上の多い順。⚠️ 現在ある設備は 0 円でも並ぶ（故障中の台に気づけるように） */
+  machines: { id: string; name: string; total: number }[];
+  unattributed: {
+    /** 合計入力モードで登録されたぶん */
+    totalMode: number;
+    /**
+     * 機器にも合計入力にも紐づかないぶん（キャッシュレス・過去データのずれ）。
+     * ⚠️ **負になり得る。** `fundsArray` の和が `totalFunds` を上回る古い行があると
+     *    マイナスで出る。`Math.max(0, …)` で潰さないこと（ずれに気づけなくなる）。
+     * ⚠️ **古い応答が react-query の永続キャッシュから復元されると `undefined`。**
+     *    数値として使う前に `?? 0` を通すこと。
+     */
+    other: number;
+  };
+  /** ⚠️ machines の和 + unattributed の和 と一致する */
+  total: number;
+};
+
+/**
+ * 経費の 1 件（`GET /expenses`）。
+ *
+ * ⚠️ **`amount` の単位は「円」。** 集金の `fundsArray[].funds` は**硬貨の枚数**
+ *    （金額は × 100）。同じアプリの中に単位の違う金額があるので取り違えないこと。
+ * ⚠️ **`date` は JST 深夜 0 時の epoch（ミリ秒）。** 集金と同じ規約。
+ * ⚠️ **`laundryId` が null なら「組織全体の経費」**（店舗に紐づかない支出）。
+ */
+export type Expense = {
+  /**
+   * ⚠️ **`recurring` が true のとき、この id は実在しない**
+   *    （`recurring:<定義id>:<YYYY-MM>` 形式）。編集・削除に使わないこと。
+   */
+  id: string;
+  laundryId: string | null;
+  /**
+   * 対象の店名。**null = 組織全体**（店舗に紐づかない支出）。
+   *
+   * ⚠️ **サーバが組織の全店舗から引いて焼き込む。** 店舗一覧（`useStores`）は
+   *    担当店舗（011）で絞られるので、集金担当者・閲覧者では**担当外の店舗が
+   *    落ちる。** そちらから引くと「（削除された店舗）」と出てしまう。
+   * ⚠️ **`undefined` になり得る**（この項目を返す前の応答が永続キャッシュから
+   *    最大 7 日復元される）。`null`（組織全体）と区別すること。
+   */
+  laundryName?: string | null;
+  date: number;
+  amount: number;
+  category: string;
+  note: string | null;
+  /**
+   * 毎月の固定費を展開したものか。
+   * ⚠️ **true の項目に編集・削除の導線を出さない。** 実体が無く、サーバも 400 で弾く。
+   * ⚠️ 古い応答が永続キャッシュから復元されると `undefined`。真偽で見ること。
+   */
+  recurring?: boolean;
+  /** `recurring` が true のときだけ入る、元の定義の id */
+  recurringId?: string;
+  /**
+   * この行を**直せるか**。**サーバが行ごとに判定して返す。**
+   * admin は全部、集金担当者は**自分が登録した当月の分だけ**、閲覧者は不可。
+   *
+   * ⚠️ **アプリ側で「自分が登録したか」「当月か」を組み立て直さないこと。**
+   *    同じ規則が 2 リポジトリに並ぶとずれる（正は Web の
+   *    `src/functions/expenseScope.js` の `canEditExpense`）。
+   * ⚠️ **`undefined` になり得る**（この項目を返す前の応答が永続キャッシュから
+   *    最大 7 日復元される）。そのときは**管理者かどうかに倒す。
+   *    true に倒さないこと**（押しても 403 になる導線が出る）。
+   * ⚠️ **削除の可否ではない。** 削除は今も管理者だけ。
+   */
+  editable?: boolean;
+};
+
+/**
+ * 毎月の固定費の**定義**（`GET /expenses/recurring`）。
+ *
+ * ⚠️ **実体の経費レコードは無い。** 一覧を読むときに各月へ展開される。したがって
+ *    **金額を変えると過去の月まで遡って変わる。**「今月から上がった」を表すには
+ *    `endMonth` を入れて終わらせ、新しい定義を作ること。
+ */
+export type RecurringExpense = {
+  id: string;
+  laundryId: string | null;
+  /** 対象の店名。⚠️ 規約は `Expense.laundryName` と同じ */
+  laundryName?: string | null;
+  name: string;
+  amount: number;
+  category: string;
+  /** 1〜28。⚠️ 29 以上は不可（その日が無い月で計上が飛ぶ） */
+  dayOfMonth: number;
+  /** "YYYY-MM" */
+  startMonth: string;
+  /** "YYYY-MM"。null = 継続中 */
+  endMonth: string | null;
+};
+
+/** データの書き出し形式。⚠️ BFF の FORMATS と同じ綴りにすること */
+export type ExportFormat = "csv" | "xlsx";
+
+/**
+ * POST /api/v1/funds/export の戻り。
+ *
+ * ⚠️ **中身は base64。** そのままテキストとして書き出さないこと（開けないファイルになる）。
+ *    `saveAndShareBase64` が `encoding: "base64"` を付けて書いている。
+ * ⚠️ **返るファイルは必ず 1 つ。** iOS には共有シートしか出口が無く、
+ *    複数ファイルだと数だけシートが開くため BFF 側でまとめてある。
+ */
+export type ExportFile = {
+  format: ExportFormat;
+  /** 保存時のファイル名。拡張子込み */
+  name: string;
+  base64: string;
+  /** 書き出した集金レコードの件数。完了トーストに出す */
+  recordCount: number;
+  /**
+   * 書き出した経費の件数。**含めなかったときは null。**
+   * ⚠️ **0 と null を区別すること。** 0 は「含めたが 1 件も無かった」で、
+   *    null は「含めていない」。まとめると、経費を選んだのに 0 件だったときに
+   *    **失敗したのか本当に無いのか分からなくなる。**
+   * ⚠️ 古い応答では `undefined`（この項目を返す前のサーバ）。
+   */
+  expenseCount?: number | null;
 };
 
 /** laundry_state.machines の 1 要素 */
@@ -174,6 +435,17 @@ export type OrgMember = {
   user_id: string;
   role: Role;
   joined_at: string | null;
+  /**
+   * 担当店舗（011）。
+   *
+   * ⚠️ **管理者から見たときだけ中身が入る。** サーバは呼び出し元が admin の
+   *    ときにしか引かないので、集金担当者が見ると常に空。
+   * ⚠️ **admin 自身は常に空。** admin は行を持たない（＝全店舗）ので、
+   *    画面では「未設定」ではなく**「全店舗」**と出すこと。
+   * ⚠️ **古い応答には無い。** react-query の永続キャッシュ（MMKV）が
+   *    最大 7 日ぶん前のバージョンを返すので `?? []` を通すこと。
+   */
+  storeIds?: string[];
   profiles: { id: string; username: string | null; full_name: string | null };
 };
 
@@ -183,21 +455,55 @@ export type MembersResponse = {
   myRole: Role;
 };
 
-export type Invitation = {
+/**
+ * 組織に届いている参加申請（013）。`GET /org/join-requests`。
+ *
+ * ⚠️ **メールアドレスは入っていない。** 一覧は組織のオーナーが見るものだが、
+ *    表示名で足りるうえ、連絡先を配る理由が無い（アクションログと同じ判断）。
+ * ⚠️ **権限はここに無い。** 承認する側が承認のときに選ぶ。
+ */
+export type JoinRequest = {
   id: string;
-  email: string;
-  role: Role;
-  created_at: string;
-  expires_at: string | null;
-  accepted_at: string | null;
-  token: string;
+  /** 申請した人の表示名。⚠️ 未設定なら「名称未設定」がサーバから来る */
+  name: string;
+  /** epoch ミリ秒。⚠️ ISO 文字列を渡さない（Hermes がパースできない） */
+  createdAt: number;
 };
 
+/** 自分が出している参加申請（013）。`GET /org/join`。⚠️ 無ければ null */
+export type MyJoinRequest = {
+  id: string;
+  status: "pending";
+  /** 申請先の組織名。⚠️ 引けなかったときは null */
+  orgName: string | null;
+  createdAt: number;
+};
+
+/**
+ * アクションログの 1 行。`GET /org/messages` が返す形。
+ *
+ * ⚠️ 以前ここは `{ id, created_at, message, [key: string]: unknown }` になっていたが
+ *    **実際のテーブルに `created_at` は使われておらず、並び順も表示も `date`**
+ *    （epoch ミリ秒）を見ている。インデックスシグネチャがあったせいで
+ *    型エラーにならず、誰も気づかないままだった。
+ *
+ * ⚠️ `date` は **epoch ミリ秒**。ISO 文字列ではない
+ *    （Hermes は ISO 以外を `Invalid Date` にする。docs/traps.md）。
+ */
 export type ActionMessage = {
-  id: string | number;
-  created_at: string;
-  message?: string | null;
-  [key: string]: unknown;
+  id: string;
+  message: string;
+  /** epoch ミリ秒。⚠️ 古い行は null のことがある */
+  date: number | null;
+  /** 自分の操作か。⚠️ サーバが判定して返す */
+  isMe: boolean;
+  /** 退会済みユーザーは null */
+  username: string | null;
+};
+
+export type ActionMessagePage = {
+  items: ActionMessage[];
+  hasMore: boolean;
 };
 
 /** アカウント削除前に提示する影響範囲 */
@@ -236,4 +542,54 @@ export type MonthlyPoint = {
 export type MonthlyChartPoint = MonthlyPoint & {
   /** laundryId → その月の合計。storeId 指定で取ると空になる */
   byStore: Record<string, number>;
+  /**
+   * 支払方法 → その月の合計。キーは **`"cash"`（現金）** と
+   * **`"method:" + 支払方法の名前`**。`methodKeyOf()` で組み立てる。
+   *
+   * ⚠️ **id ではなく名前で畳んである。** 支払方法は店舗ごとなので、同じ
+   *    「PayPay」でも店舗ごとに別の uuid になる。id で引くと組織全体の
+   *    グラフで店舗の数だけ同じ名前のチップが並ぶ。
+   * ⚠️ **値の和は `total` と一致する。**
+   * ⚠️ **古い応答が react-query の永続キャッシュから復元されると `undefined`。**
+   *    `?? {}` を通してから読むこと（`Object.values(undefined)` は例外になる）。
+   */
+  byMethod?: Record<string, number>;
+};
+
+/** 現金を表す `byMethod` のキー */
+export const CASH_METHOD_KEY = "cash";
+
+/**
+ * 支払方法の `byMethod` キー。
+ *
+ * ⚠️ **接頭辞を外さない。** 「cash」という名前の支払方法を作られたときに
+ *    現金と合算されてしまう。⚠️ サーバ（`/api/v1/funds/chart`）が同じ
+ *    組み立てをしているので、**変えるときは必ず両方**直すこと。
+ */
+export function methodKeyOf(name: string) {
+  return `method:${name.trim()}`;
+}
+
+/**
+ * 店舗の支払方法（PayPay・クレジットカードなど）。
+ *
+ * ⚠️ **組織ごとではなく店舗ごと**（009 で移した）。登録・編集は
+ *    **店舗の登録・編集フォームの中**で行う。設定画面には無い。
+ * ⚠️ **現金は含まれない。** 常に存在する暗黙の方法なので、一覧に出すときは
+ *    アプリ側が先頭に足すこと。サーバから行として返すと集金画面で
+ *    現金を 2 回入力できてしまう。
+ * ⚠️ 「削除」は物理削除ではなく `isActive: false`。**集金画面は必ず
+ *    `isActive` で絞る**（店舗フォームは戻せるように無効なものも出す）。
+ */
+export type PaymentMethod = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+/** 店舗フォームから送る支払方法。⚠️ `id` は送らない（サーバが名前で突き合わせる） */
+export type PaymentMethodInput = {
+  name: string;
+  isActive: boolean;
 };

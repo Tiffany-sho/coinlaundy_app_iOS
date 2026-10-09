@@ -1,15 +1,18 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Appear } from "@/components/common/Appear";
+import { ScreenTitleRow } from "@/components/common/SettingsButton";
 import { useBootstrap, useLaundryStates } from "@/api/queries";
 import { ApiError } from "@/api/client";
 import { useOutbox } from "@/offline/OutboxProvider";
 import { SegmentedTabs } from "@/components/common/SegmentedTabs";
 import { StateEditSheet, type StateEditMode } from "@/components/manage/StateEditSheet";
+import { NoStoresNotice } from "@/components/stores/NoStoresNotice";
 import { brokenMachines, isLowStock, stockDisplayItems } from "@/components/manage/laundryState";
-import { Card, CenterMessage, Muted, OfflineBanner, Screen, Title } from "@/components/common/ui";
+import { Card, CenterMessage, Muted, OfflineBanner, Screen } from "@/components/common/ui";
 import { color, font, radius, spacing } from "@/theme/tokens";
 import type { LaundryState } from "@/api/types";
 
@@ -33,8 +36,25 @@ const SEGMENTS = [
  */
 export default function Manage() {
   const insets = useSafeAreaInsets();
+  /** タブをもう一度押したら先頭へ戻す（今いる画面がタブの 1 枚目のときだけ動く） */
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
   const router = useRouter();
   const [segment, setSegment] = useState<StateEditMode>("stock");
+  /**
+   * ホームの「在庫状況 / 設備状況」から開いたときに、そのタブを出す。
+   *
+   * ⚠️ **この画面はタブバーの下でマウントされたまま残る。** つまり segment は
+   *    前に開いたときの値を保持していて、何も渡さないと「在庫状況を押したのに
+   *    設備が出る」ことになる（キャッシュではなく生きた state が残るのが原因）。
+   * ⚠️ t は呼び出し側が毎回変える値。同じ tab を続けて押しても params が
+   *    変わらないと、この効果が再実行されない。
+   */
+  const { tab, t } = useLocalSearchParams<{ tab?: string; t?: string }>();
+  useEffect(() => {
+    if (tab === "stock" || tab === "equipment") setSegment(tab);
+  }, [tab, t]);
+
   const { data, isLoading, error, refetch, isRefetching } = useLaundryStates();
   const bootstrap = useBootstrap();
   const { isOnline } = useOutbox();
@@ -45,12 +65,14 @@ export default function Manage() {
 
   // viewer は読み取り専用。Web の inventory/page.jsx も myRole !== "viewer" で canEdit を決めている
   const canEdit = bootstrap.data?.organization?.myRole !== "viewer";
+  /** 空表示の文言を分けるのに使う。管理者は常に全店舗を見る（011） */
+  const isAdmin = bootstrap.data?.organization?.myRole === "admin";
 
   return (
     <Screen>
       {!isOnline && <OfflineBanner />}
       <View style={{ paddingTop: insets.top + spacing.lg, paddingHorizontal: spacing.lg }}>
-        <Title style={{ marginBottom: spacing.md, fontSize: 22 }}>管理</Title>
+        <ScreenTitleRow title="管理" style={{ marginBottom: spacing.md }} />
         <SegmentedTabs options={SEGMENTS} value={segment} onChange={setSegment} />
       </View>
 
@@ -62,6 +84,7 @@ export default function Manage() {
         />
       ) : (
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={color.teal} />
@@ -73,27 +96,34 @@ export default function Manage() {
             </Card>
           )}
 
-          {(data ?? []).map((state) =>
-            segment === "stock" ? (
-              <StockSummaryCard
-                key={state.laundryId}
-                state={state}
-                onPress={() => setEditingId(state.laundryId)}
-              />
-            ) : (
-              <EquipmentSummaryCard
-                key={state.laundryId}
-                state={state}
-                onPress={() => setEditingId(state.laundryId)}
-              />
-            )
-          )}
+          {/*
+            ⚠️ **Appear は条件分岐の外側に置く。** 在庫 / 設備を切り替えると
+               中身は別のコンポーネントになって作り直されるが、Appear 自身は
+               残るので**初回の 1 度しか動かない。** 内側に置くと切り替えるたびに
+               全カードが出直してうるさくなる。
+            ⚠️ ここは仮想化していない ScrollView なので 1 枚ずつずらしてよい。
+               FlashList の行では使い回しのせいで再生され直す（Appear のコメント参照）。
+          */}
+          {(data ?? []).map((state, i) => (
+            <Appear key={state.laundryId} index={i}>
+              {segment === "stock" ? (
+                <StockSummaryCard
+                  state={state}
+                  onPress={() => setEditingId(state.laundryId)}
+                />
+              ) : (
+                <EquipmentSummaryCard
+                  state={state}
+                  onPress={() => setEditingId(state.laundryId)}
+                />
+              )}
+            </Appear>
+          ))}
 
-          {(data?.length ?? 0) === 0 && (
-            <Card>
-              <Muted>店舗がありません</Muted>
-            </Card>
-          )}
+          {/* ⚠️ 担当店舗が 0 件でも同じ 0 件になる（店舗一覧と同じ理由）。
+                 admin には登録への導線を、非管理者には割り当てを疑えるように出す。
+                 文面と出し分けは NoStoresNotice に集約してある */}
+          {(data?.length ?? 0) === 0 && <NoStoresNotice isAdmin={isAdmin} />}
         </ScrollView>
       )}
 

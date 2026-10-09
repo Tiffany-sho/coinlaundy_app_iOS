@@ -11,6 +11,10 @@ import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
  *   modes 指定   … ボタンを並べる（在庫 / 設備）。その場で編集シートを開くため、
  *                  「店舗を選ぶ → もう一度モードを選ぶ」の 2 段階にしない。
  *                  ⚠️ 段を増やすと Modal を 2 枚重ねることになり iOS で表示に失敗する。
+ *
+ * ⚠️ **集金はここにボタンを並べない。** 店舗一覧・店舗詳細の集金ボタンが
+ *    「店舗を選ぶ → 何を集金するか聞く」なので、ここだけ 1 段で選ばせると揃わない。
+ *    2 枚目の Modal は `onDismiss`（＝このシートが閉じ切ったあと）で開くこと。
  */
 
 export type StorePickerOption = { id: string; name: string };
@@ -48,8 +52,15 @@ export function StorePickerSheet<T extends string>({
       onRequestClose={onClose}
       onDismiss={onDismiss}
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+      {/*
+        ⚠️ **背景と本体は兄弟にする。入れ子にしない。**
+           入れ子にすると指を降ろした時点で外側の Pressable が responder を取り、
+           中の一覧の**1 回目のスクロールが空振りして 2 回目でやっと動く。**
+           StateEditSheet / MachineListSheet と同じ形。
+      */}
+      <View style={styles.root}>
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="閉じる" />
+        <View style={styles.sheet}>
           <Text style={styles.sheetTitle}>{title}</Text>
 
           {isLoading ? (
@@ -103,20 +114,20 @@ export function StorePickerSheet<T extends string>({
           >
             <Text style={styles.cancelLabel}>キャンセル</Text>
           </Pressable>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  root: {
     flex: 1,
-    backgroundColor: "rgba(15,23,42,0.45)",
     alignItems: "center",
     justifyContent: "center",
     padding: spacing.xl,
   },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(15,23,42,0.45)" },
   sheet: {
     width: "100%",
     maxWidth: 400,

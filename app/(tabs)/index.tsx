@@ -1,13 +1,25 @@
+import { useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useRouter, useScrollToTop } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useBootstrap, useHome, useMonthlySummary, queryKeys } from "@/api/queries";
+import {
+  useBootstrap,
+  useHome,
+  useLaundryStates,
+  useMonthlySummary,
+  useStores,
+  queryKeys,
+} from "@/api/queries";
+import { brokenMachines, isLowStock } from "@/components/manage/laundryState";
 import { useOutbox } from "@/offline/OutboxProvider";
+import { OutboxSheet } from "@/offline/OutboxSheet";
+import { usePushPriming } from "@/push/usePushPriming";
 import { ApiError } from "@/api/client";
 import { GreetingHeader } from "@/components/home/GreetingHeader";
-import { CollectCountdown } from "@/components/home/CollectCountdown";
+import { NoStoresNotice } from "@/components/stores/NoStoresNotice";
+import { Appear } from "@/components/common/Appear";
 import { MonthlySalesCarousel } from "@/components/home/MonthlySalesCarousel";
 import { QuickActions } from "@/components/home/QuickActions";
 import {
@@ -24,10 +36,26 @@ import {
 import { formatJstDate } from "@/shared/date";
 import { color, font, radius, spacing } from "@/theme/tokens";
 
+/** 「過去1ヶ月の集金記録」の初期表示件数。残りは「さらに表示」で開く */
+const RECENT_STEP = 5;
+
 export default function Home() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
+  /** 集金記録を何件まで出しているか。⚠️ 取得範囲ではなく表示量 */
+  const [recentLimit, setRecentLimit] = useState(RECENT_STEP);
+  /** 送信待ち・送信できなかった集金の一覧 */
+  const [outboxOpen, setOutboxOpen] = useState(false);
+  /**
+   * ホームタブをもう一度押したら先頭へ戻す。
+   * ⚠️ 「今いる画面がそのタブの 1 枚目のとき」だけ動く（useScrollToTop の判定）。
+   */
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
+
+  // 初回の集金登録を終えた人にだけ通知許可を聞く（集金モーダルの中では聞けない）
+  usePushPriming();
 
   const bootstrap = useBootstrap();
   const hasOrg = Boolean(bootstrap.data?.organization);
@@ -43,7 +71,30 @@ export default function Home() {
    * useHome() は在庫・設備・最近の集金記録の担当。
    */
   const monthly = useMonthlySummary(undefined, hasOrg);
+  /**
+   * 店舗が 1 件も無いときに登録へ誘導するために引く。
+   * ⚠️ 店舗タブと同じクエリキーなので、react-query が使い回して二重に取らない。
+   */
+  const stores = useStores(hasOrg);
   const outbox = useOutbox();
+
+  /**
+   * 「今日の対応状況」に出す店舗名。
+   *
+   * ⚠️ **管理タブと同じクエリキー**（`useLaundryStates`）なので react-query が
+   *    使い回す。ここで引いても通信は増えない。
+   * ⚠️ **件数はこれで数え直さない。** 正は `/home` の
+   *    `lowStockCount` / `brokenMachineCount` で、こちらは名前を出すためだけ。
+   *    読み込みが終わっていない間は空配列になり、**件数だけが先に出る。**
+   * ⚠️ 判定は `laundryState.ts` の 1 か所を通す（管理タブのカードと同じ式）。
+   *    ここで「洗剤が N 個以下」を書き直すと、ホームと管理タブで
+   *    要対応の店舗が食い違う。
+   */
+  const states = useLaundryStates(hasOrg);
+  const lowStockStores = (states.data ?? []).filter(isLowStock).map((s) => `${s.laundryName}店`);
+  const brokenStores = (states.data ?? [])
+    .filter((s) => brokenMachines(s).length > 0)
+    .map((s) => `${s.laundryName}店`);
 
   const isOffline =
     (home.error instanceof ApiError && home.error.code === "OFFLINE") ||
@@ -51,6 +102,17 @@ export default function Home() {
     (bootstrap.error instanceof ApiError && bootstrap.error.code === "OFFLINE");
 
   const username = bootstrap.data?.profile?.username ?? "集金担当者";
+
+  /**
+   * 設定を開く。**アプリで唯一の入口**（2026-08-03 にタブから外して経費と入れ替えた）。
+   *
+   * ⚠️ **組織未所属の分岐にも渡すこと。** そちらはタブがホーム 1 本だけで、
+   *    **組織に参加する導線とサインアウトが設定の中にしか無い。**
+   * ⚠️ `navigate` ではなく `push`。設定はタブではなくなったので、戻れる形で積む。
+   */
+  function openSettings() {
+    router.push("/settings");
+  }
 
   function onRefresh() {
     queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap });
@@ -63,7 +125,7 @@ export default function Home() {
     return (
       <Screen>
         <ScrollView contentContainerStyle={[styles.body, { paddingTop: insets.top + spacing.lg }]}>
-          <GreetingHeader username={username} />
+          <GreetingHeader username={username} onOpenSettings={openSettings} />
           <Card style={{ marginTop: spacing.lg }}>
             <Muted>組織に所属すると、集金データや店舗の情報が表示されます。</Muted>
           </Card>
@@ -72,12 +134,19 @@ export default function Home() {
     );
   }
 
+  /**
+   * ⚠️ BFF は過去 1 か月を**全件**返す（見出しどおりの範囲にするため）。
+   *    ホームに全部並べると縦に長くなるので、ここで表示量だけ絞る。
+   */
   const recent = home.data?.recentFunds ?? [];
+  const visibleRecent = recent.slice(0, recentLimit);
+  const remainingRecent = recent.length - visibleRecent.length;
 
   return (
     <Screen>
       {isOffline && <OfflineBanner />}
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.body, { paddingTop: insets.top + spacing.lg }]}
         refreshControl={
           <RefreshControl
@@ -87,57 +156,114 @@ export default function Home() {
           />
         }
       >
-        <GreetingHeader username={username} />
+        {/* ⚠️ 上から順に index を振る。飛ばすと出る順が入れ替わって不自然に見える */}
+        <Appear index={0}>
+          <GreetingHeader
+            username={username}
+            schedule={bootstrap.data.collectSchedule}
+            onOpenSettings={openSettings}
+          />
+        </Appear>
 
+        {/*
+          ⚠️ **押したら必ず何かが起きるようにする。** 2026-08-05 まで
+             `outbox.flush()` を直接呼んでいたが、`flushOutbox` は
+             `status === "failed"` を**読み飛ばす**ので、「送信失敗 1 件・
+             タップで再送」と出ていながら**押しても永久に何も起きなかった。**
+          ⚠️ **失敗した分はシートを開く。** 4xx（権限が無いなど）で落ちたものは
+             再送しても通らないので、**破棄する手段のほうが本命**になる。
+        */}
         {outbox.items.length > 0 && (
-          <Pressable onPress={() => outbox.flush()} style={styles.outboxBadge}>
-            <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
+          <Pressable
+            onPress={() => (outbox.failedCount > 0 ? setOutboxOpen(true) : outbox.flush())}
+            accessibilityRole="button"
+            style={[styles.outboxBadge, outbox.failedCount > 0 && styles.outboxBadgeFailed]}
+          >
+            <Ionicons
+              name={outbox.failedCount > 0 ? "alert-circle-outline" : "cloud-upload-outline"}
+              size={18}
+              color="#FFFFFF"
+            />
             <Text style={styles.outboxText}>
-              未送信 {outbox.pendingCount} 件
-              {outbox.failedCount > 0 ? `（送信失敗 ${outbox.failedCount} 件）` : ""}・タップで再送
+              {outbox.failedCount > 0
+                ? `送信できなかった集金 ${outbox.failedCount} 件・タップして確認`
+                : `未送信 ${outbox.pendingCount} 件・タップで再送`}
             </Text>
           </Pressable>
         )}
 
+        {/*
+          店舗が 1 件も無いときは、まずここへ誘導する。
+          ⚠️ **読み込み中は出さない**（`stores.data` が来てから判定する）。
+             出すと開くたびに一瞬「店舗がありません」がちらつく。
+          ⚠️ 店舗を消してもこのカードだけが残らないよう、条件は件数で見る。
+        */}
+        {stores.data?.length === 0 && (
+          <Appear index={1} style={{ marginTop: spacing.lg }}>
+            <NoStoresNotice
+              isAdmin={bootstrap.data.organization.myRole === "admin"}
+              prominent
+            />
+          </Appear>
+        )}
+
         {/* ヒーローは月ごとに配色が変わる（Web と同じ）。横スワイプで過去の月へ */}
-        <View style={{ marginTop: spacing.lg }}>
+        <Appear index={2} style={{ marginTop: spacing.lg }}>
           <MonthlySalesCarousel
             data={monthly.data}
             isLoading={monthly.isLoading && !monthly.data}
             isError={Boolean(monthly.error)}
           />
-        </View>
+        </Appear>
 
-        {/* 集金日のカウントダウンは月のカードの下。まず金額、次に次回予定の順で読ませる */}
-        <View style={{ marginTop: spacing.lg }}>
-          <CollectCountdown schedule={bootstrap.data.collectSchedule} />
-        </View>
+        {/* ⚠️ 集金日のカウントダウンはヘッダー（日付の隣）へ移した。ここに戻さないこと */}
 
-        {/* Web と同じ位置（売上カードの下・今日の対応状況の上） */}
-        <View style={{ marginTop: spacing.xl }}>
-          <SectionHeading>クイックアクション</SectionHeading>
-          <QuickActions myRole={bootstrap.data.organization.myRole} />
-        </View>
-
-        <View style={{ marginTop: spacing.xl }}>
+        {/* ⚠️ 今日の対応状況をクイックアクションより先に出す（2026-07-30）。
+               Web は逆順だが、アプリでは「まず今日どうなっているか」を見て
+               そのあと操作を選ぶ流れにしてある。Web に合わせ直さないこと */}
+        <Appear index={3} style={{ marginTop: spacing.xl }}>
           <SectionHeading>今日の対応状況</SectionHeading>
           <View style={styles.statusRow}>
+            {/*
+              ⚠️ **どちらのタブを開くかを必ず渡す。** 管理タブはタブバーの下で
+                 マウントされたまま残るので、segment が前回のまま復活し
+                 「在庫状況を押したのに設備が出る」ことになる（実際にこれで壊れていた）。
+                 t は毎回変える値。同じ tab を続けて押しても params が変わらないと
+                 受け側の効果が再実行されない。
+              ⚠️ **push ではなく navigate。** push は同じ画面をスタックに積み増すので、
+                 押した回数だけ戻る操作が要るようになる。navigate は既にある管理画面へ
+                 戻って params だけ差し替える
+            */}
             <StatusCard
               icon="cube-outline"
               label="在庫状況"
               count={home.data?.lowStockCount ?? 0}
-              onPress={() => router.push("/manage")}
+              storeNames={lowStockStores}
+              onPress={() =>
+                router.navigate({ pathname: "/manage", params: { tab: "stock", t: Date.now() } })
+              }
             />
             <StatusCard
               icon="construct-outline"
               label="設備状況"
               count={home.data?.brokenMachineCount ?? 0}
-              onPress={() => router.push("/manage")}
+              storeNames={brokenStores}
+              onPress={() =>
+                router.navigate({
+                  pathname: "/manage",
+                  params: { tab: "equipment", t: Date.now() },
+                })
+              }
             />
           </View>
-        </View>
+        </Appear>
 
-        <View style={{ marginTop: spacing.xl }}>
+        <Appear index={4} style={{ marginTop: spacing.xl }}>
+          <SectionHeading>クイックアクション</SectionHeading>
+          <QuickActions myRole={bootstrap.data.organization.myRole} />
+        </Appear>
+
+        <Appear index={5} style={{ marginTop: spacing.xl }}>
           <ListCard
             icon="time-outline"
             title="過去1ヶ月の集金記録"
@@ -149,36 +275,80 @@ export default function Home() {
             ) : recent.length === 0 ? (
               <ListEmpty text="過去1ヶ月の集金記録はありません" />
             ) : (
-              recent.map((fund, i) => (
-                <ListRow key={String(fund.id)} last={i === recent.length - 1}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.rowTitle}>{fund.laundryName}</Text>
-                    <View style={styles.rowMetaRow}>
-                      <Text style={styles.rowMeta}>{formatJstDate(fund.date)}</Text>
-                      {fund.collecter && <Text style={styles.rowFaint}>{fund.collecter}</Text>}
+              <>
+                {visibleRecent.map((fund, i) => (
+                  <ListRow
+                    key={String(fund.id)}
+                    last={i === visibleRecent.length - 1 && remainingRecent === 0}
+                    onPress={() =>
+                      router.push({ pathname: "/funds/[id]", params: { id: String(fund.id) } })
+                    }
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowTitle}>{fund.laundryName}</Text>
+                      <View style={styles.rowMetaRow}>
+                        <Text style={styles.rowMeta}>{formatJstDate(fund.date)}</Text>
+                        {fund.collecter && <Text style={styles.rowFaint}>{fund.collecter}</Text>}
+                      </View>
                     </View>
-                  </View>
-                  <MoneyText value={fund.totalFunds} size={15} tone="deeper" />
-                </ListRow>
-              ))
+                    <MoneyText value={fund.totalFunds} size={15} tone="deeper" />
+                  </ListRow>
+                ))}
+                {remainingRecent > 0 && (
+                  <ListRow last onPress={() => setRecentLimit((n) => n + RECENT_STEP)}>
+                    <Text style={styles.moreText}>さらに表示（残り {remainingRecent} 件）</Text>
+                    <Ionicons name="chevron-down" size={14} color={color.teal} />
+                  </ListRow>
+                )}
+              </>
             )}
           </ListCard>
-        </View>
+        </Appear>
       </ScrollView>
+
+      {/* ⚠️ 空でも置いたままにする（items が 0 件になった瞬間に閉じられるように） */}
+      <OutboxSheet
+        open={outboxOpen}
+        items={outbox.items}
+        onClose={() => setOutboxOpen(false)}
+        onRetry={() => {
+          setOutboxOpen(false);
+          void outbox.retryFailed();
+        }}
+        onDiscard={outbox.discard}
+      />
     </Screen>
   );
 }
 
-/** Web の StatusCard。問題がなければ teal、あればオレンジで「N店舗 要対応」 */
+/**
+ * Web の StatusCard。問題がなければ teal、あればオレンジで「N店舗 要対応」。
+ *
+ * ⚠️ **要対応のときは店舗名まで出す**（2026-08-05）。件数だけだと
+ *    「どこへ行けばいいのか」が分からず、管理タブを開いて一覧を上から
+ *    見比べることになる。⚠️ 名前は必ず**この画面で**引く（管理タブへ
+ *    渡して向こうで出す形にすると、押す前に分かる、という利点が消える）。
+ */
+
+/** 店舗名を出す上限。⚠️ 増やすと 2 枚のカードの高さが揃って伸びる（下の注意） */
+const STORE_NAME_LIMIT = 3;
 function StatusCard({
   icon,
   label,
   count,
+  storeNames,
   onPress,
 }: {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
   count: number;
+  /**
+   * 要対応の店舗名。
+   * ⚠️ **`count` と食い違い得る。** `count` は BFF（`/home`）が数えたもので、
+   *    こちらは端末が `laundry_state` から組んだもの。**件数は `count` を正とし、
+   *    名前は「出せたぶんだけ」出す**（読み込み中は空になる）。
+   */
+  storeNames: string[];
   onPress: () => void;
 }) {
   const isAlert = count > 0;
@@ -204,6 +374,29 @@ function StatusCard({
         <Text style={[styles.statusValue, { color: isAlert ? color.orange500 : color.tealDeeper }]}>
           {isAlert ? `${count}店舗 要対応` : "問題なし"}
         </Text>
+        {/*
+          ⚠️ **1 店舗 1 行の箇条書きにする**（2026-08-06）。「・」で繋いだ 1 本の
+             文にしていたが、店名自体に「店」が付くので**どこで切れているのか
+             読めなかった**（「北町店・南口店」が 1 軒の名前に見える）。
+             Web の `StatusSummaryCards` が最初からこの形なので揃えてある。
+          ⚠️ **`STORE_NAME_LIMIT` 件で打ち切る。** 2 枚のカードは横に並んでいて
+             背の高いほうに揃うので、片方が 8 軒あると**両方が 8 行ぶんの高さになる。**
+             残りは件数で伝えて、続きは押した先（管理タブ）で見てもらう。
+        */}
+        {isAlert && storeNames.length > 0 && (
+          <View style={styles.statusStores}>
+            {storeNames.slice(0, STORE_NAME_LIMIT).map((name) => (
+              <Text key={name} style={styles.statusStore} numberOfLines={1}>
+                • {name}
+              </Text>
+            ))}
+            {storeNames.length > STORE_NAME_LIMIT && (
+              <Text style={styles.statusStore}>
+                ほか {storeNames.length - STORE_NAME_LIMIT} 件
+              </Text>
+            )}
+          </View>
+        )}
       </View>
       <Ionicons name="chevron-forward" size={14} color={isAlert ? color.orange200 : color.cyan300} />
     </Pressable>
@@ -223,15 +416,26 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1.5,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    /* ⚠️ 縦の余白は 2 つのカードで必ず揃える。片方だけ変えると
+          「問題なし」と「N店舗 要対応」で高さが違って段差が出る */
+    paddingVertical: spacing.lg,
+    minHeight: 76,
   },
   statusIcon: { borderRadius: 999, padding: 6 },
   statusLabel: { fontFamily: font.uiBold, fontSize: 11, color: color.textMuted },
   statusValue: { fontFamily: font.uiBold, fontSize: 13, marginTop: 2 },
+  statusStores: { marginTop: 2 },
+  statusStore: {
+    fontFamily: font.ui,
+    fontSize: 10,
+    lineHeight: 14,
+    color: color.textMuted,
+  },
   rowTitle: { fontFamily: font.uiBold, fontSize: 14, color: color.textMain },
   rowMetaRow: { flexDirection: "row", gap: spacing.sm, marginTop: 2 },
   rowMeta: { fontFamily: font.ui, fontSize: 12, color: color.textMuted },
   rowFaint: { fontFamily: font.ui, fontSize: 12, color: color.textFaint },
+  moreText: { flex: 1, fontFamily: font.uiBold, fontSize: 13, color: color.teal },
   outboxBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -242,5 +446,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginTop: spacing.md,
   },
+  /* ⚠️ 送信待ち（橙）と送信失敗（赤）を色で分ける。同じ橙のままだと
+        「電波が戻れば送られる」ものと「手を打たないと消えない」ものが区別できない */
+  outboxBadgeFailed: { backgroundColor: color.red500 },
   outboxText: { fontFamily: font.uiBold, fontSize: 13, color: "#FFFFFF", flex: 1 },
 });

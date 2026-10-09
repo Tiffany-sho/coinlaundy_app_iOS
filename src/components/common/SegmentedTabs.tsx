@@ -10,7 +10,7 @@ import { color, font, radius, spacing } from "@/theme/tokens";
  *
  * ⚠️ 横スワイプではなくボタンで切り替える。
  *    react-native-web では onMomentumScrollEnd が発火せず、横スクロール式は
- *    ブラウザ確認時に選択位置を見失う（app/welcome.tsx のコメント参照）。
+ *    ブラウザ確認時に選択位置を見失う（docs/traps.md の react-native-web を参照）。
  *    切り替え先のカードは高さがそれぞれ違うので、ページングも噛み合わない。
  */
 export function SegmentedTabs<T extends string>({

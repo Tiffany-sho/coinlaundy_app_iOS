@@ -6,56 +6,127 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useBootstrap, useSetCollectMethod, useStore } from "@/api/queries";
+import {
+  activePaymentMethods,
+  useBootstrap,
+  useSetCollectMethod,
+  useStore,
+} from "@/api/queries";
 import { CalendarPicker, formatJstDateLong } from "@/components/common/CalendarPicker";
-import { useDialog } from "@/components/common/dialog";
-import { useToast } from "@/components/common/toast";
-import { CenterMessage, Muted, Screen } from "@/components/common/ui";
+import { Divider, SectionHead } from "@/components/common/section";
+import { DialogProvider, useDialog } from "@/components/common/dialog";
+import { ToastProvider, useToast, type ToastApi } from "@/components/common/toast";
+import { CenterMessage, Screen } from "@/components/common/ui";
+import { useKeyboardVisible } from "@/components/common/useKeyboardVisible";
+import {
+  CollectFooter,
+  CollectHeader,
+  CollectOfflineNote,
+  DraftBanner,
+} from "@/components/collect/CollectChrome";
+import {
+  CollectMethodSection,
+  MachineAmountRows,
+  TotalAmountInput,
+  type MachineRow,
+} from "@/components/collect/CollectAmountInputs";
 import { clearDraft, createDebouncedSave, loadDraft, saveDraft } from "@/offline/draft";
 import { enqueue, isOutboxFull } from "@/offline/outbox";
+import { markCollectRegistered } from "@/push/pushToken";
 import { useOutbox } from "@/offline/OutboxProvider";
-import type { Draft } from "@/offline/types";
+import {
+  CashlessInputs,
+  cashlessTotal,
+  toCashlessEntries,
+} from "@/components/collect/CashlessInputs";
+import { toCollectScope } from "@/components/collect/collectScope";
+import type { CashlessEntry, Draft } from "@/offline/types";
 import { COIN_VALUE, weightToCoins } from "@/shared/collectMoney";
 import { nowInJst, toJstMidnightEpoch } from "@/shared/date";
-import { color, font, radius, shadow, spacing, HIT_SIZE } from "@/theme/tokens";
+import { makeUuid } from "@/shared/uuid";
+import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens";
 
 /**
  * 集金入力。Web の CollectMoneyForm.jsx に構造を合わせてある。
  *   ヘッダ（固定）→ 下書きバナー → 集金日 → 集金方式 → 金額入力 → フッタ（固定）
  *
- * 機種ごとに「枚数」と「質量」を別々に保持し、⟳ ボタンで表示を切り替える。
- * 質量から枚数へは切り替えた瞬間に換算する（Web と同じ挙動）。
+ * 見た目は components/collect/ に切り出してある。ここは状態と送信だけ。
  */
-type MachineRow = {
-  id: string;
-  name: string;
-  /** 硬貨の枚数 */
-  funds: number | null;
-  /** 100 円玉の質量（g） */
-  weight: number | null;
-  /** true なら質量入力モード */
-  toggle: boolean;
-};
+/**
+ * ⚠️ **この画面の中に DialogProvider をもう 1 つ置いている。**
+ *
+ * この画面はアプリで唯一 `presentation: "fullScreenModal"`（`app/_layout.tsx`）で、
+ * react-native-screens が**ルートの UIViewController から新しい VC をモーダル表示**する。
+ * 一方ルートの DialogProvider が持つ `Modal` はルートの React ツリーに属するので、
+ * iOS では「すでにモーダルを出している VC から更にモーダルを出す」ことになり
+ * **何も表示されずに失敗する**（Metro に
+ * "Attempt to present ... which is already presenting ..." が出る）。
+ *
+ * `onCancel` は入力があると `dialog.choose` の結果を待つため、ダイアログが出ないと
+ * **キャンセルも戻るも無反応になる。** ここで包み直すと `Modal` が
+ * この画面側の VC に属するので正しく上に出る。
+ *
+ * `ToastProvider` も同じ理由でルートのものはこの画面の下に隠れる（`position: "absolute"`
+ * のオーバーレイなので `Modal` ですらない）。こちらも包み直すが、**2 つを使い分ける。**
+ *
+ * ⚠️ **`router.back()` の直前に出すトーストはルート側（`rootToast`）を使うこと。**
+ *    ネスト側で出すと画面のアンマウントと同時に消えて一瞬も読めない。
+ *    逆に画面に留まる入力検証のエラーは**ネスト側**でないと見えない。
+ *    だから包む前にルート側を掴んでおき、両方を持ったまま下へ渡している。
+ */
+export default function CollectMoneyModal() {
+  // ⚠️ 包む前に掴む。ここで useToast() を呼ぶとルート側の ToastProvider に解決される
+  const rootToast = useToast();
+  return (
+    <DialogProvider>
+      <ToastProvider>
+        <CollectMoney rootToast={rootToast} />
+      </ToastProvider>
+    </DialogProvider>
+  );
+}
 
-export default function CollectMoney() {
-  const { storeId } = useLocalSearchParams<{ storeId: string }>();
+/**
+ * @param rootToast 画面を離れたあとも残るトースト。`router.back()` の直前に使う。
+ *                  この画面に留まるときは `useToast()`（ネスト側）を使う
+ */
+function CollectMoney({ rootToast }: { rootToast: ToastApi }) {
+  const { storeId, scope } = useLocalSearchParams<{ storeId: string; scope?: string }>();
+  /**
+   * 何を記録するか。⚠️ **未指定は「両方」。** 通知のディープリンクなど
+   * scope を持たない経路から開かれたときに、**入力欄が黙って消えている**
+   * 状態にしないため（`toCollectScope` の説明を参照）。
+   */
+  const collectScope = toCollectScope(scope);
   const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
   const router = useRouter();
   const dialog = useDialog();
   const toast = useToast();
   const { data: store, isLoading } = useStore(storeId);
   const bootstrap = useBootstrap();
   const setCollectMethod = useSetCollectMethod();
+  /*
+    ⚠️ **支払方法は店舗ごと**（009）。`GET /stores/:id` の応答に乗っているので
+       別のクエリは張らない。⚠️ 使用停止中のものは新しく選ばせない
+       （過去の記録には残っている）。
+  */
+  const storeMethods = activePaymentMethods(store);
+  /**
+   * 画面に出す支払方法。⚠️ **`scope === "cash"` のときは空にする。**
+   * 空にすると入力欄も下書きの復元も送信も一斉に止まるので、
+   * 「現金のみ」を選んだのにキャッシュレスが混ざる経路が残らない。
+   */
+  const activeMethods = collectScope === "cash" ? [] : storeMethods;
+  /** 現金（硬貨・合計金額）の欄を出すか。⚠️ 出さないときは金額も 0 で送る */
+  const showCash = collectScope !== "cashless";
   const { flush, isOnline } = useOutbox();
 
   const [epoch, setEpoch] = useState(() => toJstMidnightEpoch(nowInJst()));
@@ -66,6 +137,11 @@ export default function CollectMoney() {
   const [methodReady, setMethodReady] = useState(false);
   const [rows, setRows] = useState<MachineRow[]>([]);
   const [totalInput, setTotalInput] = useState("");
+  /**
+   * キャッシュレスの入力。methodId → 数字だけの文字列。
+   * ⚠️ **単位は「円」。** 機種別入力（枚数）と混ぜないこと。
+   */
+  const [cashless, setCashless] = useState<Record<string, string>>({});
   const [requestId, setRequestId] = useState(() => makeUuid());
   const [pendingDraft, setPendingDraft] = useState<Draft | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -111,17 +187,44 @@ export default function CollectMoney() {
     setMethodReady(true);
   }, [bootstrap.data, methodReady]);
 
-  const total = useMemo(() => {
+  /**
+   * 現金ぶんの金額。
+   * ⚠️ **サーバへ送るのはこの値。** DB の totalFunds は現金 + キャッシュレスの
+   *    総額だが、**組み立てるのはサーバ（createData）**。ここで足して送ると二重計上になる。
+   */
+  const cashTotal = useMemo(() => {
+    // ⚠️ 「現金以外のみ」では欄を出していないので必ず 0。下書きから復元された
+    //    枚数が残っていても数えない（画面に出ていない金額を送らないため）
+    if (!showCash) return 0;
     if (!byMachine) {
       const n = Number(totalInput);
       return Number.isFinite(n) ? n : 0;
     }
     return rows.reduce((sum, r) => sum + (r.funds ?? 0), 0) * COIN_VALUE;
-  }, [byMachine, totalInput, rows]);
+  }, [showCash, byMachine, totalInput, rows]);
 
-  const hasInput = byMachine
-    ? rows.some((r) => r.funds !== null || r.weight !== null)
-    : totalInput.trim() !== "";
+  /**
+   * キャッシュレスの合計。
+   * ⚠️ **機種別入力では機器ごとの欄の和**、合計入力では下の 1 か所の和。
+   *    片方だけ見ると、方式を切り替えたときに総額が合わなくなる。
+   */
+  const cashlessSum = useMemo(
+    () =>
+      byMachine
+        ? rows.reduce((sum, r) => sum + cashlessTotal(r.cashless ?? {}), 0)
+        : cashlessTotal(cashless),
+    [byMachine, rows, cashless]
+  );
+
+  /** 画面に出す総額。⚠️ こちらは足す（利用者が見るのは受け取った合計） */
+  const total = cashTotal + cashlessSum;
+
+  const hasInput =
+    (showCash &&
+      (byMachine
+        ? rows.some((r) => r.funds !== null || r.weight !== null)
+        : totalInput.trim() !== "")) ||
+    cashlessSum > 0;
 
   // 入力が変わるたびに自動保存する（アプリが落ちても失わない）
   useEffect(() => {
@@ -129,7 +232,7 @@ export default function CollectMoney() {
     debounced.schedule(buildDraft());
     return () => debounced.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, totalInput, epoch, byMachine, initialized, hasInput]);
+  }, [rows, totalInput, cashless, epoch, byMachine, initialized, hasInput]);
 
   function buildDraft(): Draft {
     return {
@@ -137,8 +240,15 @@ export default function CollectMoney() {
       storeName: store!.store,
       date: epoch,
       method: byMachine ? "byMachine" : "total",
-      fundsArray: rows.map((r) => ({ id: r.id, name: r.name, funds: r.funds ?? 0 })),
+      fundsArray: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        funds: r.funds ?? 0,
+        // ⚠️ 機器ごとのキャッシュレスも下書きに残す。落とすと復元で消える
+        cashless: toCashlessEntries(activeMethods, r.cashless ?? {}),
+      })),
       totalInput: Number(totalInput) || 0,
+      cashless: toCashlessEntries(activeMethods, cashless),
       clientRequestId: requestId,
       updatedAt: Date.now(),
     };
@@ -171,7 +281,8 @@ export default function CollectMoney() {
       debounced.cancel();
       if (action === "save") {
         saveDraft(buildDraft());
-        toast.success("入力内容を一時保存しました");
+        // ⚠️ 直後に router.back() するのでルート側。ネスト側だと消える
+        rootToast.success("入力内容を一時保存しました");
       } else if (storeId) {
         // 入力中は 1.5 秒ごとに自動保存しているので、破棄を選んだら
         // 書き込み済みの下書きも消す。消さないと次に開いたときバナーが出てしまう
@@ -215,10 +326,7 @@ export default function CollectMoney() {
     Haptics.selectionAsync().catch(() => {});
     if (row.toggle) {
       // 質量入力 → 枚数入力。入っている質量を枚数に換算して持ち替える
-      updateRow(row.id, {
-        toggle: false,
-        funds: row.weight ? weightToCoins(row.weight) : null,
-      });
+      updateRow(row.id, { toggle: false, funds: row.weight ? weightToCoins(row.weight) : null });
     } else {
       updateRow(row.id, { toggle: true });
     }
@@ -245,10 +353,31 @@ export default function CollectMoney() {
     setEpoch(pendingDraft.date);
     setTotalInput(pendingDraft.totalInput ? String(pendingDraft.totalInput) : "");
     setRequestId(pendingDraft.clientRequestId);
+    /*
+      ⚠️ **`?? []` を必ず通す。** この項目を足す前に保存された下書きが
+         MMKV に残っている端末では `cashless` が undefined。型は必須に見えても
+         実体が無く、TypeScript は何も言わない。
+      ⚠️ 使用停止になった支払方法が下書きに残っていることがあるので、
+         **今も使えるものだけ**戻す（送っても弾かれる）。
+    */
+    const toAmounts = (entries: CashlessEntry[] | undefined) => {
+      const out: Record<string, string> = {};
+      for (const entry of entries ?? []) {
+        if (activeMethods.some((m) => m.id === entry.methodId)) {
+          out[entry.methodId] = String(entry.amount);
+        }
+      }
+      return out;
+    };
+
+    setCashless(toAmounts(pendingDraft.cashless));
     setRows((prev) =>
       prev.map((r) => {
         const saved = pendingDraft.fundsArray.find((f) => f.id === r.id);
-        return saved ? { ...r, funds: saved.funds || null } : r;
+        // ⚠️ 機器ごとのキャッシュレスも戻す。落とすと復元したのに金額が消える
+        return saved
+          ? { ...r, funds: saved.funds || null, cashless: toAmounts(saved.cashless) }
+          : r;
       })
     );
     // 下書きに入っている方式へ戻す。ここを changeMethod に通しておかないと
@@ -279,10 +408,36 @@ export default function CollectMoney() {
           storeId: store!.id,
           store: store!.store,
           date: epoch,
+          /*
+            ⚠️ **機種別入力ではキャッシュレスも機器ごとに載せる。**
+               サーバ（createData）が機器ぶんを足し合わせて集金レコードの
+               `cashless` 列を組み直す。⚠️ **そのとき集金レベルの `cashless` は
+               無視される**ので、ここで両方送っても二重計上にはならないが、
+               紛らわしいので機種別では送らない。
+          */
           fundsArray: byMachine
-            ? rows.map((r) => ({ id: r.id, name: r.name, funds: r.funds ?? 0 }))
+            ? rows.map((r) => ({
+                id: r.id,
+                name: r.name,
+                funds: r.funds ?? 0,
+                cashless: toCashlessEntries(activeMethods, r.cashless ?? {}).map((e) => ({
+                  methodId: e.methodId,
+                  amount: e.amount,
+                })),
+              }))
             : [],
-          totalFunds: total,
+          /*
+            ⚠️ **現金ぶんだけを送る。** DB の totalFunds は現金 + キャッシュレスの
+               総額だが、組み立てるのはサーバ（createData）。画面に出している
+               `total` を送ると**キャッシュレスが二重に計上される。**
+          */
+          totalFunds: cashTotal,
+          cashless: byMachine
+            ? []
+            : toCashlessEntries(activeMethods, cashless).map((e) => ({
+                methodId: e.methodId,
+                amount: e.amount,
+              })),
         },
         requestId
       );
@@ -290,8 +445,12 @@ export default function CollectMoney() {
       // 集金方式の既定値はチェックを操作した時点で保存済みなので、ここでは何もしない
       clearDraft(store!.id);
       void flush();
+      // 通知許可を聞く合図。⚠️ ここでは聞かない。iOS は Modal の上に Modal を
+      // 重ねられないので、閉じてホームに戻ってから usePushPriming が出す
+      markCollectRegistered();
       // 触覚はトースト側が鳴らすのでここでは鳴らさない（二重に振動するため）
-      toast.success(
+      // ⚠️ 直後に router.back() するのでルート側。ネスト側だと消える
+      rootToast.success(
         isOnline
           ? "集金データを登録しました"
           : "送信待ちに追加しました。電波が戻ると自動送信されます"
@@ -308,74 +467,40 @@ export default function CollectMoney() {
 
   return (
     <Screen>
-      {/* ヘッダ（Web と同じ：戻る + コインアイコン + 店名 + 「集金中」） */}
-      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        {/* 戻るはフッタのキャンセルと同じ onCancel を通す（確認の有無を揃えるため） */}
-        <Pressable onPress={onCancel} hitSlop={12} style={styles.headerBack}>
-          <Ionicons name="chevron-back" size={22} color={color.textMuted} />
-        </Pressable>
-        <LinearGradient
-          colors={["#0891B2", "#0E7490"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerIcon}
-        >
-          <Ionicons name="cash-outline" size={20} color="#FFFFFF" />
-        </LinearGradient>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {store.store}店
-          </Text>
-          <Text style={styles.headerSub}>集金中</Text>
-        </View>
-      </View>
+      {/* ⚠️ 戻るはフッタのキャンセルと同じ onCancel を通す（確認の有無を揃えるため） */}
+      <CollectHeader storeName={store.store} topInset={insets.top} onBack={onCancel} />
+      {!isOnline && <CollectOfflineNote />}
 
-      {!isOnline && (
-        <View style={styles.offlineNote}>
-          <Text style={styles.offlineNoteText}>
-            オフライン — 登録すると送信待ちになり、電波が戻ると自動送信されます
-          </Text>
-        </View>
-      )}
-
+      {/*
+        ⚠️ keyboardVerticalOffset を渡さないこと（0 が正しい）。
+        behavior="padding" の下パディングは
+          frame.y + frame.height - (keyboard.screenY - keyboardVerticalOffset)
+        で決まる。frame は親（Screen）基準なので、上の CollectHeader の高さは
+        frame.y に既に入っている。ここで insets.top + 60 を渡すとヘッダ分を
+        二重に数えて、ScrollView の下端がキーボードの上端より約 119px 高くなり、
+        キーボードとの間に帯状の余白が出る。
+        このオフセットが要るのは KeyboardAvoidingView の上に**ネイティブの**
+        ナビゲーションヘッダがある（RN のレイアウトに含まれない）ときだけ。
+      */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={insets.top + 60}
       >
         <ScrollView
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}
           keyboardShouldPersistTaps="handled"
         >
           {pendingDraft && (
-            <View style={styles.draftBanner}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.draftTitle}>一時保存データがあります</Text>
-                <Text style={styles.draftTime}>
-                  保存日時: {new Date(pendingDraft.updatedAt).toLocaleString("ja-JP", {
-                    month: "numeric",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  clearDraft(storeId!);
-                  setPendingDraft(null);
-                }}
-                style={styles.draftGhost}
-              >
-                <Text style={styles.draftGhostLabel}>破棄</Text>
-              </Pressable>
-              <Pressable onPress={restoreDraft} style={styles.draftPrimary}>
-                <Text style={styles.draftPrimaryLabel}>復元</Text>
-              </Pressable>
-            </View>
+            <DraftBanner
+              draft={pendingDraft}
+              onRestore={restoreDraft}
+              onDiscard={() => {
+                clearDraft(storeId!);
+                setPendingDraft(null);
+              }}
+            />
           )}
 
-          {/* ── 集金日 ── */}
           {/* Web の EpochTimeSelector と同じで、普段は日付だけ出しタップで選択欄を開く */}
           <SectionHead icon="calendar-outline" label="集金日" />
           <Pressable
@@ -410,238 +535,92 @@ export default function CollectMoney() {
 
           <Divider />
 
-          {/* ── 集金方式 ── */}
-          <View style={styles.methodRow}>
-            <View style={{ flex: 1 }}>
-              <SectionHead icon="cash-outline" label="集金方式" noMargin />
-              <Muted style={{ marginTop: 4 }}>
-                {byMachine ? "各機種ごとに金額を入力します" : "合計金額のみを入力します"}
-              </Muted>
-            </View>
-            <Switch
-              value={byMachine}
-              onValueChange={(v) => {
-                Haptics.selectionAsync().catch(() => {});
-                changeMethod(v);
-              }}
-              trackColor={{ true: color.teal, false: "#CBD5E1" }}
-            />
-          </View>
-          {/* Web の FixSwitch（「この状態に固定」）に当たるもの */}
-          <Pressable
-            style={styles.fixRow}
-            onPress={() => changeFixedMethod(!fixedMethod)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: fixedMethod }}
-            hitSlop={6}
-          >
-            <Ionicons
-              name={fixedMethod ? "checkbox" : "square-outline"}
-              size={20}
-              color={fixedMethod ? color.teal : color.textFaint}
-            />
-            <Text style={styles.fixLabel}>次回もこの集金方式を使う</Text>
-          </Pressable>
+          <CollectMethodSection
+            byMachine={byMachine}
+            fixedMethod={fixedMethod}
+            onChangeMethod={changeMethod}
+            onChangeFixed={changeFixedMethod}
+          />
 
           <Divider />
 
-          {/* ── 金額入力 ── */}
-          <SectionHead icon="cash-outline" label={byMachine ? "機種別金額" : "合計金額"} />
-
+          <SectionHead
+            icon="cash-outline"
+            label={
+              byMachine
+                ? showCash
+                  ? "機種別金額"
+                  : "機種別（現金以外）"
+                : showCash
+                  ? "合計金額"
+                  : "合計（現金以外）"
+            }
+          />
           {byMachine ? (
-            rows.map((row, index) => (
-              <View key={row.id}>
-                {index > 0 && <View style={styles.rowDivider} />}
-
-                <View style={styles.machineHead}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.machineName}>{row.name}</Text>
-                    <Text style={styles.machineHint}>
-                      {row.toggle ? "質量から計算" : "枚数を入力"}
-                    </Text>
-                  </View>
-                  <Pressable onPress={() => toggleRow(row)} style={styles.swapButton} hitSlop={8}>
-                    <Ionicons name="refresh" size={16} color={color.teal} />
-                  </Pressable>
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <View style={styles.addon}>
-                    <Text style={styles.addonText}>{row.toggle ? "g" : "枚"}</Text>
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    value={
-                      row.toggle
-                        ? row.weight != null
-                          ? String(row.weight)
-                          : ""
-                        : row.funds != null
-                          ? String(row.funds)
-                          : ""
-                    }
-                    onChangeText={(text) => {
-                      const n = parseInt(text.replace(/[^0-9]/g, ""), 10);
-                      const value = Number.isFinite(n) ? n : null;
-                      updateRow(row.id, row.toggle ? { weight: value } : { funds: value });
-                    }}
-                    keyboardType="number-pad"
-                    inputMode="numeric"
-                    placeholder={row.toggle ? "100円玉の質量を入力" : "100円玉の枚数を入力"}
-                    placeholderTextColor={color.textFaint}
-                  />
-                </View>
-
-                {row.funds != null && row.funds > 0 && (
-                  <View style={styles.resultBox}>
-                    <Text style={styles.resultText}>
-                      合計: ¥{(row.funds * COIN_VALUE).toLocaleString()}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            ))
+            <MachineAmountRows
+              rows={rows}
+              methods={activeMethods}
+              showCash={showCash}
+              onChange={updateRow}
+              onToggle={toggleRow}
+            />
+          ) : showCash ? (
+            <TotalAmountInput value={totalInput} onChange={setTotalInput} />
           ) : (
-            <View style={styles.inputGroup}>
-              <View style={styles.addon}>
-                <Text style={[styles.addonText, { fontSize: 17 }]}>¥</Text>
-              </View>
-              <TextInput
-                style={styles.input}
-                value={totalInput}
-                onChangeText={(t) => setTotalInput(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                inputMode="numeric"
-                placeholder="合計金額を入力してください"
-                placeholderTextColor={color.textFaint}
+            /* ⚠️ 合計入力 × 現金以外のみ。金額の欄は下のキャッシュレスの節だけになる */
+            <CashlessInputs
+              methods={activeMethods}
+              amounts={cashless}
+              onChange={(methodId, value) =>
+                setCashless((prev) => ({ ...prev, [methodId]: value }))
+              }
+            />
+          )}
+
+          {/*
+            ⚠️ **支払方法が 1 件も無い店舗では節ごと出さない。** 案内だけの空欄が
+               毎回挟まると、現金しか扱わない店舗の入力が 1 画面ぶん長くなる。
+            ⚠️ **機種別入力のときも出さない。** あちらは機器ごとに欄があるので、
+               ここにも出すと同じ金額を 2 か所へ入れられてしまう
+               （サーバは機器ぶんを正とするので、ここの入力は黙って捨てられる）。
+            ⚠️ **現金以外のみのときも出さない。** その場合は上の「合計」の位置に
+               同じ入力欄を出しているので、ここにも出すと二重になる。
+            ⚠️ 単位は「円」。すぐ上の機種別入力は**枚数**なので混ぜないこと。
+          */}
+          {!byMachine && showCash && activeMethods.length > 0 && (
+            <>
+              <Divider />
+              <SectionHead icon="card-outline" label="キャッシュレス" />
+              <CashlessInputs
+                methods={activeMethods}
+                amounts={cashless}
+                onChange={(methodId, value) =>
+                  setCashless((prev) => ({ ...prev, [methodId]: value }))
+                }
               />
-            </View>
+            </>
           )}
         </ScrollView>
-      </KeyboardAvoidingView>
 
-      {/* フッタ（Web と同じ：合計収益額 + 操作ボタン）。
-          下端の余白はホームバー / ブラウザのツールバーに食われやすいので広めに取る */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.xxl }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.footerLabel}>合計収益額</Text>
-          <Text style={styles.footerTotal}>¥{total.toLocaleString()}</Text>
-        </View>
-        <Pressable onPress={onCancel} style={styles.cancelButton}>
-          <Text style={styles.cancelLabel}>キャンセル</Text>
-        </Pressable>
-        <Pressable
-          onPress={onSubmit}
-          disabled={submitting}
-          style={({ pressed }) => [
-            styles.submitButton,
-            pressed && { opacity: 0.85 },
-            submitting && { opacity: 0.5 },
-          ]}
-        >
-          <Text style={styles.submitLabel}>登録</Text>
-        </Pressable>
-      </View>
+        {/*
+          ⚠️ footer は KeyboardAvoidingView の**中**に置く。外に出すとキーボードの
+          裏に完全に隠れ、合計収益額が見えないうえ、いったんキーボードを閉じないと
+          登録できない。中に置くと padding の内側に入るのでキーボードの真上に乗る。
+        */}
+        <CollectFooter
+          total={total}
+          bottomInset={insets.bottom}
+          keyboardVisible={keyboardVisible}
+          submitting={submitting}
+          onCancel={onCancel}
+          onSubmit={onSubmit}
+        />
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
-function SectionHead({
-  icon,
-  label,
-  noMargin,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-  label: string;
-  noMargin?: boolean;
-}) {
-  return (
-    <View style={[styles.sectionHead, noMargin && { marginBottom: 0 }]}>
-      <Ionicons name={icon} size={19} color={color.teal} />
-      <Text style={styles.sectionLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function Divider() {
-  return <View style={styles.divider} />;
-}
-
-/** expo-crypto を足さずに済ませるための簡易 uuid v4 */
-function makeUuid(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-    backgroundColor: color.cardBg,
-    borderBottomWidth: 1,
-    borderBottomColor: color.divider,
-    ...shadow.sm,
-  },
-  headerBack: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
-  headerIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontFamily: font.uiBold, fontSize: 18, color: color.tealDeeper },
-  headerSub: { fontFamily: font.ui, fontSize: 11, color: color.textMuted },
-  offlineNote: { backgroundColor: color.orange500, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg },
-  offlineNoteText: { fontFamily: font.ui, fontSize: 12, color: "#FFFFFF", textAlign: "center" },
-
-  draftBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: "#FFFBEB",
-    borderWidth: 1,
-    borderColor: "#FCD34D",
-    borderRadius: radius.card,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  draftTitle: { fontFamily: font.uiBold, fontSize: 13, color: "#92400E" },
-  draftTime: { fontFamily: font.ui, fontSize: 11, color: "#B45309", marginTop: 2 },
-  draftGhost: {
-    paddingHorizontal: spacing.md,
-    height: 34,
-    borderRadius: radius.card - 8,
-    borderWidth: 1,
-    borderColor: "#FCD34D",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  draftGhostLabel: { fontFamily: font.uiBold, fontSize: 12, color: "#B45309" },
-  draftPrimary: {
-    paddingHorizontal: spacing.md,
-    height: 34,
-    borderRadius: radius.card - 8,
-    backgroundColor: "#D97706",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  draftPrimaryLabel: { fontFamily: font.uiBold, fontSize: 12, color: "#FFFFFF" },
-
-  sectionHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
-  sectionLabel: { fontFamily: font.uiBold, fontSize: 15, color: color.teal },
-  divider: { height: 1, backgroundColor: color.divider, marginVertical: spacing.xl },
-  rowDivider: { height: 1, backgroundColor: color.divider, marginVertical: spacing.lg },
-
-  dateRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  dateStep: {
-    width: HIT_SIZE,
-    height: HIT_SIZE,
-    borderRadius: radius.card,
-    backgroundColor: color.tealPale,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   /** カレンダーの開閉ボタン。左に日付、右に chevron を置くので横並びにする */
   dateValue: {
     flexDirection: "row",
@@ -655,90 +634,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
-  dateText: { fontFamily: font.mono, fontSize: 17, color: color.textMain },
+  dateText: { ...numeric, fontSize: 17, color: color.textMain },
   dateHint: { fontFamily: font.ui, fontSize: 11, color: color.textFaint, marginTop: 2 },
-
-  methodRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
-  fixRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.lg, minHeight: 40 },
-  fixLabel: { fontFamily: font.ui, fontSize: 13, color: color.textMuted },
-
-  machineHead: { flexDirection: "row", alignItems: "center", marginBottom: spacing.md },
-  machineName: { fontFamily: font.uiBold, fontSize: 15, color: color.textMain },
-  machineHint: { fontFamily: font.ui, fontSize: 11, color: color.textMuted, marginTop: 2 },
-  swapButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    borderWidth: 1.5,
-    borderColor: color.cyan200,
-    backgroundColor: color.cardBg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  inputGroup: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    borderRadius: radius.card - 6,
-    borderWidth: 1.5,
-    borderColor: color.cyan200,
-    backgroundColor: color.cardBg,
-    overflow: "hidden",
-  },
-  addon: {
-    minWidth: 48,
-    paddingHorizontal: spacing.md,
-    backgroundColor: color.cyan100,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addonText: { fontFamily: font.uiBold, fontSize: 14, color: color.tealDeeper },
-  input: {
-    flex: 1,
-    minHeight: 52,
-    paddingHorizontal: spacing.lg,
-    fontFamily: font.ui,
-    fontSize: 16,
-    color: color.textMain,
-  },
-  resultBox: {
-    marginTop: spacing.sm,
-    backgroundColor: color.tealPale,
-    borderRadius: radius.card - 8,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  resultText: { fontFamily: font.uiBold, fontSize: 13, color: color.tealDeeper },
-
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: color.cardBg,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: color.divider,
-  },
-  footerLabel: { fontFamily: font.ui, fontSize: 11, color: color.textMuted },
-  footerTotal: { fontFamily: font.uiBold, fontSize: 22, color: color.teal },
-  cancelButton: {
-    minHeight: 48,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.card - 4,
-    borderWidth: 2,
-    borderColor: color.divider,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cancelLabel: { fontFamily: font.uiBold, fontSize: 14, color: color.textMuted },
-  submitButton: {
-    minHeight: 48,
-    paddingHorizontal: spacing.xl,
-    borderRadius: radius.card - 4,
-    backgroundColor: color.teal,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  submitLabel: { fontFamily: font.uiBold, fontSize: 15, color: "#FFFFFF" },
 });

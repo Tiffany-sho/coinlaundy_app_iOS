@@ -16,6 +16,7 @@ import {
   font,
   heroGradient,
   MONTH_GRADIENT,
+  numeric,
   radius,
   shadow,
   spacing,
@@ -156,7 +157,7 @@ export function MoneyText({
 
   if (!splitSymbol) {
     return (
-      <Text style={{ fontFamily: font.mono, fontSize: size, color: textColor }}>
+      <Text style={{ ...numeric, fontSize: size, color: textColor }}>
         ¥{amount.toLocaleString()}
       </Text>
     );
@@ -166,7 +167,7 @@ export function MoneyText({
     <View style={styles.moneyRow}>
       <Text
         style={{
-          fontFamily: font.mono,
+          ...numeric,
           fontSize: Math.round(size * 0.55),
           lineHeight: size,
           color: textColor,
@@ -174,7 +175,7 @@ export function MoneyText({
       >
         ¥
       </Text>
-      <Text style={{ fontFamily: font.mono, fontSize: size, lineHeight: size, color: textColor }}>
+      <Text style={{ ...numeric, fontSize: size, lineHeight: size, color: textColor }}>
         {amount.toLocaleString()}
       </Text>
     </View>
