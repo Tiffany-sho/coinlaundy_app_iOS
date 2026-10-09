@@ -62,6 +62,12 @@ export function CurrentPlanCard({
   expiresAt: string | null;
   trialEndsAt: string | null;
 }) {
+  /**
+   * 上限を超えている状態。プランを下げたときに起こる（追加だけ止めて既存は外さないため）。
+   * ⚠️ `>=` ではなく `>`。ちょうど上限なのは正常で、注意を出す対象ではない
+   */
+  const overLimit = typeof storeLimit === "number" && storeCount > storeLimit;
+
   return (
     <Card>
       <Text style={styles.currentLabel}>現在のプラン</Text>
@@ -69,10 +75,27 @@ export function CurrentPlanCard({
 
       <View style={styles.currentRow}>
         <Text style={styles.rowLabel}>店舗数</Text>
-        <Text style={styles.rowValue}>
+        <Text style={[styles.rowValue, overLimit && styles.rowValueOver]}>
           {storeCount} / {storeLimit ?? "無制限"}
         </Text>
       </View>
+
+      {/*
+        ⚠️ プランを下げても既存の店舗は外さないので、「5 / 3」のように
+           上限を超えた状態が普通に起こる（contracts.md の「プランの制限」）。
+           本人は何もしていないのに数字が赤くなるので、理由を必ず添えること。
+        ⚠️ 外部サイトでの契約を匂わせない（Guideline 3.1.3(a)）。
+           どこで変更できるかは書かず、状態の説明に留める。
+      */}
+      {overLimit && (
+        <View style={styles.overNotice}>
+          <Ionicons name="alert-circle-outline" size={15} color={color.orange500} />
+          <Text style={styles.overNoticeText}>
+            現在のプランの上限は {storeLimit} 店舗です。登録済みの店舗はこれまでどおり
+            お使いいただけますが、新しい店舗は追加できません。
+          </Text>
+        </View>
+      )}
 
       {trialEndsAt && (
         <View style={styles.currentRow}>
@@ -236,6 +259,23 @@ const styles = StyleSheet.create({
   },
   rowLabel: { fontFamily: font.ui, fontSize: 13, color: color.textMuted },
   rowValue: { ...numeric, fontSize: 14, color: color.textMain },
+  rowValueOver: { color: color.orange500 },
+
+  overNotice: {
+    flexDirection: "row",
+    gap: spacing.xs,
+    backgroundColor: color.orange100,
+    borderRadius: radius.card,
+    padding: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  overNoticeText: {
+    flex: 1,
+    fontFamily: font.ui,
+    fontSize: 12,
+    color: color.textMain,
+    lineHeight: 18,
+  },
 
   offer: { marginTop: spacing.md },
   offerCurrent: { borderWidth: 2, borderColor: color.cyan200 },
