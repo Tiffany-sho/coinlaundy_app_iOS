@@ -19,6 +19,8 @@ import { OrgNameSection } from "@/components/settings/OrgNameSection";
 import { ExpensesSection } from "@/components/settings/ExpensesSection";
 import { expensesEnabled } from "@/components/expenses/expensesEnabled";
 import { MemberRow } from "@/components/settings/MemberRow";
+import { isOverLimit, PlanLimitNotice } from "@/components/settings/PlanLimitNotice";
+import { PLAN_MEMBER_LIMIT } from "@/billing/products";
 import { MemberStoreSheet } from "@/components/settings/MemberStoreSheet";
 import { JoinRequestSection } from "@/components/settings/JoinRequestSection";
 import { color, font, spacing } from "@/theme/tokens";
@@ -44,6 +46,8 @@ export default function Organization() {
   const bootstrap = useBootstrap();
   const members = useMembers();
   const isAdmin = members.data?.myRole === "admin";
+  /* ⚠️ PLAN_STORE_LIMIT と取り違えないこと（同じ plan キーで引くので静かに壊れる） */
+  const memberLimit = PLAN_MEMBER_LIMIT[bootstrap.data?.plan?.plan ?? ""] ?? null;
   /*
     参加申請（013）。⚠️ **店舗管理者（admin）以外には空配列が返る。**
     ⚠️ **オーナー限定にしない**（2026-08-06 に owner_id から変えた）。
@@ -166,6 +170,14 @@ export default function Organization() {
             <View style={orgStyles.separator} />
 
             <Text style={orgStyles.sectionTitle}>メンバー（{list.length}名）</Text>
+            {/* ⚠️ メンバーが増える経路は参加申請の承認だけ（013）。超過中はそこが止まる */}
+            {isOverLimit(list.length, memberLimit) && (
+              <PlanLimitNotice
+                limit={memberLimit}
+                unit=" 名"
+                blocked="新しいメンバーの参加を承認できません"
+              />
+            )}
             <View style={{ gap: spacing.sm }}>
               {list.length === 0 ? (
                 <Muted>メンバーがいません</Muted>
