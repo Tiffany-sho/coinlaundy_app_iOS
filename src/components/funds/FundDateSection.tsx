@@ -69,7 +69,17 @@ export function FundDateSection({
       </Pressable>
 
       {open && canEdit && (
-        <CalendarPicker value={shown} onChange={setDraft} style={{ marginTop: spacing.sm }} />
+        <CalendarPicker
+          value={shown}
+          onChange={(next) => {
+            setDraft(next);
+            // 日を選んだら畳む（集金入力・経費・過去データ入力と同じ挙動）。
+            // ⚠️ 畳むだけで保存はしない。draft は動いたままなので dirty が立ち、
+            //    「この日付で保存」が出続ける。カレンダーが消えるぶん確定ボタンが見えやすくなる
+            setOpen(false);
+          }}
+          style={{ marginTop: spacing.sm }}
+        />
       )}
 
       {dirty && canEdit && (

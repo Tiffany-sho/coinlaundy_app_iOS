@@ -34,6 +34,11 @@ import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens"
  *    片方だけ変えると、同じアプリの中で日付の選び方が 2 通りに見える。
  *    ⚠️ こちらは日単位なので、月を選ぶ用途にそのまま流用はできない
  *    （週の並びと月の日数の計算が要る）。
+ *
+ * 見出し（「2026年 7月」）を押すと年月を選び直せる。月送りだけだと数年前まで
+ * 遡るのに何十回も押すことになるため（過去データの一括入力で必要になった）。
+ * ⚠️ **その年月グリッドは `MonthPicker` と同じ形にしてある**（年送り + 4 列のマス目）。
+ *    ここを独自の見た目にすると、上の「対にしてある」約束が崩れる。
  */
 
 const WEEK_DAYS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -123,6 +128,9 @@ export function CalendarPicker({
     setView({ year: next.year, month: next.month });
   }, [value]);
 
+  /** "day" = 日のマス目、"month" = 年送り + 月のマス目（MonthPicker と同じ形） */
+  const [mode, setMode] = useState<"day" | "month">("day");
+
   const minIndex = monthIndex(today.year - YEARS_BACK, 1);
   const maxIndex = monthIndex(today.year + YEARS_AHEAD, 12);
   const current = monthIndex(view.year, view.month);
@@ -146,6 +154,24 @@ export function CalendarPicker({
     setView({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 });
   }
 
+  /** 年だけ動かす。月は保ったまま、選べる範囲に収まるよう丸める */
+  function stepYear(delta: number) {
+    Haptics.selectionAsync().catch(() => {});
+    setView((v) => {
+      const year = v.year + delta;
+      const index = monthIndex(year, v.month);
+      if (index < minIndex || index > maxIndex) return v;
+      return { ...v, year };
+    });
+  }
+
+  /** 月を選んで日のマス目へ戻る。⚠️ ここでは onChange を呼ばない（日が未確定のため） */
+  function pickMonth(month: number) {
+    Haptics.selectionAsync().catch(() => {});
+    setView((v) => ({ ...v, month }));
+    setMode("day");
+  }
+
   function pick(day: number) {
     Haptics.selectionAsync().catch(() => {});
     // ⚠️ Date の getTime() をそのまま渡さないこと。必ず年月日から組み立てる
@@ -155,6 +181,7 @@ export function CalendarPicker({
   function jumpToToday() {
     Haptics.selectionAsync().catch(() => {});
     setView({ year: today.year, month: today.month });
+    setMode("day");
     onChange(todayEpoch);
   }
 
@@ -162,49 +189,121 @@ export function CalendarPicker({
     <View style={[styles.panel, style]}>
       <View style={styles.navRow}>
         <Pressable
-          onPress={() => shiftMonth(-1)}
-          disabled={current <= minIndex}
+          onPress={() => (mode === "day" ? shiftMonth(-1) : stepYear(-1))}
+          disabled={mode === "day" ? current <= minIndex : monthIndex(view.year - 1, view.month) < minIndex}
           accessibilityRole="button"
-          accessibilityLabel="前の月"
+          accessibilityLabel={mode === "day" ? "前の月" : "前の年"}
           style={({ pressed }) => [
             styles.navButton,
             pressed && { opacity: 0.7 },
-            current <= minIndex && styles.navButtonDisabled,
+            (mode === "day"
+              ? current <= minIndex
+              : monthIndex(view.year - 1, view.month) < minIndex) && styles.navButtonDisabled,
           ]}
         >
           <Ionicons name="chevron-back" size={20} color={color.teal} />
         </Pressable>
 
-        <Text style={styles.navLabel}>
-          {view.year}年 {view.month}月
-        </Text>
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setMode(mode === "day" ? "month" : "day");
+          }}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: mode === "month" }}
+          accessibilityLabel={mode === "day" ? "年月を選ぶ" : "カレンダーに戻る"}
+          style={({ pressed }) => [styles.navLabelButton, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={styles.navLabel}>
+            {mode === "day" ? `${view.year}年 ${view.month}月` : `${view.year}年`}
+          </Text>
+          <Ionicons
+            name={mode === "day" ? "chevron-down" : "chevron-up"}
+            size={14}
+            color={color.tealDeeper}
+          />
+        </Pressable>
 
         <Pressable
-          onPress={() => shiftMonth(1)}
-          disabled={current >= maxIndex}
+          onPress={() => (mode === "day" ? shiftMonth(1) : stepYear(1))}
+          disabled={mode === "day" ? current >= maxIndex : monthIndex(view.year + 1, view.month) > maxIndex}
           accessibilityRole="button"
-          accessibilityLabel="次の月"
+          accessibilityLabel={mode === "day" ? "次の月" : "次の年"}
           style={({ pressed }) => [
             styles.navButton,
             pressed && { opacity: 0.7 },
-            current >= maxIndex && styles.navButtonDisabled,
+            (mode === "day"
+              ? current >= maxIndex
+              : monthIndex(view.year + 1, view.month) > maxIndex) && styles.navButtonDisabled,
           ]}
         >
           <Ionicons name="chevron-forward" size={20} color={color.teal} />
         </Pressable>
       </View>
 
-      <View style={styles.weekRow}>
-        {WEEK_DAYS.map((label, i) => (
-          <View key={label} style={styles.cell}>
-            <Text style={[styles.weekLabel, { color: DAY_COLOR[i] ?? color.textMuted }]}>
-              {label}
-            </Text>
-          </View>
-        ))}
-      </View>
+      {/* 年月を選ぶマス目。⚠️ 見た目は MonthPicker と同じにしてある */}
+      {mode === "month" && (
+        <View style={styles.monthGrid}>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+            const index = monthIndex(view.year, m);
+            const disabled = index < minIndex || index > maxIndex;
+            const isSelected = selected.year === view.year && selected.month === m;
+            const isThisMonth = today.year === view.year && today.month === m;
+            return (
+              <Pressable
+                key={m}
+                onPress={() => pickMonth(m)}
+                disabled={disabled}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected, disabled }}
+                accessibilityLabel={`${view.year}年${m}月`}
+                style={({ pressed }) => [styles.monthCell, pressed && !disabled && { opacity: 0.6 }]}
+              >
+                <View
+                  style={[
+                    styles.month,
+                    isThisMonth && !isSelected && styles.monthThis,
+                    isSelected && styles.monthSelected,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.monthLabel,
+                      isSelected && styles.monthLabelSelected,
+                      disabled && styles.monthLabelDisabled,
+                    ]}
+                  >
+                    {m}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.monthUnit,
+                      isSelected && styles.monthLabelSelected,
+                      disabled && styles.monthLabelDisabled,
+                    ]}
+                  >
+                    月
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
-      <View style={styles.grid}>
+      {mode === "day" && (
+        <>
+          <View style={styles.weekRow}>
+            {WEEK_DAYS.map((label, i) => (
+              <View key={label} style={styles.cell}>
+                <Text style={[styles.weekLabel, { color: DAY_COLOR[i] ?? color.textMuted }]}>
+                  {label}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.grid}>
         {cells.map((day, i) => {
           if (day === null) return <View key={`blank-${i}`} style={styles.cell} />;
 
@@ -246,8 +345,10 @@ export function CalendarPicker({
               </View>
             </Pressable>
           );
-        })}
-      </View>
+            })}
+          </View>
+        </>
+      )}
 
       <Pressable
         onPress={jumpToToday}
@@ -284,7 +385,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   navButtonDisabled: { opacity: 0.35 },
+  navLabelButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minHeight: HIT_SIZE,
+    paddingHorizontal: spacing.sm,
+  },
   navLabel: { fontFamily: font.uiBold, fontSize: 16, color: color.tealDeeper },
+
+  /* ⚠️ 年月のマス目は MonthPicker の grid / cell / month 一式と同じ値。
+        片方だけ変えると日と月で見た目が食い違う */
+  monthGrid: { flexDirection: "row", flexWrap: "wrap" },
+  monthCell: { width: "25%", minHeight: HIT_SIZE, alignItems: "center", justifyContent: "center" },
+  month: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "center",
+    minWidth: 56,
+    height: 38,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  monthThis: { borderColor: color.cyan300 },
+  monthSelected: { backgroundColor: color.teal, borderColor: color.teal },
+  monthLabel: { ...numeric, fontSize: 15, color: color.textMain },
+  monthUnit: { fontFamily: font.uiBold, fontSize: 11, color: color.textMain },
+  monthLabelSelected: { color: "#FFFFFF" },
+  monthLabelDisabled: { color: color.textFaint },
 
   weekRow: { flexDirection: "row", marginBottom: spacing.xs },
   weekLabel: { fontFamily: font.uiBold, fontSize: 12 },
