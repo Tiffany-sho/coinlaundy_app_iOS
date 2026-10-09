@@ -69,6 +69,21 @@ export const PLAN_STORE_LIMIT: Record<string, number | null> = {
 };
 
 /**
+ * メンバー数の上限。Web の src/functions/plans.js の `PLAN_MEMBER_LIMITS` と同じ値
+ * （null = 無制限）。⚠️ **表示専用。** 判定の正は Server Action。
+ *
+ * ⚠️ **`PLAN_STORE_LIMIT` と取り違えないこと。** 名前が似ていてどちらも同じ plan キーで
+ *    引くので、間違えても例外にならず「店舗が 1 件しか作れない」「メンバーが 3 人まで
+ *    入れる」という形で静かに壊れる（contracts.md の「プランの制限」）。
+ */
+export const PLAN_MEMBER_LIMIT: Record<string, number | null> = {
+  free: 1,
+  pro: null,
+  proplus: null,
+  max: null,
+};
+
+/**
  * プランの序列。アップグレードかダウングレードかの判定に使う。
  * ⚠️ 価格はここに書かない。**表示する価格は必ず StoreKit が返した
  *    `displayPrice` を使うこと。** ハードコードすると、為替や地域、

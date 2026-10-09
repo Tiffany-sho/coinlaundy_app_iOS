@@ -4,6 +4,7 @@ import type { ProductSubscription } from "expo-iap";
 import { Card, Muted } from "@/components/common/ui";
 import { PLAN_LABEL, PLAN_STORE_LIMIT, type PurchasablePlan } from "@/billing/products";
 import { freeTrialLabel } from "@/billing/introOffer";
+import { isOverLimit, PlanLimitNotice } from "@/components/settings/PlanLimitNotice";
 import { color, font, numeric, radius, spacing } from "@/theme/tokens";
 
 /**
@@ -62,6 +63,9 @@ export function CurrentPlanCard({
   expiresAt: string | null;
   trialEndsAt: string | null;
 }) {
+  // 上限超過。プランを下げたときに起こる（追加だけ止めて既存は外さないため）
+  const overLimit = isOverLimit(storeCount, storeLimit);
+
   return (
     <Card>
       <Text style={styles.currentLabel}>現在のプラン</Text>
@@ -69,10 +73,14 @@ export function CurrentPlanCard({
 
       <View style={styles.currentRow}>
         <Text style={styles.rowLabel}>店舗数</Text>
-        <Text style={styles.rowValue}>
+        <Text style={[styles.rowValue, overLimit && styles.rowValueOver]}>
           {storeCount} / {storeLimit ?? "無制限"}
         </Text>
       </View>
+
+      {overLimit && (
+        <PlanLimitNotice limit={storeLimit} unit=" 店舗" blocked="新しい店舗は追加できません" />
+      )}
 
       {trialEndsAt && (
         <View style={styles.currentRow}>
@@ -236,6 +244,7 @@ const styles = StyleSheet.create({
   },
   rowLabel: { fontFamily: font.ui, fontSize: 13, color: color.textMuted },
   rowValue: { ...numeric, fontSize: 14, color: color.textMain },
+  rowValueOver: { color: color.orange500 },
 
   offer: { marginTop: spacing.md },
   offerCurrent: { borderWidth: 2, borderColor: color.cyan200 },
