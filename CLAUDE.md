@@ -162,6 +162,15 @@
 
 **v1.0（ビルド 17）が 2026-08-15 に審査を通過した。**
 
+**2026-10-10 に v1.1 の提出準備をした**（`app.json` の `version` を 1.1.0 へ）。
+載せるのは**過去データの一括入力 / カレンダーの年月ジャンプ / プラン上限超過の理由表示**の
+3 つと、`react-native-webview` の除去・プライバシーポリシーの更新。
+⚠️ **ビルドと ASC の操作はユーザーが行う。** What's New と説明文の正本は
+`../coin-laundry-app/docs/ios/app-store/metadata_ja.md`。
+⚠️ **`buildNumber` は触らない**（`eas.json` が `appVersionSource: "remote"` +
+`autoIncrement` なので `app.json` の値は production ビルドで無視される)。
+変えるのは `version`（マーケティングバージョン）だけ。
+
 ⚠️ **手動リリースにしてあるので、押すまで App Store に出ない。**
 
 ⚠️ **公開後は実ユーザーがいる。** 本番の BFF を落とすと、審査中とは違って
@@ -313,9 +322,19 @@ ASC の「ユーザとアクセス → Sandbox → テストアカウント」�
 - [ ] **App Store の説明文の「メンバーを招待して複数人で使う」。**
       013 で招待をやめた（申請 → 承認）ときの直し漏れ。
       正本は `../coin-laundry-app/docs/ios/app-store/metadata_ja.md`（**修正済み**）
-- [ ] **`react-native-webview` を依存から外す。**
-      2026-07-30 に消した `app/settings/webview.tsx` の名残で、**1 か所も呼んでいない。**
-      ⚠️ ネイティブモジュールなので **EAS の再ビルドが 1 回要る**
+- [x] **`react-native-webview` を依存から外す**（2026-10-10、1.1 に載せた）。
+      ⚠️ **`package.json` から外しても `node_modules` には残る。**
+      `expo` が optional peer dependency として持っているので `npm ci` が入れ直す。
+      **「消えていないから失敗」と判断しないこと。**
+      ⚠️ **見るのはリンクされるかどうか。** 確認コマンド:
+
+      ```bash
+      npx expo-modules-autolinking react-native-config --platform ios --json \
+        | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Object.keys(JSON.parse(s).dependencies)))'
+      ```
+
+      外す前 11 件 → 外したあと 10 件で `react-native-webview` が消える
+      （**autolinking は直接依存だけを見る**ので、`exclude` の設定は要らなかった）
 - [ ] **アクセシビリティ栄養ラベルを「はい」にできるようにする。**
       2026-08-06 の提出では**いいえ**で出した。順番と理由は
       `metadata_ja.md` の「2026-08-06 の提出で答えたこと」にある。
