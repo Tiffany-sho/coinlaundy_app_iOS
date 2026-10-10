@@ -13,8 +13,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useStore } from "@/api/queries";
 import { BackfillRow, type BackfillEntry } from "@/components/backfill/BackfillRow";
-import { useDialog } from "@/components/common/dialog";
-import { useToast } from "@/components/common/toast";
+import { DialogProvider, useDialog } from "@/components/common/dialog";
+import { ToastProvider, useToast, type ToastApi } from "@/components/common/toast";
 import { Button, CenterMessage, MoneyText, Muted, Screen } from "@/components/common/ui";
 import { enqueue, OUTBOX_LIMIT } from "@/offline/outbox";
 import { useOutbox } from "@/offline/OutboxProvider";
@@ -35,7 +35,44 @@ import { color, font, radius, spacing, HIT_SIZE } from "@/theme/tokens";
  *    支払方法別の集計では現金に寄る。過去分を方法別に思い出すのは現実的でないため
  *    意図してそうしている。
  */
+/**
+ * ⚠️ **この画面の中に DialogProvider をもう 1 つ置いている。**（2026-10-10）
+ *
+ * この画面は `presentation: "fullScreenModal"`（`app/_layout.tsx`）なので、
+ * react-native-screens が**ルートの UIViewController から新しい VC をモーダル表示**する。
+ * ルートの DialogProvider が持つ `Modal` はルートの React ツリーに属するため、
+ * iOS では「すでにモーダルを出している VC から更にモーダルを出す」ことになり
+ * **何も表示されずに失敗する**（`docs/traps.md` の iOS）。
+ *
+ * ⚠️ **TestFlight で実際に踏んだ。** `onCancel` も `onSubmit` も `dialog.confirm` の
+ *    結果を `await` するので、ダイアログが出ないと**押しても無反応**になる。
+ *    ⚠️ **入力が空のときだけキャンセルが効く**（確認を出さず直に `router.back()` する）
+ *    ので、「ボタンが壊れている」ようには見えず原因に辿り着きにくい。
+ * ⚠️ **ブラウザでは絶対に再現しない。** web には VC が無く `Modal` がただの DOM なので、
+ *    `npx expo export` も Playwright も素通りする。**実機でしか出ない。**
+ *
+ * `ToastProvider` も同じ理由でルートのものはこの画面の下に隠れる
+ * （`position: "absolute"` のオーバーレイなので `Modal` ですらない）。
+ * ⚠️ **`router.back()` の直前に出すトーストはルート側（`rootToast`）を使うこと。**
+ *    ネスト側で出すと画面のアンマウントと同時に消えて一瞬も読めない。
+ *    逆に画面に留まる登録失敗のトーストは**ネスト側**でないと見えない。
+ */
 export default function Backfill() {
+  // ⚠️ 包む前に掴む。ここで useToast() を呼ぶとルート側の ToastProvider に解決される
+  const rootToast = useToast();
+  return (
+    <DialogProvider>
+      <ToastProvider>
+        <BackfillScreen rootToast={rootToast} />
+      </ToastProvider>
+    </DialogProvider>
+  );
+}
+
+/**
+ * @param rootToast 画面を離れたあとも残るトースト。`router.back()` の直前に使う。
+ */
+function BackfillScreen({ rootToast }: { rootToast: ToastApi }) {
   const { storeId } = useLocalSearchParams<{ storeId: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -142,7 +179,8 @@ export default function Backfill() {
       });
 
       void flush();
-      toast.success(
+      // ⚠️ 直後に router.back() するのでルート側。ネスト側だと一瞬も読めない
+      rootToast.success(
         isOnline
           ? `${filled.length} 件の集金データを登録しました`
           : `${filled.length} 件を送信待ちに追加しました。電波が戻ると自動送信されます`

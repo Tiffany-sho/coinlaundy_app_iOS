@@ -272,6 +272,17 @@
   Metro に `Attempt to present ... which is already presenting ...` が出る。
   ダイアログの結果を待つ処理は**押しても無反応**になる（集金画面のキャンセルと戻るが
   これで死んでいた）。**その画面の中で `DialogProvider` を包み直す**と直る
+  - ⚠️ **`fullScreenModal` の画面を足したら、包み直しも一緒に足すこと。**
+    2026-10-10 に `app/backfill/[storeId].tsx` で再発した。集金画面のコメントに
+    「アプリで唯一 `fullScreenModal`」と書いてあり、**それを信じて包まなかった。**
+    数を書くと増えたときに嘘になるので、**`grep -rn fullScreenModal app/` で
+    数え直してから**書くこと。現在は**集金と過去データ入力の 2 つ。**
+  - ⚠️ **症状が「ボタンの不具合」に見える。** 無反応になるのは
+    `await dialog.confirm(...)` を通る経路だけなので、**入力が空のときは
+    キャンセルが効く**（確認を出さず直に `router.back()` するため）。
+    「押せるときと押せないときがある」と報告されたら真っ先にここを疑う
+  - ⚠️ **ブラウザでは絶対に再現しない。** web に VC は無く `Modal` はただの DOM なので、
+    `npx expo export` も Playwright も素通りする。**TestFlight まで出ない**
 - ⚠️ **同じ理由で、ルートの絶対配置オーバーレイもモーダル画面の下に隠れる。**
   `ToastProvider` は `position: "absolute"` なので（`Modal` ですらない）、
   `fullScreenModal` の画面に留まったまま出すトースト（入力検証エラーなど）は見えない
