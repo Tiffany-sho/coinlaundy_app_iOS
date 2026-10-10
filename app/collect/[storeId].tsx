@@ -62,12 +62,16 @@ import { color, font, radius, spacing, HIT_SIZE, numeric } from "@/theme/tokens"
 /**
  * ⚠️ **この画面の中に DialogProvider をもう 1 つ置いている。**
  *
- * この画面はアプリで唯一 `presentation: "fullScreenModal"`（`app/_layout.tsx`）で、
+ * この画面は `presentation: "fullScreenModal"`（`app/_layout.tsx`）なので、
  * react-native-screens が**ルートの UIViewController から新しい VC をモーダル表示**する。
  * 一方ルートの DialogProvider が持つ `Modal` はルートの React ツリーに属するので、
  * iOS では「すでにモーダルを出している VC から更にモーダルを出す」ことになり
  * **何も表示されずに失敗する**（Metro に
  * "Attempt to present ... which is already presenting ..." が出る）。
+ *
+ * ⚠️ **`fullScreenModal` はこの画面と `app/backfill/[storeId].tsx` の 2 つ。**
+ *    以前ここに「アプリで唯一」と書いてあり、それを信じた backfill が包み忘れて
+ *    TestFlight で無反応になった（2026-10-10）。**増やしたら両方を数え直すこと。**
  *
  * `onCancel` は入力があると `dialog.choose` の結果を待つため、ダイアログが出ないと
  * **キャンセルも戻るも無反応になる。** ここで包み直すと `Modal` が
