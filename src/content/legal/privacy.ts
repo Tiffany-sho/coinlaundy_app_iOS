@@ -94,6 +94,11 @@ export const PRIVACY: LegalDocument = {
               term: "Vercel（Vercel Inc.）",
               description: "ホスティングサービス。アクセスログが収集される場合があります。",
             },
+            {
+              term: "Cloudflare（Cloudflare, Inc.）",
+              description:
+                "Webサイトのアクセス解析（Cloudflare Web Analytics）。閲覧したページ・参照元・ブラウザの種類などを、Cookieを使わずに統計として集計します。",
+            },
           ],
         },
       ],
@@ -123,6 +128,17 @@ export const PRIVACY: LegalDocument = {
           kind: "paragraph",
           text: "本サービスでは、ログイン状態の維持のためCookieを使用します。ブラウザの設定によりCookieを無効にすることができますが、一部機能が利用できなくなる場合があります。",
         },
+        /*
+          ⚠️ **「iOSアプリでは使用していません」を消さないこと。** 計測スクリプトは
+             Web の HTML にだけ入り、しかも /app/* では読み込まない
+             （coin-laundry-app の CloudflareAnalytics.jsx）。アプリは 1 行も
+             送っていないので、落とすと**実態より多く収集していると読める**文面に
+             なり、ASC の「App のプライバシー」の申告とも食い違う。
+        */
+        {
+          kind: "paragraph",
+          text: "また、Webサイトの閲覧状況を把握してサービスを改善するため、Cloudflare Web Analytics を使用しています。Cookieは使用せず、閲覧したページ・参照元・ブラウザの種類などを個人を特定しない統計として集計します。iOSアプリでは使用していません。",
+        },
       ],
     },
     {
@@ -149,5 +165,5 @@ export const PRIVACY: LegalDocument = {
       ],
     },
   ],
-  establishedAt: "制定日：2026年5月29日／改定日：2026年7月31日",
+  establishedAt: "制定日：2026年5月29日／改定日：2026年10月9日",
 };
