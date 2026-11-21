@@ -995,3 +995,32 @@ expensesEnabled: settings?.expenses_enabled !== false,
   ⚠️ **`collecie.com` が引っかかっても本番を指しているとは限らない。**
   `client.ts` のフォールバック文字列（`?? "https://www.collecie.com/api/v1"`）と
   コメントが入っているので、**必ず期待する URL のほうで grep すること**
+
+## Dependabot が SDK をまたいで expo-* を上げる
+
+⚠️ **セキュリティ更新の PR は、脆弱な孫依存を消すために直接依存のメジャーを平気で上げる。**
+2026-11-17 に #20（`decode-uri-component` を消すために **expo-router 57 → 58**）を
+マージして、**main で `npm ci` が通らなくなった**（2026-11-20 に 57 へ戻した）。
+
+```
+npm error Conflicting peer dependency: expo-constants@58.0.16
+npm error   peer expo-constants@"^58.0.16" from expo-router@58.0.31
+```
+
+- ⚠️ **PR の差分は `package.json` 1 行 + lockfile なので小さく見える。** CI も無いので
+  `mergeable_state: clean` のまま通る。**EAS Build の install で初めて落ちる**
+- ⚠️ **lockfile の中は壊れていた。** expo-router 58 が `expo-router/node_modules/` に
+  **2 つ目の `react-native-screens`（4.30.1）**を抱え、`@expo/metro-runtime` /
+  `expo-symbols` が消えていた。`--legacy-peer-deps` で無理に入れても動かない
+- ⚠️ **`expo-*` / `@expo/*` / `react-native*` のメジャーを上げる PR はマージしない。**
+  SDK のアップグレードは `npx expo install expo@^<次> --fix` で全部まとめて行い、
+  **EAS の再ビルド + TestFlight まで通す**別作業にする
+- ⚠️ **壊れた lockfile の上で `npm install` しても直らない**（同じ衝突で止まる）。
+  最後に `npm ci` が通った commit の lockfile を土台に戻し、
+  後続の安全な更新を `npm update <名前>` で載せ直すこと
+- マージ前の確認（ネットワークだけで済む）:
+
+  ```bash
+  git fetch origin <dependabot のブランチ> && git worktree add /tmp/dep FETCH_HEAD
+  (cd /tmp/dep && npm ci --dry-run)   # exit 0 であること
+  ```
